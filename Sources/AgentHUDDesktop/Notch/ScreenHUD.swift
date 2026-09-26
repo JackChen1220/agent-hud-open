@@ -411,11 +411,11 @@ final class ScreenHUD {
         // rather than following the new shape around.
         let drawsGlow = geometry.mode != .logos || backdrop
         let overhang = GlowWindowController.backdropOverhang(glowSettings)
-        // The lip is a flat line on the screen's top edge, run wider than the queue: every cell's nearest
+        // The lip is a flat line at the queue's top edge, run wider than the queue: every cell's nearest
         // point is then straight above it, so the field falls vertically instead of curling in at the ends,
         // and the marks sit inside the field rather than below where it starts.
         let glowIsland = backdrop
-            ? CGRect(x: geometry.rect.minX - overhang, y: geometry.screenFrame.maxY,
+            ? CGRect(x: geometry.rect.minX - overhang, y: geometry.rect.maxY,
                      width: geometry.rect.width + overhang * 2, height: 2)
             : islandFrame
         let glowRadius = backdrop ? 0 : radius
@@ -431,7 +431,7 @@ final class ScreenHUD {
                 // Keep a canvas large enough for both shapes while the sides and bottom move independently.
                 let width = max(island.panel.frame.width, windowFrame.width)
                 let height = max(island.panel.frame.height, windowFrame.height)
-                island.setFrame(CGRect(x: geometry.centerX - width / 2, y: geometry.top - height, width: width, height: height))
+                island.setFrame(CGRect(x: geometry.centerX - width / 2, y: windowFrame.maxY - height, width: width, height: height))
                 island.setVisibleSize(windowFrame.size)
                 shrinkTask = Task { [weak self] in
                     do { try await Task.sleep(for: .seconds(IslandAnimation.duration)) } catch { return }
@@ -475,4 +475,3 @@ final class ScreenHUD {
         island.setRootView(root)
     }
 }
-

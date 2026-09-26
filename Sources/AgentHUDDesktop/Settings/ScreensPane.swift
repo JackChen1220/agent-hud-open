@@ -86,8 +86,8 @@ struct ScreensPane: View {
     private var subtitle: String {
         guard let current else { return "" }
         return current.hasNotch
-            ? L10n.text("这块屏有刘海；Logo 队列居中排列，经过刘海的标会被挡住。",
-                        "This display has a notch; the queue is centred, so the notch covers the marks behind it.")
+            ? L10n.text("这块屏有刘海；居中的 Logo 队列会显示在刘海下方。",
+                        "This display has a notch; a centred logo queue appears below it.")
             : L10n.text("这块屏没有刘海，刘海形态会画一条替代的黑条。",
                         "No notch here — the notch shape draws a stand-in bar instead.")
     }

@@ -37,7 +37,7 @@ struct NotchGeometry: Equatable {
         let notch = screen.flatMap { $0.safeAreaInsets.top > 0 ? notchRect(of: $0) : nil }
 
         if placement.mode == .logos, let queue {
-            let rect = stripRect(queue: queue, frame: frame, menuBar: menuBar, placement: placement)
+            let rect = stripRect(queue: queue, frame: frame, menuBar: menuBar, placement: placement, notch: notch)
             return NotchGeometry(screenFrame: frame, mode: .logos, edge: placement.edge, hasNotch: notch != nil,
                                  rect: rect, cornerRadius: logoCornerRadius, backingScale: scale, menuBarHeight: menuBar)
         }
@@ -61,8 +61,8 @@ struct NotchGeometry: Equatable {
     /// Where the queue sits, centred on `placement.offset` along its edge and kept on screen. Nothing is drawn
     /// here — the marks stand on their own — so the rect only has to hold them and catch the pointer; the
     /// padding is hover slack, not a visible strip.
-    private static func stripRect(queue: CGSize, frame: CGRect, menuBar: CGFloat,
-                                  placement: ScreenPlacement) -> CGRect {
+    static func stripRect(queue: CGSize, frame: CGRect, menuBar: CGFloat,
+                          placement: ScreenPlacement, notch: CGRect? = nil) -> CGRect {
         // The run is the marks themselves: the backdrop is clipped to this rect, and anything added here
         // would show up as backdrop reaching past the last mark. Whole points, because the spacing is a
         // fraction of the logo and a window on a half point puts every mark on a blurred pixel boundary.
@@ -70,11 +70,18 @@ struct NotchGeometry: Equatable {
         let thick = max(menuBar, placement.edge.isHorizontal ? queue.height : queue.width)
         switch placement.edge {
         case .top, .bottom:
-            // The notch is not avoided: a queue centred on the screen reads as centred, and sliding it off
-            // to one side to clear the notch costs more than the marks the notch covers.
             let width = min(long, frame.width)
             let x = min(frame.maxX - width, max(frame.minX, frame.minX + (frame.width - width) * placement.offset))
-            let y = placement.edge == .top ? frame.maxY - thick : frame.minY
+            // Keep a centred queue centred. If it crosses the physical notch, put its strip directly
+            // below it; moving the queue sideways makes a short row look off-centre on the display.
+            let y: CGFloat
+            if placement.edge == .bottom {
+                y = frame.minY
+            } else if let notch, x < notch.maxX, x + width > notch.minX {
+                y = max(frame.minY, notch.minY - thick)
+            } else {
+                y = frame.maxY - thick
+            }
             return CGRect(x: x, y: y, width: width, height: thick)
         case .left, .right:
             let height = min(long, frame.height)

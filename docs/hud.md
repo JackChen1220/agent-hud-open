@@ -19,7 +19,7 @@ The HUD sits at the top of every attached display, and each display carries its 
 ### Placement
 
 - A display with a notch defaults to notch mode; a display without one defaults to the logo queue, so no screen draws a bar pretending to have a notch.
-- Either mode can be chosen for any display, including a notched one; a queue on a notched Mac is centred on the screen, so the notch covers the marks behind it.
+- Either mode can be chosen for any display, including a notched one; a top-edge queue that would overlap the physical notch stays horizontally centred and appears below it.
 - A display keeps its own placement, keyed by the display's UUID, and a newly attached display needs no setup.
 - The queue runs along the top edge, centred. Logo size is 12–24 pt and spacing is 0.1–0.6 of the logo; the number of marks that fit is an outcome, never a setting.
 - The marks can be hidden, which leaves the backdrop alone, still where they would have been and as wide.
