@@ -230,7 +230,7 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         let annotations = AntigravitySessions.annotations(url)
         XCTAssertEqual(annotations.path, root.appendingPathComponent("annotations/0e9830ef-dce6.pbtxt").path)
         try FileManager.default.createDirectory(at: annotations.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try #"pinned:true title:"Fix \"quota\" \344\275\240 你\x21""#.write(to: annotations, atomically: true, encoding: .utf8)
+        try #"pinned:true title:"Fix \"quota\" \344\275\240 \u4f60\x21""#.write(to: annotations, atomically: true, encoding: .utf8)
         XCTAssertEqual(try AntigravitySessions.read(url).sessions.first?.title, "Fix \"quota\" 你 你!")
         XCTAssertTrue(AntigravitySessions.related(url).contains(annotations), "a rename rereads the conversation")
         XCTAssertNil(AntigravitySessions.textField("title", in: Array(#"subtitle:"x""#.utf8)))
