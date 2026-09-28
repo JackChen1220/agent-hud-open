@@ -106,7 +106,9 @@ public struct ClaudeEngineUsageClient: Sendable {
         AppSupport.directory.appendingPathComponent("engine", isDirectory: true)
     }
 
-    public static let request = #"{"type":"control_request","request_id":"agent-hud-usage","request":{"subtype":"get_usage"}}"#
+    /// `skip_behaviors` spares the engine its scan of the week's transcripts for a section that is never read; engines
+    /// that predate the flag ignore it.
+    public static let request = #"{"type":"control_request","request_id":"agent-hud-usage","request":{"subtype":"get_usage","skip_behaviors":true}}"#
 
     private func environment() -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
