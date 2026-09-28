@@ -97,29 +97,31 @@ final class AttentionHookTests: XCTestCase, @unchecked Sendable {
             try Data().write(to: url)
             return url
         }
-        func handler(_ executable: String) throws {
-            try JSONSerialization.data(withJSONObject: ["hooks": ["Notification": [["hooks": [["type": "command",
-                "command": "'\(executable)' --attention-hook claude"]]]]]]).write(to: settings)
+        func handlers(_ executables: String...) throws {
+            try JSONSerialization.data(withJSONObject: ["hooks": ["Notification": [["hooks": executables.map { executable in
+                ["type": "command", "command": "'\(executable)' --attention-hook claude"] }]]]]).write(to: settings)
         }
+        let installed = { AttentionHooks.commands(in: try AttentionHooks.configuration(.claude, home: home), source: .claude) }
         let executable = try app("Agent HUD"), other = try app("Agent HUD Open")
         // The disk image the app was first opened from, and an app since deleted.
-        for left in ["/Volumes/Agent HUD/Agent HUD.app/Contents/MacOS/Agent HUD", apps.path + "/Gone.app/Contents/MacOS/Gone"] {
-            try handler(left)
+        let gone = apps.path + "/Gone.app/Contents/MacOS/Gone"
+        for left in ["/Volumes/Agent HUD/Agent HUD.app/Contents/MacOS/Agent HUD", gone] {
+            try handlers(left)
             try AttentionHooks.configure(.claude, enabled: true, executable: executable, home: home)
-            XCTAssertEqual(AttentionHooks.commands(in: try AttentionHooks.configuration(.claude, home: home), source: .claude),
-                           ["'\(executable.path)' --attention-hook claude"], "the handler left at \(left) is replaced")
+            XCTAssertEqual(try installed(), ["'\(executable.path)' --attention-hook claude"], "the handler left at \(left) is replaced")
         }
 
         // A handler from another installation that is still here is left alone unless the caller says to replace it,
-        // and switching hooks off removes it all the same.
-        try handler(other.path)
+        // and switching hooks off leaves it too, while it takes out this installation's own and one left behind.
+        try handlers(other.path)
         XCTAssertThrowsError(try AttentionHooks.configure(.claude, enabled: true, executable: executable, home: home))
         try AttentionHooks.configure(.claude, enabled: true, executable: executable, home: home, replacingExisting: true)
-        XCTAssertTrue(AttentionHooks.isActive(.claude, home: home))
-        try handler(other.path)
+        XCTAssertEqual(try installed(), ["'\(executable.path)' --attention-hook claude"])
+        try handlers(other.path, executable.path, gone)
         try AttentionHooks.configure(.claude, enabled: false, executable: executable, home: home)
-        XCTAssertFalse(AttentionHooks.isActive(.claude, home: home))
+        XCTAssertEqual(try installed(), ["'\(other.path)' --attention-hook claude"])
 
+        try handlers()
         XCTAssertThrowsError(try AttentionHooks.configure(.claude, enabled: true,
             executable: URL(fileURLWithPath: "/Volumes/Agent HUD/Agent HUD.app/Contents/MacOS/Agent HUD"), home: home))
         XCTAssertFalse(AttentionHooks.isActive(.claude, home: home), "an app running from its disk image adds nothing")

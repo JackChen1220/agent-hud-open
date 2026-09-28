@@ -2,8 +2,8 @@ import Foundation
 
 /// The host opts into local adapter installation and supplies the executable that handles callbacks.
 public enum SessionObservers {
-    /// Adds this installation's handlers to every client installed here, or, with `enabled` false, takes out every Agent
-    /// HUD handler. Adding leaves one another installation still answers with it, and every other entry is left alone.
+    /// Adds this installation's handlers to every client installed here, or, with `enabled` false, takes them out.
+    /// A handler another installation added stays with it, and every other entry in the clients' files is left alone.
     public static func configure(executable: URL, enabled: Bool,
                                  home: URL = FileManager.default.homeDirectoryForCurrentUser) {
         do {

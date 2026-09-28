@@ -5,7 +5,8 @@ import Foundation
 /// Every handler Agent HUD writes is its executable's path in single quotes followed by the hook's switch, so the path
 /// can be read back. That is what tells a handler nothing answers any more from one another installation still
 /// answers: an app first opened from its disk image, or from Downloads, runs from a place macOS takes away again, and a
-/// deleted app leaves a path to nothing.
+/// deleted app leaves a path to nothing. Adding and removing a handler both clear the ones nothing answers and leave
+/// another installation's with it.
 enum HookCommand {
     /// `'<executable path>' <arguments>`, quoted for the shell the client runs it through.
     static func make(executable: URL, arguments: String) -> String {
@@ -41,18 +42,20 @@ enum HookCommand {
         return isTransient(path) || !FileManager.default.fileExists(atPath: path)
     }
 
-    /// Throws unless this installation may write `command` over the Agent HUD handlers already in a client's file.
-    ///
-    /// An app running from a transient place writes nothing, since its handler would stop working once it is moved. A
-    /// handler whose installation is gone is replaced; one another installation still answers stays with it, and
-    /// `conflict` says so, unless `replacingExisting` takes it over. Removing a handler needs no such check.
-    static func checkInstall(executable: URL, command: String, existing: [String], replacingExisting: Bool,
-                             conflict: String) throws {
+    /// The Agent HUD handlers in `existing` that another installation still answers: not `command`, and not abandoned.
+    /// They stay with that installation whether this one adds its handler or takes it out.
+    static func otherInstallations(_ existing: [String], besides command: String) -> Set<String> {
+        Set(existing.filter { $0 != command && !isAbandoned($0) })
+    }
+
+    /// Throws unless this installation may add its handler: an app running from a transient place writes nothing,
+    /// since its handler would stop working once it is moved, and a handler another installation still answers
+    /// (`others`) is left to it, which `conflict` says. A handler whose installation is gone is simply replaced.
+    static func checkInstall(executable: URL, others: Set<String>, conflict: String) throws {
         if isTransient(executable.path) {
             throw UsageProviderError(L10n.text("应用正从磁盘映像或临时位置运行，移到应用程序文件夹后才会写入回调",
                                                "The app is running from a disk image or a temporary copy; move it to Applications to add hooks"))
         }
-        guard !replacingExisting, existing.contains(where: { $0 != command && !isAbandoned($0) }) else { return }
-        throw UsageProviderError(conflict)
+        if !others.isEmpty { throw UsageProviderError(conflict) }
     }
 }

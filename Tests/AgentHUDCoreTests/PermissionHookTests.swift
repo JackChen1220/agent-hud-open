@@ -136,6 +136,11 @@ final class PermissionHookTests: XCTestCase, @unchecked Sendable {
             let home = try directory(), file = source.configuration(home: home)
             let ours = { HookCommand.make(executable: $0, arguments: "--permission-hook \(source.rawValue)") }
             let installed = { PermissionHooks.commands(in: try PermissionHooks.configuration(source, home: home), source: source) }
+            for running in ["/Volumes/Agent HUD/Agent HUD.app/Contents/MacOS/Agent HUD", left[0].path] {
+                XCTAssertThrowsError(try PermissionHooks.configure(source, enabled: true, executable: URL(fileURLWithPath: running),
+                                                                   home: home))
+                XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), "\(source): an app running from \(running) adds nothing")
+            }
             for old in left {
                 try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try JSONEncoder().encode(ProviderJSON.object(try PermissionHooks.updating([:], source: source, command: ours(old))))
@@ -149,13 +154,16 @@ final class PermissionHookTests: XCTestCase, @unchecked Sendable {
             XCTAssertThrowsError(try PermissionHooks.configure(source, enabled: true, executable: current, home: home))
             XCTAssertEqual(try Data(contentsOf: file), taken, "\(source): an installation that is still here keeps its handler")
             try PermissionHooks.configure(source, enabled: false, executable: current, home: home)
-            XCTAssertEqual(try installed(), [], "\(source): switching hooks off removes it all the same")
+            XCTAssertEqual(try Data(contentsOf: file), taken, "\(source): and keeps it when this one switches hooks off")
 
-            for running in ["/Volumes/Agent HUD/Agent HUD.app/Contents/MacOS/Agent HUD", left[0].path] {
-                XCTAssertThrowsError(try PermissionHooks.configure(source, enabled: true, executable: URL(fileURLWithPath: running),
-                                                                   home: home), "\(source): an app running from \(running) adds nothing")
-                XCTAssertEqual(try installed(), [])
-            }
+            // Beside it, this installation's own handler and one nothing answers any more.
+            var three = try PermissionHooks.updating(try PermissionHooks.configuration(source, home: home), source: source,
+                                                     command: ours(left[2]), keeping: [ours(other)])
+            three = try PermissionHooks.updating(three, source: source, command: ours(current), keeping: [ours(other), ours(left[2])])
+            try JSONEncoder().encode(ProviderJSON.object(three)).write(to: file)
+            XCTAssertEqual(Set(try installed()), [ours(other), ours(left[2]), ours(current)])
+            try PermissionHooks.configure(source, enabled: false, executable: current, home: home)
+            XCTAssertEqual(try installed(), [ours(other)], "\(source): switching hooks off takes out this one's and the one left behind")
         }
     }
 

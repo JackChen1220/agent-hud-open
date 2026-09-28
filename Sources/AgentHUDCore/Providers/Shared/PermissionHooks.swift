@@ -160,9 +160,8 @@ public enum PermissionHooks {
     }
 
     /// Adds or removes Agent HUD's handler, leaving every other hook in the file alone. An unrecognized layout throws
-    /// rather than being rewritten. Adding replaces a handler whose installation is gone and leaves one another
-    /// installation still answers (`HookCommand.checkInstall`); removing takes out every Agent HUD handler, whichever
-    /// executable it names.
+    /// rather than being rewritten. Either way a handler whose installation is gone goes too, and one another
+    /// installation still answers stays with it (`HookCommand`), which makes adding throw unless `replacingExisting`.
     public static func configure(_ source: Source, enabled: Bool, executable: URL,
                                  home: URL = FileManager.default.homeDirectoryForCurrentUser,
                                  replacingExisting: Bool = false) throws {
@@ -170,13 +169,13 @@ public enum PermissionHooks {
         guard enabled || FileManager.default.fileExists(atPath: source.configuration(home: home).path) else { return }
         let object = try configuration(source, home: home)
         let command = HookCommand.make(executable: executable, arguments: "--permission-hook " + source.rawValue)
+        let others = replacingExisting ? [] : HookCommand.otherInstallations(commands(in: object, source: source), besides: command)
         if enabled {
-            try HookCommand.checkInstall(executable: executable, command: command, existing: commands(in: object, source: source),
-                                         replacingExisting: replacingExisting,
-                                         conflict: L10n.text("批准回调由另一安装管理，关闭再打开客户端回调可改由本安装接管",
-                                                             "The permission hook belongs to another installation; turn Client hooks off and on to take it over"))
+            try HookCommand.checkInstall(executable: executable, others: others,
+                                         conflict: L10n.text("批准回调由另一安装管理，在该安装中关闭客户端回调后即可切换",
+                                                             "The permission hook belongs to another installation; turn Client hooks off there to switch"))
         }
-        let updated = try updating(object, source: source, command: enabled ? command : nil)
+        let updated = try updating(object, source: source, command: enabled ? command : nil, keeping: others)
         guard updated != object else { return }
         let url = source.configuration(home: home)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -187,7 +186,10 @@ public enum PermissionHooks {
         if let permissions { try FileManager.default.setAttributes([.posixPermissions: permissions], ofItemAtPath: url.path) }
     }
 
-    static func updating(_ configuration: [String: ProviderJSON], source: Source, command: String?) throws -> [String: ProviderJSON] {
+    /// The configuration with Agent HUD's handlers taken out, except those whose commands are in `keeping`, and
+    /// `command` added when it is given.
+    static func updating(_ configuration: [String: ProviderJSON], source: Source, command: String?,
+                         keeping: Set<String> = []) throws -> [String: ProviderJSON] {
         var object = configuration
         guard object["hooks"] == nil || object["hooks"]?.objectValue != nil else { throw ProviderFailure.format }
         var hooks = object["hooks"]?.objectValue ?? [:]
@@ -200,7 +202,10 @@ public enum PermissionHooks {
         guard events[source.event] == nil || events[source.event]?.arrayValue != nil else { throw ProviderFailure.format }
         var groups = (events[source.event]?.arrayValue ?? []).compactMap { group -> ProviderJSON? in
             guard var fields = group.objectValue, let handlers = fields["hooks"]?.arrayValue else { return group }
-            let kept = handlers.filter { !ownsCommand($0["command"].stringValue, source: source) }
+            let kept = handlers.filter {
+                let handler = $0["command"].stringValue
+                return !ownsCommand(handler, source: source) || keeping.contains(handler ?? "")
+            }
             if kept.count == handlers.count { return group }
             if kept.isEmpty { return nil }
             fields["hooks"] = .array(kept)

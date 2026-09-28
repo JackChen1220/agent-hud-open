@@ -123,14 +123,14 @@ final class CompletionHooksTests: XCTestCase, @unchecked Sendable {
             let original = try Data(contentsOf: file)
             XCTAssertThrowsError(try CompletionHooks.configure(source, enabled: true, executable: second, home: home))
             XCTAssertEqual(try Data(contentsOf: file), original)
+            try CompletionHooks.configure(source, enabled: false, executable: second, home: home)
+            XCTAssertEqual(try Data(contentsOf: file), original, "\(source): switching hooks off leaves another installation's handler")
             try CompletionHooks.configure(source, enabled: true, executable: second, home: home, replacingExisting: true)
             XCTAssertTrue(try String(contentsOf: file, encoding: .utf8).contains(second.path))
-            try CompletionHooks.configure(source, enabled: false, executable: first, home: home)
-            XCTAssertFalse(CompletionHooks.isInstalled(source, home: home), "switching hooks off removes it whoever installed it")
         }
     }
 
-    func testAHandlerLeftWhereTheAppNoLongerRunsIsReplaced() throws {
+    func testAHandlerLeftWhereTheAppNoLongerRunsIsReplacedOrRemoved() throws {
         let apps = try directory()
         let current = try app("Agent HUD", in: apps.appendingPathComponent("Applications"))
         // A translocated copy still mounted, the disk image the app came on, and an app since deleted.
@@ -141,11 +141,14 @@ final class CompletionHooksTests: XCTestCase, @unchecked Sendable {
             let home = try directory(), file = source.configuration(home: home)
             let ours = { HookCommand.make(executable: $0, arguments: "--completion-hook \(source.rawValue)") }
             for old in left {
-                try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try JSONEncoder().encode(ProviderJSON.object(try source.format.updating([:], command: ours(old)))).write(to: file)
-                try CompletionHooks.configure(source, enabled: true, executable: current, home: home)
-                XCTAssertEqual(source.format.commands(in: try ProviderFiles.json(file).objectValue ?? [:]), [ours(current)],
-                               "\(source): the handler left at \(old.path) is replaced")
+                for enabled in [false, true] {
+                    try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try JSONEncoder().encode(ProviderJSON.object(try source.format.updating([:], command: ours(old), keeping: [])))
+                        .write(to: file)
+                    try CompletionHooks.configure(source, enabled: enabled, executable: current, home: home)
+                    XCTAssertEqual(source.format.commands(in: try ProviderFiles.json(file).objectValue ?? [:]), enabled ? [ours(current)] : [],
+                                   "\(source): the handler left at \(old.path) is \(enabled ? "replaced" : "removed")")
+                }
             }
             let installed = try Data(contentsOf: file)
             XCTAssertThrowsError(try CompletionHooks.configure(source, enabled: true, executable: left[1], home: home,

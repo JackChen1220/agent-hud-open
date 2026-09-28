@@ -20,9 +20,11 @@ protocol CompletionHookFormat {
     static func commands(in configuration: [String: ProviderJSON]) -> [String]
     /// Whether an Agent HUD handler is present and active.
     static func isActive(in configuration: [String: ProviderJSON]) -> Bool
-    /// The configuration with Agent HUD's handler set to `command`, or removed when `command` is nil.
-    /// Every other entry is preserved; an unrecognized layout throws instead of being rewritten.
-    static func updating(_ configuration: [String: ProviderJSON], command: String?) throws -> [String: ProviderJSON]
+    /// The configuration with Agent HUD's handler set to `command`, or removed when `command` is nil; handlers whose
+    /// commands are in `keeping` stay where they are. Every other entry is preserved; an unrecognized layout throws
+    /// instead of being rewritten.
+    static func updating(_ configuration: [String: ProviderJSON], command: String?,
+                         keeping: Set<String>) throws -> [String: ProviderJSON]
 }
 
 extension CompletionHookFormat {
@@ -104,9 +106,9 @@ public enum CompletionHooks {
         command?.hasSuffix(" --completion-hook " + source.rawValue) == true
     }
 
-    /// Adds or removes Agent HUD's handler, leaving every other hook in the file alone. Adding replaces a handler whose
-    /// installation is gone and leaves one another installation still answers unless `replacingExisting`
-    /// (`HookCommand.checkInstall`); removing takes out every Agent HUD handler, whichever executable it names.
+    /// Adds or removes Agent HUD's handler, leaving every other hook in the file alone. Either way a handler whose
+    /// installation is gone goes too, and one another installation still answers stays with it (`HookCommand`), which
+    /// makes adding throw unless `replacingExisting` takes it over.
     public static func configure(_ source: Source, enabled: Bool, executable: URL,
                                  home: URL = FileManager.default.homeDirectoryForCurrentUser,
                                  replacingExisting: Bool = false) throws {
@@ -114,13 +116,13 @@ public enum CompletionHooks {
         guard enabled || FileManager.default.fileExists(atPath: source.configuration(home: home).path) else { return }
         let object = try configuration(source, home: home)
         let command = HookCommand.make(executable: executable, arguments: "--completion-hook " + source.rawValue)
+        let others = replacingExisting ? [] : HookCommand.otherInstallations(source.format.commands(in: object), besides: command)
         if enabled {
-            try HookCommand.checkInstall(executable: executable, command: command, existing: source.format.commands(in: object),
-                                         replacingExisting: replacingExisting,
-                                         conflict: L10n.text("完成回调由另一安装管理，关闭再打开客户端回调可改由本安装接管",
-                                                             "Completion hook belongs to another installation; turn Client hooks off and on to take it over"))
+            try HookCommand.checkInstall(executable: executable, others: others,
+                                         conflict: L10n.text("完成回调由另一安装管理，在该安装中关闭客户端回调或手动重新安装后即可切换",
+                                                             "Completion hook belongs to another installation; turn Client hooks off there or reinstall it explicitly to switch"))
         }
-        let updated = try source.format.updating(object, command: enabled ? command : nil)
+        let updated = try source.format.updating(object, command: enabled ? command : nil, keeping: others)
         guard updated != object else { return }
         let url = source.configuration(home: home)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -151,7 +153,11 @@ enum AntigravityHookFormat: CompletionHookFormat {
         !commands(in: configuration).isEmpty && configuration["agent-hud"]?["enabled"].boolValue != false
     }
 
-    static func updating(_ configuration: [String: ProviderJSON], command: String?) throws -> [String: ProviderJSON] {
+    /// The entry holds one installation's handler: adding replaces it, and removing leaves one another installation
+    /// still answers as it is.
+    static func updating(_ configuration: [String: ProviderJSON], command: String?,
+                         keeping: Set<String>) throws -> [String: ProviderJSON] {
+        if command == nil, commands(in: configuration).contains(where: keeping.contains) { return configuration }
         var object = configuration
         object["agent-hud"] = command.map { .object(["Stop": .array([.object([
             "type": .string("command"), "command": .string($0), "timeout": .integer(5)
@@ -177,13 +183,14 @@ enum CursorHookFormat: CompletionHookFormat {
         (configuration["hooks"]?["stop"].arrayValue ?? []).filter(owns).map { $0["command"].stringValue ?? "" }
     }
 
-    static func updating(_ configuration: [String: ProviderJSON], command: String?) throws -> [String: ProviderJSON] {
+    static func updating(_ configuration: [String: ProviderJSON], command: String?,
+                         keeping: Set<String>) throws -> [String: ProviderJSON] {
         var object = configuration
         guard object["version"] == nil || object["version"] == .integer(1),
               object["hooks"] == nil || object["hooks"]?.objectValue != nil else { throw ProviderFailure.format }
         var hooks = object["hooks"]?.objectValue ?? [:]
         guard hooks["stop"] == nil || hooks["stop"]?.arrayValue != nil else { throw ProviderFailure.format }
-        var handlers = (hooks["stop"]?.arrayValue ?? []).filter { !owns($0) }
+        var handlers = (hooks["stop"]?.arrayValue ?? []).filter { !owns($0) || keeping.contains($0["command"].stringValue ?? "") }
         if let command { handlers.append(.object(["command": .string(command), "timeout": .integer(5)])) }
         hooks["stop"] = handlers.isEmpty ? nil : .array(handlers)
         object["hooks"] = .object(hooks); object["version"] = .integer(1)

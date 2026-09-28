@@ -8,16 +8,20 @@ enum ClaudeStyleHooks {
             .compactMap { $0["command"].stringValue }.filter { CompletionHooks.ownsCommand($0, source: source) }
     }
 
-    /// `timeout` is in the client's own unit: seconds for Claude Code's forks, milliseconds for Qwen Code.
+    /// `timeout` is in the client's own unit: seconds for Claude Code's forks, milliseconds for Qwen Code. Handlers whose
+    /// commands are in `keeping` stay where they are.
     static func updating(_ configuration: [String: ProviderJSON], event: String, source: CompletionHooks.Source,
-                         command: String?, timeout: Int = 5) throws -> [String: ProviderJSON] {
+                         command: String?, keeping: Set<String>, timeout: Int = 5) throws -> [String: ProviderJSON] {
         var object = configuration
         guard object["hooks"] == nil || object["hooks"]?.objectValue != nil else { throw ProviderFailure.format }
         var hooks = object["hooks"]?.objectValue ?? [:]
         guard hooks[event] == nil || hooks[event]?.arrayValue != nil else { throw ProviderFailure.format }
         var groups = (hooks[event]?.arrayValue ?? []).compactMap { group -> ProviderJSON? in
             guard var fields = group.objectValue, let handlers = fields["hooks"]?.arrayValue else { return group }
-            let kept = handlers.filter { !CompletionHooks.ownsCommand($0["command"].stringValue, source: source) }
+            let kept = handlers.filter {
+                let handler = $0["command"].stringValue
+                return !CompletionHooks.ownsCommand(handler, source: source) || keeping.contains(handler ?? "")
+            }
             if kept.count == handlers.count { return group }
             if kept.isEmpty { return nil }
             fields["hooks"] = .array(kept)
