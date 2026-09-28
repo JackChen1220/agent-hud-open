@@ -76,7 +76,10 @@ Antigravity, Cursor, GitHub Copilot CLI, CodeBuddy and Qwen Code do not record f
 | Qwen Code | Group appended to `hooks.Stop` of `settings.json` in `$QWEN_HOME` (default `~/.qwen`), timeout 5000 ms; only commands ending in ` --completion-hook qwen` are Agent HUD's | `hook_event_name` is `Stop` and `session_id` is present; the turn is `prompt_id` (0.23.4 and later), else the callback time. A cancelled or failed turn runs no `Stop` |
 
 - The handler command is `'<executable path>' --completion-hook <source>` with a 5-second timeout, written in the client's own unit. Other hooks in the file are preserved, and a file that already contains the identical configuration is not rewritten.
-- Automatic setup never replaces a handler that points at a different executable: the existing installation keeps the hook and the conflict is logged. Moving or reinstalling the application does not update the path; `--install-completion-hook <source>` takes ownership explicitly ([command line](command-line.md#adapter-commands)). Installing a hook never starts, restarts or interrupts the client and consumes no quota. With Settings → General → Client hooks off, start-up installs none and removes this installation's handlers.
+- A handler whose installation is gone is replaced: its executable no longer exists, or lies under App Translocation or `/Volumes`, where an app runs when it is first opened from Downloads or from its disk image. Moving the application to its final place therefore moves its hooks at the next start.
+- A handler another installation still answers is never replaced by automatic setup: that installation keeps the hook and the conflict is logged. `--install-completion-hook <source>` takes it over explicitly ([command line](command-line.md#adapter-commands)), and so does switching Client hooks off and on again.
+- An application running from under App Translocation or `/Volumes` installs no hook and logs why. Installing a hook never starts, restarts or interrupts the client and consumes no quota.
+- With Settings → General → Client hooks off, start-up installs none and removes every Agent HUD handler, whichever installation wrote it.
 - The handler reads the payload from standard input and writes one JSON record per completion to `turn-completions/<source>/<id>.json` in the data directory: id, `sessionID` (`<source>:<conversation id>`), vendor, task (vendor plus workspace folder name), model when the payload names one, and receipt time. No prompt, tool argument, credential or e-mail address is stored.
 - An existing record for the same id is left untouched, so repeated callbacks create no duplicates; records older than 30 days are deleted on the next write.
 - The handler prints `{"decision":"stop"}` for Antigravity and `{}` for the other clients and exits 0 even when recording fails, so status tracking can never block the agent.
@@ -89,7 +92,7 @@ Antigravity, Cursor, GitHub Copilot CLI, CodeBuddy and Qwen Code do not record f
 | Turn, completion and session models | `Sources/AgentHUDCore/Models/SessionTurn.swift`, `SessionCompletion.swift`, `LiveSession.swift` |
 | Live status preference and desktop liveness | `Sources/AgentHUDCore/Models/Settings.swift`, `Sources/AgentHUDCore/Store/UsageStore.swift` |
 | Completion reminders | `Sources/AgentHUDCore/Logic/IslandEvents.swift`, `Sources/AgentHUDDesktop/App/DesktopApplication.swift` |
-| Adapter setup | `Sources/AgentHUDCore/Providers/SessionObservers.swift` |
+| Adapter setup, and which installation a handler belongs to | `Sources/AgentHUDCore/Providers/SessionObservers.swift`, `Shared/HookCommand.swift` |
 | Completion hooks and handler entry | `Sources/AgentHUDCore/Providers/Additional/CompletionHooks.swift`, `Sources/AgentHUDOpenApp/main.swift` |
 | Pi observer and its extension script | `Sources/AgentHUDCore/Providers/OpenAgents/PiSessionObserver.swift` |
 | Per-client turn parsing | `Sources/AgentHUDCore/Providers/Claude/ClaudeTranscripts.swift`, `Codex/CodexTranscripts.swift`, `DeepSeek/DeepSeekTranscript.swift`, `Grok/GrokSessions.swift`, `OpenAgents/OpenAgentSessions.swift` |

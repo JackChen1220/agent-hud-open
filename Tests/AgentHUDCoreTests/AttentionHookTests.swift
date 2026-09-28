@@ -85,13 +85,44 @@ final class AttentionHookTests: XCTestCase, @unchecked Sendable {
         XCTAssertFalse(AttentionHooks.isActive(.claude, home: home))
         let removed = try XCTUnwrap(try ProviderJSON.read(Data(contentsOf: settings)).objectValue)
         XCTAssertEqual((removed["hooks"]?["Notification"].arrayValue ?? []).count, 1, "the other handler stays")
+    }
 
-        // A handler from another installation is left alone unless the caller says to replace it.
-        try JSONSerialization.data(withJSONObject: ["hooks": ["Notification": [["hooks": [["type": "command",
-            "command": "'/Volumes/Other/Agent HUD' --attention-hook claude"]]]]]]).write(to: settings)
+    func testAHandlerNothingAnswersIsReplacedAndAnotherInstallationKeepsItsOwn() throws {
+        let home = try directory(), apps = try directory()
+        let settings = home.appendingPathComponent(".claude/settings.json")
+        try FileManager.default.createDirectory(at: settings.deletingLastPathComponent(), withIntermediateDirectories: true)
+        func app(_ name: String) throws -> URL {
+            let url = apps.appendingPathComponent("\(name).app/Contents/MacOS/\(name)")
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data().write(to: url)
+            return url
+        }
+        func handler(_ executable: String) throws {
+            try JSONSerialization.data(withJSONObject: ["hooks": ["Notification": [["hooks": [["type": "command",
+                "command": "'\(executable)' --attention-hook claude"]]]]]]).write(to: settings)
+        }
+        let executable = try app("Agent HUD"), other = try app("Agent HUD Open")
+        // The disk image the app was first opened from, and an app since deleted.
+        for left in ["/Volumes/Agent HUD/Agent HUD.app/Contents/MacOS/Agent HUD", apps.path + "/Gone.app/Contents/MacOS/Gone"] {
+            try handler(left)
+            try AttentionHooks.configure(.claude, enabled: true, executable: executable, home: home)
+            XCTAssertEqual(AttentionHooks.commands(in: try AttentionHooks.configuration(.claude, home: home), source: .claude),
+                           ["'\(executable.path)' --attention-hook claude"], "the handler left at \(left) is replaced")
+        }
+
+        // A handler from another installation that is still here is left alone unless the caller says to replace it,
+        // and switching hooks off removes it all the same.
+        try handler(other.path)
         XCTAssertThrowsError(try AttentionHooks.configure(.claude, enabled: true, executable: executable, home: home))
         try AttentionHooks.configure(.claude, enabled: true, executable: executable, home: home, replacingExisting: true)
         XCTAssertTrue(AttentionHooks.isActive(.claude, home: home))
+        try handler(other.path)
+        try AttentionHooks.configure(.claude, enabled: false, executable: executable, home: home)
+        XCTAssertFalse(AttentionHooks.isActive(.claude, home: home))
+
+        XCTAssertThrowsError(try AttentionHooks.configure(.claude, enabled: true,
+            executable: URL(fileURLWithPath: "/Volumes/Agent HUD/Agent HUD.app/Contents/MacOS/Agent HUD"), home: home))
+        XCTAssertFalse(AttentionHooks.isActive(.claude, home: home), "an app running from its disk image adds nothing")
     }
 
     func testAHomeWithoutTheClientIsLeftAlone() throws {

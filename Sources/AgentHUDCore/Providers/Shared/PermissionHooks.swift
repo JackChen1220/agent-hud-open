@@ -160,18 +160,21 @@ public enum PermissionHooks {
     }
 
     /// Adds or removes Agent HUD's handler, leaving every other hook in the file alone. An unrecognized layout throws
-    /// rather than being rewritten.
+    /// rather than being rewritten. Adding replaces a handler whose installation is gone and leaves one another
+    /// installation still answers (`HookCommand.checkInstall`); removing takes out every Agent HUD handler, whichever
+    /// executable it names.
     public static func configure(_ source: Source, enabled: Bool, executable: URL,
                                  home: URL = FileManager.default.homeDirectoryForCurrentUser,
                                  replacingExisting: Bool = false) throws {
         // Taking a handler out never leaves behind a file the client did not have.
         guard enabled || FileManager.default.fileExists(atPath: source.configuration(home: home).path) else { return }
         let object = try configuration(source, home: home)
-        let quoted = "'" + executable.path.replacingOccurrences(of: "'", with: "'\\''") + "'"
-        let command = quoted + " --permission-hook " + source.rawValue
-        if !replacingExisting && commands(in: object, source: source).contains(where: { $0 != command }) {
-            throw UsageProviderError(L10n.text("批准回调由另一安装管理，请手动重新安装以切换",
-                                               "The permission hook belongs to another installation; reinstall it explicitly to switch"))
+        let command = HookCommand.make(executable: executable, arguments: "--permission-hook " + source.rawValue)
+        if enabled {
+            try HookCommand.checkInstall(executable: executable, command: command, existing: commands(in: object, source: source),
+                                         replacingExisting: replacingExisting,
+                                         conflict: L10n.text("批准回调由另一安装管理，关闭再打开客户端回调可改由本安装接管",
+                                                             "The permission hook belongs to another installation; turn Client hooks off and on to take it over"))
         }
         let updated = try updating(object, source: source, command: enabled ? command : nil)
         guard updated != object else { return }

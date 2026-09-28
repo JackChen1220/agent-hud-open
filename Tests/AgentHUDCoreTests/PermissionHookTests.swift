@@ -22,6 +22,14 @@ final class PermissionHookTests: XCTestCase, @unchecked Sendable {
          "tool_name": tool, "tool_input": input]
     }
 
+    /// A file standing in for an installed app's executable: one that exists is an installation still here.
+    private func app(_ name: String, in folder: URL) throws -> URL {
+        let url = folder.appendingPathComponent("\(name).app/Contents/MacOS/\(name)")
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: url)
+        return url
+    }
+
     func testTheHookIsInstalledBesideWhateverElseTheSettingsHold() throws {
         let home = try directory()
         let settings = home.appendingPathComponent(".claude/settings.json")
@@ -95,7 +103,7 @@ final class PermissionHookTests: XCTestCase, @unchecked Sendable {
             "PermissionRequest": [["matcher": "Bash", "hooks": [["type": "command", "command": "echo check"]]]],
         ]]
         try JSONSerialization.data(withJSONObject: original).write(to: hooks)
-        let executable = URL(fileURLWithPath: "/Applications/Agent HUD.app/Contents/MacOS/Agent HUD")
+        let executable = try app("Agent HUD", in: try directory())
         try PermissionHooks.configure(.codex, enabled: true, executable: executable, home: home)
         let installed = try Data(contentsOf: hooks)
         try PermissionHooks.configure(.codex, enabled: true, executable: executable, home: home)
@@ -113,6 +121,42 @@ final class PermissionHookTests: XCTestCase, @unchecked Sendable {
         try PermissionHooks.configure(.codex, enabled: false, executable: executable, home: home)
         XCTAssertEqual(try ProviderJSON.read(Data(contentsOf: hooks)),
                        try ProviderJSON.read(JSONSerialization.data(withJSONObject: original)), "other hooks are preserved")
+    }
+
+    func testAHandlerNothingAnswersIsReplacedInEveryClientsFormat() throws {
+        let apps = try directory()
+        let current = try app("Agent HUD", in: apps.appendingPathComponent("Applications"))
+        // The quote in its name is written escaped, and read back to find the app still there.
+        let other = try app("Agent's HUD", in: apps.appendingPathComponent("Applications"))
+        // Where an app ran before it was moved: a translocated copy still mounted, its disk image, a deleted app.
+        let left = [try app("Agent HUD", in: apps.appendingPathComponent("AppTranslocation/5D1C/d")),
+                    URL(fileURLWithPath: "/Volumes/Agent HUD/Agent HUD.app/Contents/MacOS/Agent HUD"),
+                    apps.appendingPathComponent("Trash/Agent HUD.app/Contents/MacOS/Agent HUD")]
+        for source in PermissionHooks.Source.allCases {
+            let home = try directory(), file = source.configuration(home: home)
+            let ours = { HookCommand.make(executable: $0, arguments: "--permission-hook \(source.rawValue)") }
+            let installed = { PermissionHooks.commands(in: try PermissionHooks.configuration(source, home: home), source: source) }
+            for old in left {
+                try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try JSONEncoder().encode(ProviderJSON.object(try PermissionHooks.updating([:], source: source, command: ours(old))))
+                    .write(to: file)
+                try PermissionHooks.configure(source, enabled: true, executable: current, home: home)
+                XCTAssertEqual(try installed(), [ours(current)], "\(source): the handler left at \(old.path) is replaced")
+            }
+
+            try PermissionHooks.configure(source, enabled: true, executable: other, home: home, replacingExisting: true)
+            let taken = try Data(contentsOf: file)
+            XCTAssertThrowsError(try PermissionHooks.configure(source, enabled: true, executable: current, home: home))
+            XCTAssertEqual(try Data(contentsOf: file), taken, "\(source): an installation that is still here keeps its handler")
+            try PermissionHooks.configure(source, enabled: false, executable: current, home: home)
+            XCTAssertEqual(try installed(), [], "\(source): switching hooks off removes it all the same")
+
+            for running in ["/Volumes/Agent HUD/Agent HUD.app/Contents/MacOS/Agent HUD", left[0].path] {
+                XCTAssertThrowsError(try PermissionHooks.configure(source, enabled: true, executable: URL(fileURLWithPath: running),
+                                                                   home: home), "\(source): an app running from \(running) adds nothing")
+                XCTAssertEqual(try installed(), [])
+            }
+        }
     }
 
     func testCodexHomeUsesTheSameResolverAsItsUsageProvider() throws {

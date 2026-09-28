@@ -13,6 +13,13 @@ final class CompletionHooksTests: XCTestCase, @unchecked Sendable {
     private func json(_ value: [String: Any]) throws -> ProviderJSON {
         try .read(JSONSerialization.data(withJSONObject: value))
     }
+    /// A file standing in for an installed app's executable: one that exists is an installation still here.
+    private func app(_ name: String, in folder: URL) throws -> URL {
+        let url = folder.appendingPathComponent("\(name).app/Contents/MacOS/\(name)")
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: url)
+        return url
+    }
 
     func testGrokNamespacedCompletionSurvivesUsageLogPrecedence() async throws {
         let root = try directory(), session = root.appendingPathComponent("sessions/%2Ffixture/s")
@@ -109,17 +116,41 @@ final class CompletionHooksTests: XCTestCase, @unchecked Sendable {
 
     func testAutomaticInstallationDoesNotTakeOverAnotherHost() throws {
         let home = try directory()
-        let first = home.appendingPathComponent("Agent HUD"), second = home.appendingPathComponent("Agent HUD Open")
+        let first = try app("Agent HUD", in: home), second = try app("Agent HUD Open", in: home)
         for source in CompletionHooks.Source.allCases {
             try CompletionHooks.configure(source, enabled: true, executable: first, home: home)
             let file = source.configuration(home: home)
             let original = try Data(contentsOf: file)
-            for enabled in [true, false] {
-                XCTAssertThrowsError(try CompletionHooks.configure(source, enabled: enabled, executable: second, home: home))
-                XCTAssertEqual(try Data(contentsOf: file), original)
-            }
+            XCTAssertThrowsError(try CompletionHooks.configure(source, enabled: true, executable: second, home: home))
+            XCTAssertEqual(try Data(contentsOf: file), original)
             try CompletionHooks.configure(source, enabled: true, executable: second, home: home, replacingExisting: true)
             XCTAssertTrue(try String(contentsOf: file, encoding: .utf8).contains(second.path))
+            try CompletionHooks.configure(source, enabled: false, executable: first, home: home)
+            XCTAssertFalse(CompletionHooks.isInstalled(source, home: home), "switching hooks off removes it whoever installed it")
+        }
+    }
+
+    func testAHandlerLeftWhereTheAppNoLongerRunsIsReplaced() throws {
+        let apps = try directory()
+        let current = try app("Agent HUD", in: apps.appendingPathComponent("Applications"))
+        // A translocated copy still mounted, the disk image the app came on, and an app since deleted.
+        let left = [try app("Agent HUD", in: apps.appendingPathComponent("AppTranslocation/5D1C/d")),
+                    URL(fileURLWithPath: "/Volumes/Agent HUD/Agent HUD.app/Contents/MacOS/Agent HUD"),
+                    apps.appendingPathComponent("Trash/Agent HUD.app/Contents/MacOS/Agent HUD")]
+        for source in CompletionHooks.Source.allCases {
+            let home = try directory(), file = source.configuration(home: home)
+            let ours = { HookCommand.make(executable: $0, arguments: "--completion-hook \(source.rawValue)") }
+            for old in left {
+                try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try JSONEncoder().encode(ProviderJSON.object(try source.format.updating([:], command: ours(old)))).write(to: file)
+                try CompletionHooks.configure(source, enabled: true, executable: current, home: home)
+                XCTAssertEqual(source.format.commands(in: try ProviderFiles.json(file).objectValue ?? [:]), [ours(current)],
+                               "\(source): the handler left at \(old.path) is replaced")
+            }
+            let installed = try Data(contentsOf: file)
+            XCTAssertThrowsError(try CompletionHooks.configure(source, enabled: true, executable: left[1], home: home,
+                                                               replacingExisting: true))
+            XCTAssertEqual(try Data(contentsOf: file), installed, "\(source): an app running from its disk image adds nothing")
         }
     }
 

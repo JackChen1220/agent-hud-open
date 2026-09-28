@@ -104,16 +104,21 @@ public enum CompletionHooks {
         command?.hasSuffix(" --completion-hook " + source.rawValue) == true
     }
 
+    /// Adds or removes Agent HUD's handler, leaving every other hook in the file alone. Adding replaces a handler whose
+    /// installation is gone and leaves one another installation still answers unless `replacingExisting`
+    /// (`HookCommand.checkInstall`); removing takes out every Agent HUD handler, whichever executable it names.
     public static func configure(_ source: Source, enabled: Bool, executable: URL,
                                  home: URL = FileManager.default.homeDirectoryForCurrentUser,
                                  replacingExisting: Bool = false) throws {
         // Taking a handler out never leaves behind a file the client did not have.
         guard enabled || FileManager.default.fileExists(atPath: source.configuration(home: home).path) else { return }
         let object = try configuration(source, home: home)
-        let quoted = "'" + executable.path.replacingOccurrences(of: "'", with: "'\\''") + "'"
-        let command = quoted + " --completion-hook " + source.rawValue
-        if !replacingExisting && source.format.commands(in: object).contains(where: { $0 != command }) {
-            throw UsageProviderError(L10n.text("完成回调由另一安装管理，请手动重新安装以切换", "Completion hook belongs to another installation; reinstall it explicitly to switch"))
+        let command = HookCommand.make(executable: executable, arguments: "--completion-hook " + source.rawValue)
+        if enabled {
+            try HookCommand.checkInstall(executable: executable, command: command, existing: source.format.commands(in: object),
+                                         replacingExisting: replacingExisting,
+                                         conflict: L10n.text("完成回调由另一安装管理，关闭再打开客户端回调可改由本安装接管",
+                                                             "Completion hook belongs to another installation; turn Client hooks off and on to take it over"))
         }
         let updated = try source.format.updating(object, command: enabled ? command : nil)
         guard updated != object else { return }
