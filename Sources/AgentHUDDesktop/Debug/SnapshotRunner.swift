@@ -48,16 +48,18 @@ public enum SnapshotRunner {
         for (name, request) in [
             ("bash", PermissionRequest(id: "snapshot-bash", source: .claude, sessionID: "snapshot", toolName: "Bash",
                                        summary: L10n.text("删除构建产物", "Remove the build output"),
-                                       detail: "rm -rf .build/release", cwd: "/Users/me/agent-hud", at: Date())),
+                                       detail: "rm -rf dist", cwd: "/Users/me/Projects/acme-web", at: Date())),
             ("edit", PermissionRequest(id: "snapshot-edit", source: .claude, sessionID: "snapshot", toolName: "Edit",
-                                       summary: "PermissionRequests.swift", detail: nil,
-                                       cwd: "/Users/me/agent-hud-open", at: Date())),
+                                       summary: "Avatar.tsx", detail: "/Users/me/Projects/acme-web/src/components/Avatar.tsx",
+                                       cwd: "/Users/me/Projects/acme-web", path: "/Users/me/Projects/acme-web/src/components/Avatar.tsx",
+                                       removed: "  const initials = user.name.slice(0, 2)",
+                                       added: "  const initials = user?.name?.slice(0, 2) ?? '?'", at: Date())),
             ("question", snapshotQuestion()),
             ("plan", PermissionRequest(id: "snapshot-plan", source: .claude, sessionID: "snapshot", toolName: "ExitPlanMode",
-                                       summary: L10n.text("在岛上回答 Claude 的提问", "Answer Claude's questions on the island"),
-                                       detail: L10n.text("## 在岛上回答 Claude 的提问\n\n1. 解析问题和选项\n2. 逐题作答，最后一起提交\n3. 在 Claude 里答完时撤下卡片",
-                                                         "## Answer Claude's questions on the island\n\n1. Read the questions and their options\n2. Answer one at a time, send them together\n3. Take the card down when Claude answers first"),
-                                       cwd: "/Users/me/agent-hud-open", at: Date())),
+                                       summary: L10n.text("为登录接口加上限流", "Add rate limiting to the login endpoint"),
+                                       detail: L10n.text("## 为登录接口加上限流\n\n1. 按账号和地址统计尝试次数\n2. 超出上限时返回 429 和 Retry-After\n3. 在接口测试里覆盖这两种情况",
+                                                         "## Add rate limiting to the login endpoint\n\n1. Count attempts per account and address\n2. Answer 429 with Retry-After past the limit\n3. Cover both in the API tests"),
+                                       cwd: "/Users/me/Projects/acme-api", at: Date())),
         ] {
             let alert = IslandAlert.permission(request)
             save("alert-permission-\(name)-compact", IslandScene(store: store, settings: settings, open: false, light: false, alert: alert), folder: folder, scheme: .dark)
@@ -388,7 +390,7 @@ public enum SnapshotRunner {
                                          .init(label: L10n.text("单据页", "Documents page"))], multiSelect: true),
         ]
         let request = PermissionRequest(id: "snapshot-question", source: .claude, sessionID: "snapshot", toolName: "AskUserQuestion",
-                                        summary: questions[0].question, detail: nil, cwd: "/Users/me/agent-hud-web",
+                                        summary: questions[0].question, detail: nil, cwd: "/Users/me/Projects/acme-web",
                                         questions: questions, at: Date())
         QuestionDraft.draft(for: request.id).pick(0, of: 0, in: questions[0])
         return request

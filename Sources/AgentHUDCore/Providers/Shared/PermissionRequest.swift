@@ -373,9 +373,9 @@ public extension PermissionRequest {
         [
             PermissionRequest(
                 id: "demo-edit", source: .claude, sessionID: "demo-1", toolName: "Edit",
-                summary: "Pricing.jsx", detail: nil, cwd: "~/Development/agent-hud-web",
-                path: "~/Development/agent-hud-web/src/Pricing.jsx",
-                removed: "  { name: 'Pro', price: 20 },", added: "  { name: 'Pro', price: 24 },",
+                summary: "Avatar.tsx", detail: "~/Projects/acme-web/src/components/Avatar.tsx", cwd: "~/Projects/acme-web",
+                path: "~/Projects/acme-web/src/components/Avatar.tsx",
+                removed: "  const initials = user.name.slice(0, 2)", added: "  const initials = user?.name?.slice(0, 2) ?? '?'",
                 suggestions: [.object([
                     "type": .string("addRules"), "behavior": .string("allow"),
                     "destination": .string("localSettings"),
@@ -384,16 +384,17 @@ public extension PermissionRequest {
                 at: now.addingTimeInterval(-38)),
             PermissionRequest(
                 id: "demo-build", source: .codex, sessionID: "demo-2", toolName: "Bash",
-                summary: L10n.text("打包鸿蒙版本", "Package the HarmonyOS build"), detail: "hvigorw assembleHap",
-                cwd: "~/Development/agent-hud-harmony", at: now.addingTimeInterval(-124)),
+                summary: L10n.text("构建生产版本", "Build for production"), detail: "npm run build",
+                cwd: "~/Projects/acme-api", at: now.addingTimeInterval(-124)),
             PermissionRequest(
-                id: "demo-ticket", source: .claude, vendor: "Pi", sessionID: "demo-3",
-                toolName: "mcp__linear__create_issue", summary: "linear · create_issue", detail: nil,
-                cwd: "~/Development/agent-hud-ios", at: now.addingTimeInterval(-71)),
+                id: "demo-ticket", source: .codebuddy, sessionID: "demo-3",
+                toolName: "mcp__linear__create_issue", summary: "linear · create_issue",
+                detail: "team: Mobile\ntitle: Settings screen crashes when offline",
+                cwd: "~/Projects/acme-mobile", at: now.addingTimeInterval(-71)),
             PermissionRequest(
                 id: "demo-read", source: .claude, sessionID: "demo-4", toolName: "Read",
-                summary: ".env.production", detail: nil, cwd: "~/Development/agent-hud-web",
-                path: "~/Development/agent-hud-web/.env.production", at: now.addingTimeInterval(-9)),
+                summary: "tsconfig.base.json", detail: "~/Projects/acme-shared/tsconfig.base.json", cwd: "~/Projects/acme-web",
+                path: "~/Projects/acme-shared/tsconfig.base.json", at: now.addingTimeInterval(-9)),
         ]
     }
 }

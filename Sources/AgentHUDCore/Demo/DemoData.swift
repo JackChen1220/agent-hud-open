@@ -105,9 +105,9 @@ public enum DemoData {
             LiveSession(id: "s1", agentId: "claude-opus", task: "fix auth bug in middleware", terminal: "api-gateway",
                         startedAt: now.addingTimeInterval(-27 * 60), pctOfWindow: 6.2, tokensIn: s1.tokensIn, tokensOut: s1.tokensOut,
                         cacheReadTokens: s1.cacheReadTokens, observedAt: now, workingDirectory: home + "/work/api-gateway"),
-            LiveSession(id: "s2", agentId: "codex", task: "backend server endpoints", terminal: "hud-ios",
+            LiveSession(id: "s2", agentId: "codex", task: "backend server endpoints", terminal: "billing-service",
                         startedAt: now.addingTimeInterval(-64 * 60), pctOfWindow: 3.8, tokensIn: s2.tokensIn, tokensOut: s2.tokensOut,
-                        cacheReadTokens: s2.cacheReadTokens, observedAt: now, workingDirectory: home + "/work/hud-ios"),
+                        cacheReadTokens: s2.cacheReadTokens, observedAt: now, workingDirectory: home + "/work/billing-service"),
             LiveSession(id: "s3", agentId: "claude-sonnet", task: "optimize db queries", terminal: "etl",
                         startedAt: now.addingTimeInterval(-140 * 60), endedAt: now.addingTimeInterval(-51 * 60),
                         pctOfWindow: 2.1, tokensIn: s3.tokensIn, tokensOut: s3.tokensOut, cacheReadTokens: s3.cacheReadTokens,
@@ -281,7 +281,7 @@ public enum DemoData {
     }
 
     public static func insights(now: Date, calendar: Calendar = .current) -> UsageInsights {
-        // "周二 16:10" of the current week.
+        // Tuesday 16:10 of the current week.
         var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
         components.weekday = 3
         components.hour = 16
