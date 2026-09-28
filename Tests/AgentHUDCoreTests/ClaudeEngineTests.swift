@@ -160,4 +160,18 @@ final class ISO8601FastTests: XCTestCase {
         XCTAssertEqual(ISO8601Fast.daysFromCivil(year: 1970, month: 1, day: 1), 0)
         XCTAssertEqual(ISO8601Fast.daysFromCivil(year: 2000, month: 3, day: 1), 11017)
     }
+
+    func testProviderTimesAreTheOnesTheFormatterReads() {
+        let fractional = ISO8601DateFormatter(), whole = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        whole.formatOptions = [.withInternetDateTime]
+        let usual = ["2026-09-07T05:41:44.123Z", "2026-09-07T05:41:44.1239Z", "2026-09-07T10:20:00.182540+00:00", "2026-09-07T05:41:44Z",
+                     "2024-02-29T23:59:59.9+05:30", "1970-01-01T00:30:00+01:00", "9999-12-31T23:59:59.999-18:59"]
+        let loose = ["2026-09-07T05:41:44+0800", "2026-09-07T05:41:44z", "2026-02-30T05:41:44Z", "2026-09-07T24:00:00Z",
+                     "2026-09-07T05:41:44Z junk", "1969-12-31T23:59:59Z", "2026-09-07 05:41:44Z", "nonsense"]
+        for sample in usual + loose {
+            XCTAssertEqual(ISO8601Fast.internetMilliseconds(sample) != nil, usual.contains(sample), sample)
+            XCTAssertEqual(ProviderDate.iso(sample), fractional.date(from: sample) ?? whole.date(from: sample), sample)
+        }
+    }
 }

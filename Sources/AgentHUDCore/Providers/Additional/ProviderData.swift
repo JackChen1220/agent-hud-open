@@ -163,13 +163,12 @@ extension JSONValue {
 }
 
 enum ProviderDate {
+    /// An internet date-time, read as `ISO8601DateFormatter` reads it with or without fractional seconds. The usual
+    /// shape is parsed by hand; other text goes to the formatters, which cost far more to create than to use.
     static func iso(_ text: String?) -> Date? {
         guard let text else { return nil }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let value = formatter.date(from: text) { return value }
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: text)
+        if let milliseconds = ISO8601Fast.internetMilliseconds(text) { return RecordCoding.date(milliseconds) }
+        return Formatters.shared.date(text)
     }
     static func milliseconds(_ value: ProviderJSON) -> Date? {
         let number = value.numberValue ?? value.stringValue.flatMap(Double.init)
@@ -179,6 +178,20 @@ enum ProviderDate {
     static func period(start: Date?, end: Date?) -> TimeInterval? {
         guard let start, let end, end > start else { return nil }
         return end.timeIntervalSince(start)
+    }
+
+    /// Formatters are not Sendable, so every reader shares one pair under a lock.
+    private final class Formatters: @unchecked Sendable {
+        static let shared = Formatters()
+        private let lock = NSLock()
+        private let fractional = ISO8601DateFormatter(), whole = ISO8601DateFormatter()
+
+        private init() {
+            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            whole.formatOptions = [.withInternetDateTime]
+        }
+
+        func date(_ text: String) -> Date? { lock.withLock { fractional.date(from: text) ?? whole.date(from: text) } }
     }
 }
 

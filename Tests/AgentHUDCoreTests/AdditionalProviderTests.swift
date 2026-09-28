@@ -312,6 +312,29 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(kinds, [0])
     }
 
+    func testLinesWithoutAMarkerAreNumberedButNotDecoded() throws {
+        let url = try file("session.jsonl", "{\"kind\":0}\nnot json\n\n{\"kind\":1,\"usage\":{}}\n{\"usage\":{},\"kind\":2}")
+        var read: [Int: Int] = [:]
+        try ProviderFiles.lines(url, markers: [Data(#""usage""#.utf8)]) { value, line in read[line] = value["kind"].countValue }
+        XCTAssertEqual(read, [4: 1, 5: 2], "skipped and empty lines keep their numbers")
+    }
+
+    func testGrokReadsEveryModelMessageAndSkipsOtherLogLines() throws {
+        let url = try file("unified.jsonl", """
+        {"pid":1,"sid":"a","msg":"backend_search: model switch","ctx":{"new_model":"search-model"}}
+        {"pid":1,"sid":"b","msg":"model changed","ctx":{"model":"changed-model"}}
+        {"pid":1,"sid":"c","msg":"model catalog: notifying clients","ctx":{"current_model_id":"catalog-model"}}
+        {"pid":1,"sid":"a","msg":"render frame","ctx":{"detail":"never decoded
+        {"pid":1,"sid":"a","ts":"2026-09-07T16:53:20.100Z","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1,"completion_tokens":2}}
+        {"pid":1,"sid":"b","ts":"2026-09-07T16:53:21.200Z","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":3,"completion_tokens":4}}
+        {"pid":1,"sid":"c","ts":"2026-09-07T16:53:22.300Z","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":5,"completion_tokens":6}}
+
+        """)
+        let sessions = try GrokSessions.read(url).sessions
+        XCTAssertEqual(sessions.map(\.id), ["grok:a", "grok:b", "grok:c"])
+        XCTAssertEqual(sessions.flatMap(\.events).map(\.model), ["search-model", "changed-model", "catalog-model"])
+    }
+
     func testAdditionalProviderCachesQuotaAndStillReportsLocalUsageWhenSignedOut() async throws {
         let now = now, history = QuotaHistoryStore()
         let provider = AdditionalUsageProvider(source: .grok, readQuota: { ProviderQuota(windows: [.init(id: "grok", label: "Credits", remaining: 80)]) },

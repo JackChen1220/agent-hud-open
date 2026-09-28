@@ -114,11 +114,15 @@ enum GrokSessions: LocalSessionLayout {
             ? L10n.text("部分 Grok 旧会话只有上下文计数，无法还原实际 Token 消耗", "Some older Grok sessions only report context size, not token consumption") : nil)
     }
 
+    /// The messages the inference log is read for, as quoted strings; the rest of the log is not decoded.
+    private static let unifiedMessages = ["AuthManager::new", "model changed", "model catalog: notifying clients", "backend_search: model switch",
+                                          "shell.turn.inference_done"].map { Data("\"\($0)\"".utf8) }
+
     static func unified(_ url: URL) throws -> ProviderSessions {
         var sessions: [String: ProviderSession] = [:], models: [String: String] = [:], seen = Set<String>()
         var generations: [Int: Int] = [:], processModels: [String: String] = [:], processSessions: [String: Set<String>] = [:]
         var pendingModels: [String: (process: String, model: String)] = [:]
-        try ProviderFiles.lines(url) { json, _ in
+        try ProviderFiles.lines(url, markers: unifiedMessages) { json, _ in
             let pid = json["pid"].countValue
             if json["msg"].stringValue == "AuthManager::new", let pid { generations[pid, default: 0] += 1; return }
             let process = pid.map { "\($0):\(generations[$0, default: 0])" }

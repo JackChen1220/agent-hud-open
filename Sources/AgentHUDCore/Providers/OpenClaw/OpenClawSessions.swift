@@ -82,12 +82,16 @@ enum OpenClawSessions: LocalSessionLayout {
         }
     }
 
+    /// A transcript line counts only as the session header, a model change or a message with usage; prompts and tool
+    /// output, most of a transcript, are not decoded.
+    private static let transcriptMarkers = [#""session""#, #""model_change""#, #""usage""#].map { Data($0.utf8) }
+
     static func transcript(_ url: URL) throws -> ProviderSessions {
         let name = url.lastPathComponent, raw = String(name[..<(name.range(of: ".jsonl")?.lowerBound ?? name.endIndex)])
         let agent = url.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
         var session = ProviderSession(id: "openclaw:\(raw)", title: "OpenClaw · \(agent)", path: url.path, client: "OpenClaw")
         var usage = Usage()
-        try ProviderFiles.lines(url) { entry, line in
+        try ProviderFiles.lines(url, markers: transcriptMarkers) { entry, line in
             if entry["type"].stringValue == "session" {
                 session.workspace = entry["cwd"].stringValue; session.startedAt = ProviderDate.iso(entry["timestamp"].stringValue)
             } else if let event = try usage.event(entry, session: session.id, ordinal: line) { session.events.append(event) }

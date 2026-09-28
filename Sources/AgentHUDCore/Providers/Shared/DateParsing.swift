@@ -63,6 +63,51 @@ public enum ISO8601Fast {
         return Date(timeIntervalSince1970: seconds)
     }
 
+    /// Milliseconds since 1970 of a `YYYY-MM-DDTHH:MM:SS[.f…](Z|±HH:MM)` time, the value `ISO8601DateFormatter` reads
+    /// from it as an internet date-time: only the first three fractional digits count, the rest are dropped. Nil for any
+    /// other text, including the looser shapes and out-of-range fields the formatter still accepts in its own way, and
+    /// for dates before 1970.
+    static func internetMilliseconds(_ text: String) -> Int64? {
+        let bytes = Array(text.utf8)
+        guard bytes.count >= 20,
+              let year = digits(bytes, 0, 4), bytes[4] == UInt8(ascii: "-"),
+              let month = digits(bytes, 5, 2), bytes[7] == UInt8(ascii: "-"),
+              let day = digits(bytes, 8, 2), bytes[10] == UInt8(ascii: "T"),
+              let hour = digits(bytes, 11, 2), bytes[13] == UInt8(ascii: ":"),
+              let minute = digits(bytes, 14, 2), bytes[16] == UInt8(ascii: ":"),
+              let second = digits(bytes, 17, 2) else { return nil }
+        var index = 19, fraction = 0, places = 0
+        if bytes[index] == UInt8(ascii: ".") {
+            index += 1
+            while index < bytes.count, bytes[index] >= 48, bytes[index] <= 57 {
+                if places < 3 { fraction = fraction * 10 + Int(bytes[index] - 48) }
+                places += 1
+                index += 1
+            }
+            guard (1...9).contains(places) else { return nil }
+        }
+        let offsetSeconds: Int
+        if index == bytes.count - 1, bytes[index] == UInt8(ascii: "Z") {
+            offsetSeconds = 0
+        } else if index == bytes.count - 6, bytes[index] == UInt8(ascii: "+") || bytes[index] == UInt8(ascii: "-"),
+                  let offsetHour = digits(bytes, index + 1, 2), bytes[index + 3] == UInt8(ascii: ":"),
+                  let offsetMinute = digits(bytes, index + 4, 2), offsetHour <= 18, offsetMinute < 60 {
+            offsetSeconds = (offsetHour * 3600 + offsetMinute * 60) * (bytes[index] == UInt8(ascii: "+") ? 1 : -1)
+        } else { return nil }
+        guard year >= 1970, (1...12).contains(month), day >= 1, day <= daysInMonth(month, year: year),
+              hour < 24, minute < 60, second < 60 else { return nil }
+        let seconds = daysFromCivil(year: year, month: month, day: day) * 86400 + hour * 3600 + minute * 60 + second - offsetSeconds
+        return Int64(seconds) * 1000 + Int64(places == 1 ? fraction * 100 : places == 2 ? fraction * 10 : fraction)
+    }
+
+    private static func daysInMonth(_ month: Int, year: Int) -> Int {
+        switch month {
+        case 2: year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) ? 29 : 28
+        case 4, 6, 9, 11: 30
+        default: 31
+        }
+    }
+
     private static func digits(_ bytes: [UInt8], _ start: Int, _ count: Int) -> Int? {
         guard start + count <= bytes.count else { return nil }
         var value = 0
