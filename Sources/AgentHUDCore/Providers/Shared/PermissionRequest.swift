@@ -15,7 +15,8 @@ public struct PermissionRequest: Identifiable, Equatable, Sendable {
     public let toolName: String?
     /// The one line worth reading first: what this call does to what.
     public let summary: String
-    /// The full subject of the call — a command, a path, a URL — when it is longer than the summary.
+    /// The full subject of the call — a command, a path, a URL, the tool's own input — which is what an allow lets run,
+    /// so it is there to read even when the summary already says it.
     public let detail: String?
     public let cwd: String?
     /// The file this call is about, when it is about one; the summary names it, this locates it.
@@ -114,12 +115,26 @@ public struct PermissionRequest: Identifiable, Equatable, Sendable {
     /// The offer worth a button of its own: stop asking about calls like this one. Only a rule is taken — an entry
     /// that changes the whole permission mode is a different decision than the one being made here, and one that
     /// quietly does nothing unless the session was started to allow it.
+    /// A rule that cannot be read back is not offered: what it would allow is not something to agree to unseen.
     public var alwaysAllow: JSONValue? {
         guard source.supportsPermissionUpdates else { return nil }
         return suggestions.first {
-            $0["type"].stringValue == "addRules" && $0["behavior"].stringValue == "allow"
-                && ($0["rules"].arrayValue?.isEmpty == false)
+            $0["type"].stringValue == "addRules" && $0["behavior"].stringValue == "allow" && Self.rules($0) != nil
         }
+    }
+
+    /// What always allowing adds, written the way the client's settings hold a rule, such as `Bash(npm test:*)`.
+    public var alwaysAllowRule: String? { alwaysAllow.flatMap(Self.rules) }
+
+    /// The rules a suggestion adds, in the client's own notation and order; nil unless every one names its tool.
+    static func rules(_ suggestion: JSONValue) -> String? {
+        guard let rules = suggestion["rules"].arrayValue, !rules.isEmpty else { return nil }
+        let written = rules.compactMap { rule -> String? in
+            guard let tool = rule["toolName"].stringValue, !tool.isEmpty else { return nil }
+            guard let content = rule["ruleContent"].stringValue, !content.isEmpty else { return tool }
+            return "\(tool)(\(content))"
+        }
+        return written.count == rules.count ? written.joined(separator: ", ") : nil
     }
 
     static let detailLength = 2048
@@ -145,14 +160,17 @@ public struct PermissionRequest: Identifiable, Equatable, Sendable {
         let kind = tool.map(kind)
         let questions = kind == PermissionQuestion.tool ? PermissionQuestion.read(input["questions"]) : []
         guard kind != PermissionQuestion.tool || !questions.isEmpty else { return nil }
-        let file = fileTools.contains(kind ?? "") ? trimmed(input["file_path"]) : nil
-        // A multi-edit is recognized by its first change, the same way a single edit is.
-        let change = kind == "MultiEdit" ? input["edits"].arrayValue?.first ?? .null : input
+        let file = fileTools.contains(kind ?? "") ? filePath(input) : nil
+        // A multi-edit is recognized by its first change, the same way a single edit is. Only a file tool's input is an
+        // edit: another tool's `content` is an argument like any other.
+        let change = kind == "MultiEdit" ? input["edits"].arrayValue?.first ?? .null : file == nil ? .null : input
         return PermissionRequest(
             id: id, source: source, sessionID: source.sessionID(session), toolName: tool,
             summary: questions.first?.question ?? summary(tool: kind, input: input), detail: detail(tool: kind, input: input),
             cwd: payload["cwd"].stringValue, path: file,
-            removed: lines(change["old_string"]), added: lines(change["new_string"] ?? change["content"]),
+            // A new file has no old side; its content is the new one, as a notebook cell's source is.
+            removed: lines(change["old_string"]),
+            added: lines(change["new_string"]) ?? lines(change["content"]) ?? lines(change["new_source"]),
             suggestions: payload["permission_suggestions"].arrayValue ?? [],
             questions: questions, questionInput: questions.isEmpty ? nil : input, at: now
         )
@@ -168,7 +186,7 @@ public struct PermissionRequest: Identifiable, Equatable, Sendable {
         case "apply_patch":
             return trimmed(input["description"]) ?? L10n.text("应用文件修改", "Apply file changes")
         case "Read", "Write", "Edit", "MultiEdit", "NotebookEdit":
-            return trimmed(input["file_path"]).map { ($0 as NSString).lastPathComponent } ?? tool
+            return filePath(input).map { ($0 as NSString).lastPathComponent } ?? tool
         case "Glob", "Grep":
             return trimmed(input["pattern"]) ?? tool
         case "WebFetch":
@@ -190,18 +208,35 @@ public struct PermissionRequest: Identifiable, Equatable, Sendable {
         }
     }
 
-    /// The exact subject of the call, shown under the summary when it adds something the summary left out.
+    /// The exact subject of the call: the command, the file, the URL or the plan, and for any other call its input — an
+    /// MCP tool's arguments, a search's pattern and folder. It is kept when the summary says the same, since the summary
+    /// is one line and may be cut short.
     static func detail(tool: String?, input: ProviderJSON) -> String? {
         let value: String?
         switch tool {
         case "Bash", "apply_patch": value = trimmed(input["command"])
-        case "Read", "Write", "Edit", "MultiEdit", "NotebookEdit": value = trimmed(input["file_path"])
+        case "Read", "Write", "Edit", "MultiEdit", "NotebookEdit": value = filePath(input)
         case "WebFetch": value = trimmed(input["url"])
         case planTool: value = trimmed(input["plan"])
+        // A question shows itself, one question at a time.
+        case PermissionQuestion.tool: return nil
         default: value = nil
         }
-        guard let value, value != summary(tool: tool, input: input) else { return nil }
-        return String(value.prefix(detailLength))
+        return (value ?? arguments(input)).map { String($0.prefix(detailLength)) }
+    }
+
+    /// A call's input one argument to a line, sorted by name: text as written, anything else as JSON.
+    static func arguments(_ input: ProviderJSON) -> String? {
+        guard let fields = input.objectValue, !fields.isEmpty else { return nil }
+        return fields.sorted { $0.key < $1.key }.map { name, value in
+            let text = value.stringValue ?? (try? RecordCoding.encoder().encode(value)).map { String(decoding: $0, as: UTF8.self) }
+            return "\(name): \(text ?? "")"
+        }.joined(separator: "\n")
+    }
+
+    /// The file a file tool works on. A notebook edit names its notebook under a key of its own.
+    private static func filePath(_ input: ProviderJSON) -> String? {
+        trimmed(input["file_path"]) ?? trimmed(input["notebook_path"])
     }
 
     /// One side of an edit, capped at what fits on a card: the point is to recognize the change, not to review it.

@@ -358,6 +358,36 @@ final class PermissionHookTests: XCTestCase, @unchecked Sendable {
                      "a request that names no session cannot be shown beside one")
     }
 
+    func testWhatAnAllowLetsRunIsAlwaysThereToRead() throws {
+        func parse(_ tool: String, _ input: [String: Any], source: PermissionHooks.Source = .claude,
+                   suggestions: [[String: Any]] = []) throws -> PermissionRequest {
+            var body = payload(tool: tool, input: input)
+            body["permission_suggestions"] = suggestions
+            return try XCTUnwrap(try PermissionRequest.parse(JSONSerialization.data(withJSONObject: body), source: source, id: tool, now: now))
+        }
+        let bare = try parse("Bash", ["command": "npm test -- --watch=false"])
+        XCTAssertEqual([bare.summary, bare.detail], ["npm test -- --watch=false", "npm test -- --watch=false"],
+                       "a command without a description is still there in full, not only as a one-line summary")
+
+        let write = try parse("Write", ["file_path": "/Users/me/agent-hud/notes.md", "content": "# Notes\nFirst line"])
+        XCTAssertNil(write.removed)
+        XCTAssertEqual(write.added, "# Notes\nFirst line", "a new file's content is what is written")
+        XCTAssertEqual(try parse("write_file", ["file_path": "/tmp/notes.md", "content": "hello"], source: .qwen).added, "hello")
+        let notebook = try parse("NotebookEdit", ["notebook_path": "/Users/me/agent-hud/eda.ipynb", "new_source": "df.describe()"])
+        XCTAssertEqual([notebook.summary, notebook.path, notebook.added], ["eda.ipynb", "/Users/me/agent-hud/eda.ipynb", "df.describe()"])
+
+        let mcp = try parse("mcp__linear__create_issue", ["title": "Crash on launch", "team": "MOB", "labels": ["bug"], "content": "Steps"])
+        XCTAssertEqual(mcp.detail, "content: Steps\nlabels: [\"bug\"]\nteam: MOB\ntitle: Crash on launch", "an MCP call shows its arguments")
+        XCTAssertNil(mcp.added, "another tool's content is an argument, not an edit")
+
+        let rules: [String: Any] = ["type": "addRules", "behavior": "allow", "destination": "localSettings",
+                                    "rules": [["toolName": "Bash", "ruleContent": "npm test:*"], ["toolName": "WebSearch"]]]
+        XCTAssertEqual(try parse("Bash", ["command": "npm test"], suggestions: [rules]).alwaysAllowRule, "Bash(npm test:*), WebSearch",
+                       "Always allow names the rules it adds, as the client writes them")
+        let unnamed: [String: Any] = ["type": "addRules", "behavior": "allow", "rules": [["ruleContent": "npm test:*"]]]
+        XCTAssertNil(try parse("Bash", ["command": "npm test"], suggestions: [unnamed]).alwaysAllow, "a rule that cannot be read is not offered")
+    }
+
     private let questions: [[String: Any]] = [
         ["question": "Push the 40 commits now?", "header": "Push",
          "options": [["label": "Push", "description": "And update the PR"], ["label": "Wait"]], "multiSelect": false],

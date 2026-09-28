@@ -120,16 +120,12 @@ private struct PermissionOpenRow: View {
             } else if request.removed != nil || request.added != nil {
                 PermissionDiff(removed: request.removed, added: request.added)
             } else if let detail = request.detail {
-                Text(detail)
-                    .font(.tabular(11)).foregroundStyle(PermissionColor.text.opacity(0.8))
-                    .lineLimit(6).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                    .padding(.horizontal, 9).padding(.vertical, 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(PermissionColor.inset, in: RoundedRectangle(cornerRadius: 7))
+                PermissionDetail(text: detail, lines: 6)
             }
             if request.isPlan {
                 PlanNotice(request: request, onDecide: onDecide)
             } else if !request.isQuestion {
+                if let rule = request.alwaysAllowRule { PermissionRuleNote(rule: rule) }
                 PermissionButtons(request: request, onDecide: onDecide)
             }
         }
@@ -178,8 +174,9 @@ private struct PermissionRowHead: View {
                 .foregroundStyle(PermissionColor.signal)
                 .padding(.horizontal, 4).padding(.vertical, 1)
                 .background(PermissionColor.signal.opacity(0.14), in: RoundedRectangle(cornerRadius: 3))
-            // An open question shows itself in full below, one question at a time.
-            if !(open && request.isQuestion) {
+            // An open question shows itself in full below, one question at a time, and so does a command that came
+            // without a description of its own.
+            if !(open && (request.isQuestion || request.showsDetail && request.detail == request.summary)) {
                 Text(request.summary)
                     .font(.ui(11)).foregroundStyle(open ? PermissionColor.text.opacity(0.85) : PermissionColor.secondary)
                     .lineLimit(1)
@@ -196,6 +193,43 @@ private struct PermissionRowHead: View {
     static func waited(_ since: Date, now: Date) -> String {
         let seconds = max(0, now.timeIntervalSince(since))
         return seconds < 60 ? "\(Int(seconds))s" : Countdown.compact(seconds)
+    }
+}
+
+private extension PermissionRequest {
+    /// Whether an open card shows `detail` in a box of its own: a question shows its questions and an edit its diff.
+    var showsDetail: Bool { !isQuestion && removed == nil && added == nil && detail != nil }
+}
+
+/// What the call would run — the command, the file, the tool's input — as it will be run, cut to `lines` lines.
+private struct PermissionDetail: View {
+    let text: String
+    let lines: Int
+
+    var body: some View {
+        Text(text)
+            .font(.tabular(11)).foregroundStyle(PermissionColor.text.opacity(0.8))
+            .lineLimit(lines).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            .padding(.horizontal, 9).padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(PermissionColor.inset, in: RoundedRectangle(cornerRadius: 7))
+    }
+}
+
+/// What Always allow adds, there to read before it is given: the client's own rule, as its settings will hold it.
+private struct PermissionRuleNote: View {
+    let rule: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Image(systemName: "checkmark.seal").font(.system(size: 9, weight: .bold))
+                .foregroundStyle(PermissionColor.allow.opacity(0.8))
+            Text(L10n.text("总是允许会添加", "Always allow adds")).font(.ui(11)).foregroundStyle(PermissionColor.secondary)
+                .fixedSize()
+            Text(rule).font(.tabular(11)).foregroundStyle(PermissionColor.text.opacity(0.85))
+                .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -227,10 +261,15 @@ private struct PermissionDiff: View {
     }
 }
 
+/// A request that arrived while the usage panel was open, as a row at its top. Its answers are right there, so what
+/// they would let run is too: the command, the file or the tool's input, and the rule Always allow would add.
 struct PermissionAlertInlineView: View {
     let request: PermissionRequest
     let onDecide: (PermissionDecision) -> Void
     var waiting = 1
+
+    /// A plan is answered in its client, so there is nothing here to read before allowing it.
+    private var subject: String? { request.isPlan ? nil : request.detail }
 
     var body: some View {
         if request.isQuestion {
@@ -244,23 +283,30 @@ struct PermissionAlertInlineView: View {
                 PermissionQuestionCard(request: request, onDecide: onDecide)
             }.foregroundStyle(PermissionColor.text).padding(.vertical, 8)
         } else {
-            HStack(spacing: 10) {
-                PermissionSymbol(requestID: request.id)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(request.isPlan ? L10n.text("\(request.vendor) 有计划待审", "\(request.vendor) has a plan to review")
-                                            : L10n.text("\(request.vendor) 等待批准", "\(request.vendor) needs approval"))
-                            .font(.ui(12, .medium))
-                        WaitingCount(waiting: waiting)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    PermissionSymbol(requestID: request.id)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text(request.isPlan ? L10n.text("\(request.vendor) 有计划待审", "\(request.vendor) has a plan to review")
+                                                : L10n.text("\(request.vendor) 等待批准", "\(request.vendor) needs approval"))
+                                .font(.ui(12, .medium))
+                            WaitingCount(waiting: waiting)
+                        }
+                        // A command without a description of its own is its own summary, and it is shown in full below.
+                        if request.summary != subject {
+                            Text(request.summary).font(.ui(10)).foregroundStyle(PermissionColor.secondary).lineLimit(1)
+                        }
                     }
-                    Text(request.summary).font(.ui(10)).foregroundStyle(PermissionColor.secondary).lineLimit(1)
+                    Spacer(minLength: 10)
+                    if request.isPlan {
+                        PlanNotice.dismiss(onDecide)
+                    } else {
+                        PermissionButtons(request: request, onDecide: onDecide, compact: true)
+                    }
                 }
-                Spacer(minLength: 10)
-                if request.isPlan {
-                    PlanNotice.dismiss(onDecide)
-                } else {
-                    PermissionButtons(request: request, onDecide: onDecide, compact: true)
-                }
+                if let subject { PermissionDetail(text: subject, lines: 3) }
+                if !request.isPlan, let rule = request.alwaysAllowRule { PermissionRuleNote(rule: rule) }
             }.foregroundStyle(PermissionColor.text).padding(.vertical, 8)
         }
     }
@@ -312,9 +358,9 @@ private struct WaitingCount: View {
 
 /// The answers, each in the colour of what it means: green lets the call run, red refuses it, and the middle one is
 /// the same green held back — it allows this call and every call like it, which is a bigger thing to do by accident.
-/// It appears only when the client offered a rule of its own, and it is that offer, echoed back untouched. Saying
-/// nothing is also an answer, and the way to give it is to do nothing: the client keeps waiting and its own prompt is
-/// still there in the terminal.
+/// It appears only when the client offered a rule of its own, and it is that offer, echoed back untouched and written
+/// out beside the answers (`PermissionRuleNote`). Saying nothing is also an answer, and the way to give it is to do
+/// nothing: the client keeps waiting and its own prompt is still there in the terminal.
 private struct PermissionButtons: View {
     let request: PermissionRequest
     let onDecide: (PermissionDecision) -> Void
