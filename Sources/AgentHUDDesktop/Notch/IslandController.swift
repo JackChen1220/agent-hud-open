@@ -23,6 +23,9 @@ final class IslandController {
     private var systemIsLight = SystemAppearance.isLight
     private var observers: [Any] = []
     private var pointerMonitors: [Any] = []
+    let navigation = HubNavigation()
+    var repositories: RepositoryStore? { didSet { huds.values.forEach { $0.repositories = repositories }; apply(animated: false) } }
+    var onOpenRepositories: (() -> Void)? { didSet { huds.values.forEach { $0.onOpenRepositories = onOpenRepositories } } }
 
     var onOpenStats: (() -> Void)? { didSet { huds.values.forEach { $0.onOpenStats = onOpenStats } } }
     var onOpenSettings: (() -> Void)? { didSet { huds.values.forEach { $0.onOpenSettings = onOpenSettings } } }
@@ -31,6 +34,11 @@ final class IslandController {
         self.store = store
         self.settings = settings
         rebuild()
+        navigation.onChange = { [weak self] in
+            // Tab content, mask and native window change in the same turn, without waiting for usage polling.
+            self?.huds.values.forEach { $0.island.invalidateMeasurement() }
+            self?.apply(animated: false)
+        }
 
         observers.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
@@ -51,6 +59,18 @@ final class IslandController {
             self?.apply(animated: true)
         })
         startPointerMonitors()
+        let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown]
+        if let monitor = NSEvent.addGlobalMonitorForEvents(matching: clicks, handler: { [weak self] _ in
+            Task { @MainActor in self?.huds.values.forEach { $0.dismissFromOutside(at: NSEvent.mouseLocation) } }
+        }) { pointerMonitors.append(monitor) }
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown], handler: { [weak self] event in
+            if event.type == .keyDown {
+                if event.keyCode == 53, let self, self.huds.values.contains(where: { $0.isOpen && $0.island.panel.isKeyWindow }) {
+                    self.forceCollapse(); return nil
+                }
+            } else { self?.huds.values.forEach { $0.dismissFromOutside(at: NSEvent.mouseLocation) } }
+            return event
+        }) { pointerMonitors.append(monitor) }
     }
 
     /// What every HUD's frame and glow are computed from. Pause expiry and session liveness read the store's
@@ -86,6 +106,9 @@ final class IslandController {
             let hud = ScreenHUD(key: key, screen: screens.indices.contains(index) ? screens[index] : nil,
                                 store: store, settings: settings)
             hud.systemIsLight = systemIsLight
+            hud.repositories = repositories
+            hud.navigation = navigation
+            hud.onOpenRepositories = { [weak self] in self?.onOpenRepositories?() }
             hud.onOpenStats = { [weak self] in self?.onOpenStats?() }
             hud.onOpenSettings = { [weak self] in self?.onOpenSettings?() }
             huds[key] = hud
@@ -136,6 +159,21 @@ final class IslandController {
     func apply(animated: Bool) { huds.values.forEach { $0.apply(animated: animated) } }
 
     func forceOpen() { underPointer?.forceOpen() }
+
+    func togglePanel() {
+        if let held = huds.values.first(where: { $0.keyboardHeld }) { held.forceCollapse() }
+        else { underPointer?.toggleFromKeyboard() }
+    }
+
+    func stop() {
+        pointerMonitors.forEach { NSEvent.removeMonitor($0) }; pointerMonitors.removeAll()
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+            DistributedNotificationCenter.default().removeObserver(observer)
+        }
+        observers.removeAll()
+        huds.values.forEach { $0.close() }
+    }
 
     func forceCollapse() { huds.values.forEach { $0.forceCollapse() } }
 

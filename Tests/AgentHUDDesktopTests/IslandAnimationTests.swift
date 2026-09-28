@@ -45,7 +45,8 @@ final class IslandAnimationTests: XCTestCase {
         }
 
         func measure() -> CGFloat {
-            NSHostingView(rootView: HoverPanelView(store: store, onOpenStats: {})
+            NSHostingView(rootView: HoverPanelView(store: store, onOpenStats: {}, navigation: controller.navigation)
+                .environment(\.colorScheme, .dark)
                 .frame(width: IslandController.expandedWidth).fixedSize(horizontal: false, vertical: true)).fittingSize.height.rounded()
         }
 

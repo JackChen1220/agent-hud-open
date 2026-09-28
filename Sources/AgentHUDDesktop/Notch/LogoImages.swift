@@ -46,12 +46,16 @@ enum LogoImages {
             data: nil, width: canvas, height: canvas, bitsPerComponent: 8, bytesPerRow: canvas * 4,
             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
-        let rect = CGRect(x: outline, y: outline, width: side, height: side)
+        // Borderless Kiro fills the same visible footprint as outlined marks such as Codex.
+        // Keep the canvas and layer dimensions identical so alignment and spacing do not change.
+        let inset = key.vendor == "Kiro" ? 0 : outline
+        let rect = CGRect(x: inset, y: inset, width: CGFloat(canvas) - inset * 2, height: CGFloat(canvas) - inset * 2)
 
         // The ring is built opaque in its own bitmap and composited once. Drawing the eight offsets straight
         // into this context would let them accumulate where they overlap, which is most of the ring, and the
         // outline would come out near black however low each pass was set.
-        if outline > 0, let ring = ring(mark: mark, rect: rect, thickness: outline, canvas: canvas) {
+        // Kiro carries its own purple background; an added dark outline reads as an unwanted border.
+        if key.vendor != "Kiro", outline > 0, let ring = ring(mark: mark, rect: rect, thickness: outline, canvas: canvas) {
             context.saveGState()
             context.setAlpha(Self.outlineOpacity)
             context.draw(ring, in: CGRect(x: 0, y: 0, width: CGFloat(canvas), height: CGFloat(canvas)))

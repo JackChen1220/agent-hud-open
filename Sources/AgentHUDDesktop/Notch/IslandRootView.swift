@@ -11,6 +11,13 @@ struct IslandRootView: View {
     let lightBorder: Bool
     let onOpenStats: () -> Void
     var onOpenSettings: () -> Void = {}
+    var repositories: RepositoryStore? = nil
+    var navigation: HubNavigation? = nil
+    var isPinned = false
+    var onTogglePin: () -> Void = {}
+    var observesRepositories = true
+    var maximumPanelHeight: CGFloat = 700
+    var onOpenRepositories: () -> Void = {}
     var alert: IslandAlert? = nil
     var onOpenAlert: () -> Void = {}
     /// The user's answer to a request waiting on the island; the alert's own id says which request it answers.
@@ -70,6 +77,7 @@ struct IslandRootView: View {
                         .frame(width: size.width, height: size.height)
                 }
                 content
+                    .environment(\.colorScheme, .dark)
                     .environment(\.islandTyping, onTyping)
                     .mask(alignment: .top) { shape.frame(width: size.width, height: size.height) }
                 if let logoQueue, alert == nil {
@@ -105,7 +113,7 @@ struct IslandRootView: View {
         } else if isOpen, let store {
             HoverPanelView(store: store, onOpenStats: onOpenStats, onOpenSettings: onOpenSettings,
                            alert: alert, onOpenAlert: onOpenAlert, onDecideAlert: onDecideAlert,
-                           waitingRequests: waitingRequests)
+                           waitingRequests: waitingRequests, repositories: repositories, navigation: navigation, isPinned: isPinned, onTogglePin: onTogglePin, observesRepositories: observesRepositories, maximumPanelHeight: maximumPanelHeight, onOpenRepositories: onOpenRepositories)
                 .frame(width: IslandController.expandedWidth, alignment: .top)
                 .fixedSize(horizontal: false, vertical: true)
                 .onPreferenceChange(PanelHeightKey.self, perform: onContentHeight)

@@ -124,7 +124,10 @@ final class LogFiles {
     private func canonical(_ path: String) -> String? {
         for root in roots {
             if path == root.path || path.hasPrefix(root.path + "/") { return path }
-            let resolved = root.resolvingSymlinksInPath().path
+            // FSEvents reports the filesystem path; Foundation can hide `/private` again when resolving `/var`.
+            guard let real = realpath(root.path, nil) else { continue }
+            let resolved = String(cString: real)
+            free(real)
             if resolved != root.path, path == resolved || path.hasPrefix(resolved + "/") {
                 return root.path + path.dropFirst(resolved.count)
             }

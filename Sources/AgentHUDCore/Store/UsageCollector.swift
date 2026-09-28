@@ -1,7 +1,7 @@
 import Foundation
 
-/// A host's extension points in the collection pipeline. Every hook runs on the main actor inside the pass that fetched
-/// the report, while no provider reads and nothing writes the usage ledger, so a hook may read the ledger itself.
+/// A host's extension points in the local collection pipeline. Every hook runs on the main actor inside the pass that
+/// fetched the report, after its local ledger transaction has committed. Account requests may finish independently.
 public struct UsageCollectionHooks {
     /// Hourly buckets providers load, including the current partial hour; asked before every local poll and account step.
     public var historyHours: @MainActor () -> Int
@@ -23,8 +23,8 @@ public struct UsageCollectionHooks {
 
 /// The collection pipeline. Every source only signals that it has new data: a file change under its directories, a finished
 /// account step, one of its checks falling due, or its poll interval when it cannot name its directories. The collector
-/// waits for those signals and reads the signalled sources, one read or account step at a time, handing each report to
-/// the store. A source's account steps run when its own work, or one of its windows, makes a new reading worth taking.
+/// waits for those signals and reads the signalled sources one local pass at a time, handing each report to the store.
+/// Account steps run serially in a separate task, so slow network requests cannot delay local lifecycle events.
 @MainActor
 final class UsageCollector {
     weak var store: UsageStore?
@@ -38,6 +38,9 @@ final class UsageCollector {
     private var isCollecting = false
     /// Account steps left in the current sweep, run one at a time between local reads.
     private var accountSteps: [(source: String, run: AccountRefreshStep)] = []
+    private var accountTask: Task<Void, Never>?
+    /// Prevent a cancelled task from signalling or clearing a newer run after a stop/restart.
+    private var accountTaskID: UUID?
     /// When each source's account steps last ran; a source that has never run them is due at once.
     private var accountRunAt: [String: Date] = [:]
     /// Consent to read an account, and a look at the numbers, read every account at once instead of when work moves them.
@@ -97,6 +100,9 @@ final class UsageCollector {
         wake?.finish()
         wake = nil
         changes = nil
+        accountTask?.cancel()
+        accountTask = nil
+        accountTaskID = nil
         // Steps that did not run keep their source due, so a restart reads the accounts it owed.
         accountSteps = []
     }
@@ -143,7 +149,7 @@ final class UsageCollector {
         }
     }
 
-    /// One pass: collects the signals, reads the signalled sources, then runs account steps within their budget.
+    /// One pass: collects the signals, reads the signalled sources, then starts the next due account step.
     /// Returns how long to wait for the next signal that is known in advance; file changes wake the loop sooner.
     private func collect(force: Bool) async -> TimeInterval {
         guard let store, store.isAccessAllowed, !isCollecting else { return UsageRefresh.pollInterval }
@@ -161,7 +167,7 @@ final class UsageCollector {
             needsFetch = true
         }
         let consent = settings.settings.readCopilotQuota
-        if accountSteps.isEmpty {
+        if accountSteps.isEmpty, accountTask == nil {
             // Consent to read an account follows the switch at once; a look reads whatever the request spacing allows;
             // otherwise every source waits until its own work, or one of its windows, is worth a reading.
             let consented = sweptWithCopilotQuota != consent, looked = forcesAccounts
@@ -186,16 +192,24 @@ final class UsageCollector {
         } else if started.timeIntervalSince(store.dataDate) >= 60, changes?.isWatching != false {
             store.checkedAt = started
         }
-        if !accountSteps.isEmpty, !Task.isCancelled {
-            let stepsStarted = Date()
-            repeat {
-                let step = accountSteps.removeFirst()
-                accountRunAt[step.source] = Date()
-                await step.run(hooks.historyHours())
-                if step.source.isEmpty { needsFetch = true } else { signalled.insert(step.source) }
-            } while !accountSteps.isEmpty && !Task.isCancelled && Date().timeIntervalSince(stepsStarted) < UsageRefresh.accountStepBudget
-        }
+        startNextAccountStep()
         return await pause(after: Date())
+    }
+
+    private func startNextAccountStep() {
+        guard accountTask == nil, !accountSteps.isEmpty, !Task.isCancelled else { return }
+        let step = accountSteps.removeFirst()
+        let id = UUID(), hours = hooks.historyHours()
+        accountRunAt[step.source] = Date()
+        accountTaskID = id
+        accountTask = Task { [weak self] in
+            await step.run(hours)
+            guard !Task.isCancelled, let self, self.accountTaskID == id else { return }
+            self.accountTask = nil
+            self.accountTaskID = nil
+            if step.source.isEmpty { self.needsFetch = true } else { self.signalled.insert(step.source) }
+            self.wake?.yield()
+        }
     }
 
     /// Turns what happened since the last pass into signalled sources.
@@ -273,8 +287,10 @@ final class UsageCollector {
     /// read, a pending read held back by the read spacing, indexing, a poll interval, a check or a retry.
     private func pause(after now: Date) async -> TimeInterval {
         var times: [Date] = []
-        if !accountSteps.isEmpty { times.append(now.addingTimeInterval(UsageRefresh.accountStepBudget)) }
-        else { times += await accountDue(at: now).values }
+        if accountTask == nil {
+            if !accountSteps.isEmpty { times.append(now) }
+            else { times += await accountDue(at: now).values }
+        }
         if let fallbackReadAt { times.append(fallbackReadAt.addingTimeInterval(UsageRefresh.accountInterval)) }
         if needsFetch || !signalled.isEmpty { times.append((fetchedAt ?? now).addingTimeInterval(UsageRefresh.readSpacing)) }
         if store?.isIndexing == true { times.append((fetchedAt ?? now).addingTimeInterval(UsageRefresh.indexingInterval)) }

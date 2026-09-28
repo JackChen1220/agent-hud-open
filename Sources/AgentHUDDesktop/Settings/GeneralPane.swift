@@ -26,6 +26,9 @@ struct GeneralPane: View {
                     .labelsHidden().pickerStyle(.menu)
                 }
             }
+            SettingsSection(title: L10n.text("Hub 快捷键", "Hub shortcut"), theme: theme) {
+                PanelShortcutSetting(settings: settings)
+            }
             SettingsSection(title: L10n.text("启动", "Startup"), theme: theme) {
                 SettingsToggleRow(
                     label: L10n.text("登录时启动", "Launch at login"),

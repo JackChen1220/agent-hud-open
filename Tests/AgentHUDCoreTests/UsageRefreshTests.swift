@@ -81,7 +81,12 @@ final class UsageRefreshTests: XCTestCase, @unchecked Sendable {
         var hours = 24
         let provider = CountingProvider()
         let store = store(provider, hooks: UsageCollectionHooks(historyHours: { hours }))
+        defer { store.stop() }
         await store.refresh()
+        for _ in 0..<20 {
+            if !(await provider.hours).account.isEmpty { break }
+            await Task.yield()
+        }
         hours = 721
         await store.refresh()
         let asked = await provider.hours
@@ -91,7 +96,7 @@ final class UsageRefreshTests: XCTestCase, @unchecked Sendable {
     }
 
     @MainActor
-    func testAccountRequestNeverOverlapsLocalReadsOrRepeats() async throws {
+    func testSlowAccountRequestAllowsLocalReadsWithoutRepeatingAccountRequest() async throws {
         let gate = AsyncStream<Void>.makeStream()
         defer { gate.continuation.finish() }
         let started = expectation(description: "account request started")
@@ -114,13 +119,71 @@ final class UsageRefreshTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(before, 1, "the pass reads local logs before its account step")
         await store.refresh()
         let during = await local.fetches
-        XCTAssertEqual(during, before, "a refresh requested during the account step waits for the next pass")
+        XCTAssertEqual(during, before + 1, "local state must refresh while the account request is still waiting")
         gate.continuation.finish()
         await pass.value
         await store.refresh()
         let after = await local.fetches
-        XCTAssertEqual(after, before + 1)
+        XCTAssertEqual(after, before + 2)
         XCTAssertFalse(store.sessions.isEmpty)
+    }
+
+    @MainActor
+    func testCodexCompletionFileEventPublishesWhileQuotaRequestIsBlocked() async throws {
+        let gate = AsyncStream<Void>.makeStream()
+        defer { gate.continuation.finish() }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("rollout-lifecycle.jsonl")
+        let turnID = "test-turn", sessionID = "test-session"
+        func line(type: String, payload: [String: String]) throws -> Data {
+            var data = try JSONSerialization.data(withJSONObject: [
+                "type": type, "timestamp": (Date().ISO8601Format(.iso8601(timeZone: .gmt, includingFractionalSeconds: true)) + "Z"), "payload": payload
+            ])
+            data.append(0x0a)
+            return data
+        }
+        var initial = try line(type: "session_meta", payload: ["id": sessionID, "source": "cli"])
+        initial.append(try line(type: "event_msg", payload: ["type": "task_started", "turn_id": turnID]))
+        try initial.write(to: file)
+        var parsed = CodexTranscript()
+        for value in initial.split(separator: 0x0a) { parsed.ingest(Data(value)) }
+        XCTAssertEqual(parsed.id, sessionID)
+        XCTAssertEqual(parsed.sessionTurns.first?.state, .running)
+        let started = expectation(description: "quota request waiting")
+        started.assertForOverFulfill = true
+        let completed = expectation(description: "completion published before quota returns")
+        var quotaReturned = false
+        let codex = CodexUsageProvider(readLimits: {
+            started.fulfill()
+            for await _ in gate.stream { break }
+            throw UsageProviderError("quota offline")
+        }, transcripts: CodexTranscriptStore(roots: [directory], watchesChanges: true), history: QuotaHistoryStore())
+        let combined = CombinedUsageProvider([.init("Codex", codex)])
+        let suite = "UsageRefreshTests.\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var sawCompletion = false
+        let store = UsageStore(provider: RetainedUsageProvider(provider: combined), settings: SettingsStore(defaults: defaults),
+            hooks: UsageCollectionHooks(publish: { report in
+                if !sawCompletion, report.completions.contains(where: { $0.sessionID == sessionID }) {
+                    sawCompletion = true
+                    XCTAssertFalse(quotaReturned)
+                    XCTAssertEqual(report.turns.first?.state, .completed)
+                    XCTAssertNotNil(report.sessions.first?.endedAt)
+                    completed.fulfill()
+                }
+            }))
+        store.start()
+        defer { store.stop() }
+        await fulfillment(of: [started], timeout: 5)
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: line(type: "event_msg", payload: ["type": "task_complete", "turn_id": turnID]))
+        try handle.close()
+        await fulfillment(of: [completed], timeout: 5)
+        quotaReturned = true
+        gate.continuation.finish()
     }
 
     func testActivityAgesAtTheLiveThresholdAndTurnFreshness() {

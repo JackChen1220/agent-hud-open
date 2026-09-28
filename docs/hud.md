@@ -31,7 +31,11 @@ The HUD sits at the top of every attached display, and each display carries its 
 - One mark per piece of artwork rather than per vendor: two Claude windows are one Claude, and so are Codex and ChatGPT, which share OpenAI's mark. A second identical mark would take a place in the row and tell a glance nothing.
 - A mark bobs while any session behind it is live, including a turn blocked on the user, and holds still otherwise, so motion means exactly one thing. Liveness is the store's, the same the panel ranks sessions by.
 - A queue with nothing to show — nothing watched and nothing run — falls back to the screen's notch shape.
-- Marks keep their own artwork at full strength with a hairline outline; a single-colour mark is drawn white. Status colour is carried by the glow behind them, never by the logos.
+- Marks keep their own artwork at full strength with a hairline outline; a single-colour mark is drawn white. Kiro keeps its supplied purple artwork without an added outline. Status colour is carried by the glow behind them, never by the logos.
+
+### Project branches and keyboard access
+
+The footer switches between Agent usage and project branches. Command–Shift–H opens or closes the panel; General settings can change or disable that shortcut. The Pin control beside Settings keeps the panel open when the pointer leaves or another window is clicked; unpinning restores hover-to-close, and an explicit close clears Pin. Project discovery, cached Git state, worktrees, manual progress and the explicit remote refresh are documented in [project branches](repositories.md).
 
 ### Hovering and events
 

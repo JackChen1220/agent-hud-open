@@ -29,7 +29,7 @@ extension LocalSessionLayout {
 extension AdditionalSource {
     var layout: (any LocalSessionLayout.Type)? {
         switch self {
-        case .cursor: nil
+        case .cursor, .kiro: nil
         case .antigravity: AntigravitySessions.self
         case .grok: GrokSessions.self
         case .copilot: CopilotSessions.self

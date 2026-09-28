@@ -4,12 +4,11 @@
 
 What is being built, what comes next, and what is not scheduled. Released versions and their host-visible API changes are recorded in the [changelog](../CHANGELOG.md); the acceptance criteria every change must keep are listed under [architecture → Design invariants](architecture.md#design-invariants).
 
-## Now
+## Delivered
 
-- Grid glow styles for the notch — halftone dots, ASCII characters, shade blocks, Braille and binary digits — with breathe, flow, scan, ripple, shimmer and boot effects, animated only while an agent is running.
-- Quota exhaustion as its own alert: a window that reaches zero notifies once, even after the earlier at-risk warning.
+The glow styles and quota-exhaustion alert are implemented; their release history is in the [changelog](../CHANGELOG.md).
 
-## Next
+## Near-term queue
 
 - Running and terminal turn evidence for Cursor, Antigravity and OpenCode. Their providers supply usage observations only; Cursor and Antigravity finish turns through [completion hooks](session-lifecycle.md#completion-hooks), and OpenCode's persisted messages carry no lifecycle signal.
 - Keep the bundle's `CFBundleShortVersionString` equal to the release tag, checked before tagging.
@@ -21,4 +20,4 @@ Not scheduled.
 
 - ChatGPT chat quota.
 - Grok team accounts; the credits proxy does not report their quota.
-- VS Code and GitHub Copilot.
+- VS Code IDE usage integrations. GitHub Copilot CLI usage is already supported; this item refers to IDE-side support.

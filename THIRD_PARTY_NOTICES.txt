@@ -26,6 +26,11 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+Kiro logo
+Source: user-provided kiro-128px.png.
+Kiro brand artwork belongs to its respective owner and is used to identify the integration.
+Original PNG preserved without modification.
+
 CodexBar
 Source: https://github.com/steipete/CodexBar/tree/05bb0e694afa93e234991bbd5eaab6afcd1b9e7d
 Additional reference revisions: 928166f899471bbdcb72210641cdec91324d0154 (OpenCode Go, Kimi and GLM quota parsing); 86a47f80a71e74c59dd2d4dd14de397348d36546 (GitHub Copilot quota).

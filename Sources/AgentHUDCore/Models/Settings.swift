@@ -81,6 +81,7 @@ public struct Settings: Hashable, Codable, Sendable {
     public var glowEffect: GlowEffect { get { glow.effect } set { glow.effect = newValue } }
     /// Hovering alone opens the panel. With this on it takes Option as well, so a HUD parked over the menu
     /// bar or a window's title bar does not open every time the pointer crosses it.
+    public var panelShortcut = PanelShortcut()
     public var requiresOptionToOpen: Bool = false
     public var hoverDelayMs: Int = 400
     public var collapseDelayMs: Int = 200
@@ -118,6 +119,7 @@ public struct Settings: Hashable, Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case breathSeconds, idleBreathSeconds, breathAmplitude, glowRange, glowBlur, glowBrightness, glowOutwardOnly
         case glowStyle, glowGridPitch, glowGridSpread, glowGridCore, glowGridFade, glowGridDensity, glowEffect
+        case panelShortcut
         case requiresOptionToOpen, hoverDelayMs, collapseDelayMs, showResetCountdown
         case showIslandQuota, showIslandTokens, showIslandSessions
         case disabledLiveStatusSources, readCopilotQuota, clientHooks, approvalWaitMinutes
@@ -145,6 +147,7 @@ public struct Settings: Hashable, Codable, Sendable {
         glowGridFade = Self.clamp(storedFade, to: Self.glowGridFadeRange, default: d.glowGridFade)
         glowGridDensity = Self.clamp(try c.decodeIfPresent(Double.self, forKey: .glowGridDensity), to: Self.glowGridDensityRange, default: d.glowGridDensity)
         glowEffect = (try? c.decodeIfPresent(GlowEffect.self, forKey: .glowEffect)) ?? d.glowEffect
+        panelShortcut = (try? c.decodeIfPresent(PanelShortcut.self, forKey: .panelShortcut)) ?? d.panelShortcut
         requiresOptionToOpen = try c.decodeIfPresent(Bool.self, forKey: .requiresOptionToOpen) ?? d.requiresOptionToOpen
         hoverDelayMs = try c.decodeIfPresent(Int.self, forKey: .hoverDelayMs) ?? d.hoverDelayMs
         collapseDelayMs = try c.decodeIfPresent(Int.self, forKey: .collapseDelayMs) ?? d.collapseDelayMs
@@ -180,6 +183,7 @@ public struct Settings: Hashable, Codable, Sendable {
         try c.encode(glowGridFade, forKey: .glowGridFade)
         try c.encode(glowGridDensity, forKey: .glowGridDensity)
         try c.encode(glowEffect, forKey: .glowEffect)
+        try c.encode(panelShortcut, forKey: .panelShortcut)
         try c.encode(requiresOptionToOpen, forKey: .requiresOptionToOpen)
         try c.encode(hoverDelayMs, forKey: .hoverDelayMs)
         try c.encode(collapseDelayMs, forKey: .collapseDelayMs)

@@ -3,11 +3,12 @@ import Foundation
 
 /// The additional integrations share reporting, while each owns its protocol and parser.
 public enum AdditionalSource: String, CaseIterable, Sendable {
-    case antigravity, cursor, grok, copilot, openclaw, hermes, zcode, codebuddy, workbuddy, qwen
+    case antigravity, cursor, grok, copilot, openclaw, hermes, zcode, codebuddy, workbuddy, qwen, kiro
 
     public var vendor: String {
         switch self {
         case .antigravity: "Antigravity"
+        case .kiro: "Kiro"
         case .cursor: "Cursor"
         case .grok: "Grok"
         case .copilot: "GitHub Copilot"
@@ -23,6 +24,7 @@ public enum AdditionalSource: String, CaseIterable, Sendable {
     public var detail: String {
         switch self {
         case .antigravity: L10n.text("本地服务额度与会话用量", "Local server quota and session usage")
+        case .kiro: L10n.text("账户 credits 额度与使用量（不含 token 统计）", "Account credits and usage (excluding token statistics)")
         case .cursor: L10n.text("账户额度与跨设备用量", "Account quota and usage across devices")
         case .grok: L10n.text("Grok CLI 额度与本地会话", "Grok CLI quota and local sessions")
         case .copilot: L10n.text("Copilot CLI 额度与本地会话", "Copilot CLI quota and local sessions")
@@ -46,6 +48,7 @@ public enum AdditionalSource: String, CaseIterable, Sendable {
     public func isInstalled(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Bool {
         let paths: [String]
         switch self {
+        case .kiro: paths = [".aws/sso/cache/kiro-auth-token.json", "Applications/Kiro.app"]
         case .cursor: paths = ["Library/Application Support/Cursor/User/globalStorage/state.vscdb", "Applications/Cursor.app"]
         case .antigravity, .grok: paths = layout?.installPaths ?? []
         // A same-named desktop app is not the CLI these clients read, and it must not trigger hook installation.
@@ -64,6 +67,7 @@ struct ProviderQuota: Sendable {
         let remaining: Double
         var reset: Date? = nil
         var duration: TimeInterval? = nil
+        var amounts: QuotaAmounts? = nil
     }
     var windows: [Window] = []
     var plan: String? = nil
@@ -85,7 +89,7 @@ struct ProviderQuota: Sendable {
     /// Window ids scoped to the account: `account:<hash>/cursor:team`.
     func scopedWindows(_ source: AdditionalSource) -> [Window] {
         let account = resolvedAccount(source)
-        return windows.map { Window(id: account.windowID($0.id), label: $0.label, remaining: $0.remaining, reset: $0.reset, duration: $0.duration) }
+        return windows.map { Window(id: account.windowID($0.id), label: $0.label, remaining: $0.remaining, reset: $0.reset, duration: $0.duration, amounts: $0.amounts) }
     }
 }
 

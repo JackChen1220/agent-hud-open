@@ -87,7 +87,15 @@ struct HoverPanelView: View {
     var onDecideAlert: (PermissionDecision) -> Void = { _ in }
     var waitingRequests: [PermissionRequest] = []
 
-    private let theme = Theme.island
+    var repositories: RepositoryStore? = nil
+    var navigation: HubNavigation? = nil
+    var isPinned = false
+    var onTogglePin: () -> Void = {}
+    var observesRepositories = true
+    var maximumPanelHeight: CGFloat = 700
+    var onOpenRepositories: () -> Void = {}
+    @Environment(\.colorScheme) private var colorScheme
+    private var theme: Theme { Theme.forScheme(colorScheme) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -101,28 +109,33 @@ struct HoverPanelView: View {
                                       waitingRequests: waitingRequests).id(alert.id)
                     .padding(.bottom, 4)
             }
-            if store.settings.settings.showIslandQuota, !store.rows.isEmpty {
-                quotaBlock
-            }
-            if store.settings.settings.showIslandQuota {
-                ForEach(store.enabledBilling) { billing in
-                    APIBillingCard(billing: billing, store: store, theme: theme, compact: true)
+            if navigation?.tab == .branches, let repositories {
+                BranchPanelView(store: repositories, onManage: onOpenRepositories, observesChanges: observesRepositories, listHeight: max(80, min(285, maximumPanelHeight - 235)))
+            } else {
+                if store.settings.settings.showIslandQuota, !store.rows.isEmpty {
+                    quotaBlock
+                }
+                if store.settings.settings.showIslandQuota {
+                    ForEach(store.enabledBilling) { billing in
+                        APIBillingCard(billing: billing, store: store, theme: theme, compact: true)
+                            .padding(.top, 8)
+                            .topDivider(theme.divider)
+                    }
+                }
+                if store.settings.settings.showIslandTokens, store.isLoading || store.isIndexing || !store.consumers.isEmpty {
+                    TokenConsumptionChart(store: store, theme: theme, context: .island)
                         .padding(.top, 8)
                         .topDivider(theme.divider)
                 }
-            }
-            if store.settings.settings.showIslandTokens, store.isLoading || store.isIndexing || !store.consumers.isEmpty {
-                TokenConsumptionChart(store: store, theme: theme, context: .island)
-                    .padding(.top, 8)
-                    .topDivider(theme.divider)
-            }
-            if store.settings.settings.showIslandSessions {
-                sessionLine
+                if store.settings.settings.showIslandSessions {
+                    sessionLine
+                }
             }
             footer
         }
         .padding(EdgeInsets(top: 32, leading: 18, bottom: 14, trailing: 18))
         .foregroundStyle(theme.text)
+        .tint(theme.text)
         .background(GeometryReader { proxy in
             Color.clear.preference(key: PanelHeightKey.self, value: proxy.size.height)
         })
@@ -221,18 +234,58 @@ struct HoverPanelView: View {
             }
             .help(L10n.text("设置", "Settings"))
             .accessibilityLabel(L10n.text("设置", "Settings"))
+            Button(action: onTogglePin) {
+                Image(systemName: isPinned ? "pin.fill" : "pin")
+                    .font(.ui(13, .medium))
+                    .foregroundStyle(isPinned ? theme.text : theme.secondary)
+                    .frame(width: 28, height: 28)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(isPinned ? theme.text.opacity(0.12) : .clear))
+                    .contentShape(Rectangle())
+            }
+            .help(isPinned ? L10n.text("取消固定，鼠标移出后收起", "Unpin; collapse when the pointer leaves") : L10n.text("固定面板，鼠标移出后保持展开", "Pin; keep open when the pointer leaves"))
+            .accessibilityLabel(L10n.text("固定面板", "Pin panel"))
+            .accessibilityValue(isPinned ? L10n.text("已固定", "Pinned") : L10n.text("未固定", "Unpinned"))
+            .accessibilityIdentifier("hub-pin")
+            Spacer()
+            if let navigation {
+                HStack(spacing: 4) {
+                    ForEach(HubTab.allCases, id: \.self) { tab in
+                        Button { navigation.tab = tab } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: tab.symbol)
+                                    .renderingMode(.template)
+                                    .symbolRenderingMode(.monochrome)
+                                    .foregroundColor(navigation.tab == tab ? theme.text : theme.secondary)
+                                Text(tab.title)
+                            }
+                                .font(.ui(12, .medium))
+                                .padding(.horizontal, 16)
+                                .frame(minWidth: 104, minHeight: 40)
+                                .foregroundStyle(navigation.tab == tab ? theme.text : theme.secondary)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(navigation.tab == tab ? theme.text.opacity(0.12) : .clear))
+                                // Plain buttons must include the icon gaps and transparent padding in hit testing.
+                                .contentShape(Rectangle())
+                        }.accessibilityAddTraits(navigation.tab == tab ? .isSelected : [])
+                        .accessibilityIdentifier(tab == .agents ? "hub-tab-agents" : "hub-tab-branches")
+                    }
+                }
+            }
             Spacer()
             Button {
+                if navigation?.tab == .branches { onOpenRepositories(); return }
                 store.focusedSessionID = nil
                 store.statsTab = .tokens
                 onOpenStats()
             } label: {
-                Image(systemName: "chart.bar.xaxis")
+                Image(systemName: navigation?.tab == .branches ? "arrow.up.right.square" : "chart.bar.xaxis")
+                    .renderingMode(.template)
+                                    .symbolRenderingMode(.monochrome)
+                    .foregroundColor(theme.secondary)
                     .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
             }
-            .help(L10n.text("用量统计", "Usage statistics"))
-            .accessibilityLabel(L10n.text("用量统计", "Usage statistics"))
+            .help(navigation?.tab == .branches ? L10n.text("管理分支", "Manage branches") : L10n.text("用量统计", "Usage statistics"))
+            .accessibilityLabel(navigation?.tab == .branches ? L10n.text("管理分支", "Manage branches") : L10n.text("用量统计", "Usage statistics"))
         }
         .buttonStyle(.plain)
         .font(.ui(14))
@@ -258,7 +311,8 @@ private struct ProviderQuotaBlock: View {
     let vendor: String
     let rows: [AgentRow]
     @State private var metric = IslandQuotaMetric.quota
-    private let theme = Theme.island
+    @Environment(\.colorScheme) private var colorScheme
+    private var theme: Theme { Theme.forScheme(colorScheme) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -292,8 +346,15 @@ private struct ProviderQuotaBlock: View {
                                   insights: store.report?.insightsByAgent[row.id],
                                   tokensPerHour: store.quotaTokensPerHour(for: row.id),
                                   forecastHint: section.isCurrent ? store.quotaForecastHint(for: row.id) : nil,
-                                  isLoading: store.isLoading)
+                                  theme: theme, isLoading: store.isLoading)
                         .opacity(section.isCurrent ? 1 : 0.55)
+                    if let amounts = store.report?.snapshots.first(where: { $0.agentId == row.id })?.amounts {
+                        Text(amounts.summary)
+                            .font(.tabular(11))
+                            .foregroundStyle(theme.secondary)
+                            .padding(.horizontal, IslandRowLayout.inset)
+                            .textSelection(.enabled)
+                    }
                 }
                 // Earned resets belong to the signed-in Codex account.
                 if section.isCurrent, section.rows.contains(where: { $0.agent.vendor == "Codex" }),
@@ -311,7 +372,8 @@ struct AccountSectionHeader: View {
     let account: AccountObservation
     let now: Date
     var notice: String?
-    private let theme = Theme.island
+    @Environment(\.colorScheme) private var colorScheme
+    private var theme: Theme { Theme.forScheme(colorScheme) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -346,7 +408,8 @@ struct AccountSectionHeader: View {
 struct CodexResetCreditsView: View {
     let resets: CodexResetCredits
     let showExpiry: Bool
-    private let theme = Theme.island
+    @Environment(\.colorScheme) private var colorScheme
+    private var theme: Theme { Theme.forScheme(colorScheme) }
     @State private var isHovered = false
 
     var body: some View {
@@ -443,7 +506,8 @@ struct ModelUsageRow: View {
         case .burnRate: exhaustsBeforeReset == nil ? theme.status(.ok) : theme.status(.warning)
         case .tokens: theme.status(.ok)
         }
-        let valueColor = row.level == nil ? theme.secondary : metricColor
+        let valueColor = row.level == nil ? theme.secondary : theme.statusText(
+            metric == .quota ? level : (exhaustsBeforeReset == nil || metric == .tokens ? .ok : .warning))
         let markerColor = row.level == nil || value == nil ? theme.tertiary : metricColor
         return HStack(spacing: IslandRowLayout.spacing) {
             Circle()

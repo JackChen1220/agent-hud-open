@@ -4,7 +4,8 @@ import AgentHUDCore
 struct QuotaForecastDetails: View {
     let agent: AgentDescriptor
     let hint: String
-    private let theme = Theme.island
+    @Environment(\.colorScheme) private var colorScheme
+    private var theme: Theme { Theme.forScheme(colorScheme) }
 
     var body: some View {
         Text(hint)

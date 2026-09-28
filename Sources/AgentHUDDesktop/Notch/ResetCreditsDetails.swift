@@ -3,7 +3,8 @@ import AgentHUDCore
 
 struct ResetCreditsDetails: View {
     let resets: CodexResetCredits
-    private let theme = Theme.island
+    @Environment(\.colorScheme) private var colorScheme
+    private var theme: Theme { Theme.forScheme(colorScheme) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

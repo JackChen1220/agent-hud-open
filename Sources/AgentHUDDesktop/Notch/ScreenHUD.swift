@@ -39,6 +39,13 @@ final class ScreenHUD {
     private var hoverOpens = false
     /// The user is typing into the island. It stays open under their hands, wherever the pointer goes, until they stop.
     private var typing = false
+    private(set) var isPinned = false
+    private(set) var keyboardHeld = false
+    private var suppressHoverUntilExit = false
+    var isOpen: Bool { machine.isOpen }
+    var repositories: RepositoryStore?
+    var navigation: HubNavigation?
+    var onOpenRepositories: (() -> Void)?
     private var modifierWatch: Timer?
 
     var onOpenStats: (() -> Void)?
@@ -70,6 +77,7 @@ final class ScreenHUD {
     func pointer(inside: Bool) {
         guard pointerInside != inside else { return }
         pointerInside = inside
+        if !inside { suppressHoverUntilExit = false }
         alerts.hold(inside)
         // Whether Option is down can change without the pointer moving, so while it is over the HUD the
         // modifier is watched. A global keyboard monitor would ask for accessibility; this does not.
@@ -113,7 +121,7 @@ final class ScreenHUD {
 
     /// Hovering opens the panel, unless the user asked for Option as well. Typing keeps it open either way.
     private func reevaluateHover() {
-        let opens = typing || pointerInside
+        let opens = isPinned || keyboardHeld || typing || (!suppressHoverUntilExit && pointerInside)
             && (!settings.settings.requiresOptionToOpen || NSEvent.modifierFlags.contains(.option))
         guard opens != hoverOpens else { return }
         hoverOpens = opens
@@ -125,7 +133,35 @@ final class ScreenHUD {
         transition(machine.reduce(.forceOpen, config: config))
     }
 
+    func toggleFromKeyboard() {
+        if machine.isOpen { forceCollapse() } else {
+            keyboardHeld = true
+            suppressHoverUntilExit = false
+            hoverOpens = true
+            forceOpen()
+        }
+    }
+
+    func togglePin() {
+        isPinned.toggle()
+        keyboardHeld = false
+        suppressHoverUntilExit = false
+        reevaluateHover()
+        if isPinned { forceOpen() }
+        apply(animated: false)
+    }
+
+    func dismissFromOutside(at point: CGPoint) {
+        guard !isPinned else { return }
+        if machine.isOpen, !island.panel.frame.contains(point) { forceCollapse() }
+    }
+
     func forceCollapse() {
+        isPinned = false
+        keyboardHeld = false
+        suppressHoverUntilExit = pointerInside
+        hoverOpens = false
+        stopTyping()
         transition(machine.reduce(.forceCollapse, config: config))
     }
 
@@ -363,6 +399,12 @@ final class ScreenHUD {
             showsAlertDetails: showsAlertDetails,
             animatesGeometry: animated
         )
+        root.maximumPanelHeight = geometry.screenFrame.height - 80
+        root.repositories = repositories
+        root.navigation = navigation
+        root.isPinned = isPinned
+        root.onTogglePin = { [weak self] in self?.togglePin() }
+        root.onOpenRepositories = { [weak self] in self?.handOff { self?.onOpenRepositories?() } }
         root.logoQueue = logoQueue
         // The mode decides the silhouette, not whether there are marks to draw.
         root.hidesSilhouette = geometry.mode == .logos

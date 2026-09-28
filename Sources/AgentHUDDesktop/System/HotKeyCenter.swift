@@ -1,8 +1,9 @@
 import Carbon.HIToolbox
 import Foundation
+import Observation
 
 /// Global hot keys via Carbon `RegisterEventHotKey` (works without Accessibility permission).
-@MainActor
+@MainActor @Observable
 final class HotKeyCenter {
     static let shared = HotKeyCenter()
 
@@ -10,20 +11,29 @@ final class HotKeyCenter {
     static let commandOption = UInt32(cmdKey | optionKey)
 
     private var handlers: [UInt32: () -> Void] = [:]
-    private var references: [EventHotKeyRef?] = []
+    @ObservationIgnored private var references: [UInt32: EventHotKeyRef] = [:]
+    var panelShortcutError: String?
     private var installed = false
     private static let signature: OSType = 0x4148_5544 // 'AHUD'
 
-    func register(id: UInt32, keyCode: UInt32, modifiers: UInt32, handler: @escaping () -> Void) {
+    @discardableResult
+    func register(id: UInt32, keyCode: UInt32, modifiers: UInt32, handler: @escaping () -> Void) -> Bool {
+        unregister(id: id)
         installHandlerIfNeeded()
-        handlers[id] = handler
         var reference: EventHotKeyRef?
         let hotKeyID = EventHotKeyID(signature: Self.signature, id: id)
         let status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &reference)
         if status != noErr {
-            NSLog("[AgentHUD] RegisterEventHotKey failed: %d", status)
+            return false
         }
-        references.append(reference)
+        references[id] = reference
+        handlers[id] = handler
+        return true
+    }
+
+    func unregister(id: UInt32) {
+        if let reference = references.removeValue(forKey: id) { UnregisterEventHotKey(reference) }
+        handlers[id] = nil
     }
 
     fileprivate func dispatch(id: UInt32) {

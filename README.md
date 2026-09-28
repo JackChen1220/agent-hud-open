@@ -25,13 +25,14 @@
 - **Activity in your notch.** A breathing glow follows agent activity. Expand the panel to see quotas, token usage, and active sessions. Every display gets its own HUD — a screen without a notch shows the watched agents' logos in a row instead of a bar pretending to have one.
 - **Answers without a detour.** When a client stops to ask whether a tool may run, the request arrives on the HUD. Hover to read what it wants — the file, the command, the lines it would change — and allow or deny it there. Saying nothing is always available: the client keeps waiting on its own prompt in the terminal, exactly as if the HUD were closed.
 - **Usage in context.** Track reset times, quota trends, model usage, and available API balances in one statistics window.
+- **Agent and branch hub.** Switch from usage to local project branches to review worktrees, sync state, and progress without opening a separate Git client.
 - **Make it yours.** Choose visible agents, glow appearance (a soft blur or a halftone, ASCII, block, Braille or binary grid, each with breathe, flow, scan, ripple, shimmer and boot effects), language, and startup preferences. Usage alert levels are fixed at 70% / 90% used.
 
 <p align="center">
   <img src="docs/screenshots/approvals.webp" alt="Four tool calls waiting on the island: an edit with its diff open, and a shell command, an MCP call and a file read behind it" width="760">
 </p>
 
-Press **⌘⌥H** to toggle the glow. The menu bar gives you quick access to usage and settings.
+Press **⌘⇧H** to open or close the Hub, and **⌘⌥H** to toggle the glow. The menu bar gives you quick access to usage and settings.
 
 <p align="center">
   <img src="docs/screenshots/usage-statistics.webp" alt="Usage statistics with token charts, API balance, sessions, and an activity heatmap" width="680">
@@ -53,7 +54,7 @@ This builds and opens `build/Agent HUD Open.app`. The app is signed ad-hoc for l
 
 ## Supported clients
 
-**Claude Code** · **Codex Desktop / CLI** · **DeepSeek Harness** · **Antigravity** · **Cursor** · **Grok CLI** · **GitHub Copilot CLI** · **OpenCode** · **Kimi** · **GLM** · **Pi** · **OpenClaw** · **Hermes Agent** · **ZCode** · **CodeBuddy** · **WorkBuddy** · **Qwen Code**
+**Claude Code** · **Codex Desktop / CLI** · **Kiro credits** · **DeepSeek Harness** · **Antigravity** · **Cursor** · **Grok CLI** · **GitHub Copilot CLI** · **OpenCode** · **Kimi** · **GLM** · **Pi** · **OpenClaw** · **Hermes Agent** · **ZCode** · **CodeBuddy** · **WorkBuddy** · **Qwen Code**
 
 Install and sign into the clients you want to monitor. Available activity, quota, and balance information depends on the client and account. See [session lifecycle coverage](docs/session-lifecycle.md) for support for running and terminal turns.
 
@@ -64,6 +65,8 @@ Permission requests can be answered from the HUD for the clients whose own hook 
 No Agent HUD account is required. The app reads local agent activity and queries the corresponding providers for usage or balances where supported, using the installed clients' existing sign-in or configured credentials.
 
 See [data access](docs/data-access.md) for provider details, credential boundaries, and local storage.
+
+The Hub also includes a local Git branch view with explicit switch, commit, push, and safe local-delete actions. See [project branches](docs/repositories.md) for its limits and data handling.
 
 ## Development
 

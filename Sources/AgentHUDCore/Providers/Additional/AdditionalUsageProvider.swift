@@ -14,7 +14,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
     private var lastQuota: (at: Date, key: String, result: Result<ProviderQuota, UsageProviderError>)?
     nonisolated let watchedDirectories: [URL]?
     /// Cursor's usage is the account's, from every device it signs in on, so this Mac going quiet says nothing about it.
-    nonisolated var seesLocalWork: Bool { source != .cursor }
+    nonisolated var seesLocalWork: Bool { source != .cursor && source != .kiro }
     private let ledger: UsageLedger
     private let sessionLedger: SessionLedger
 
@@ -42,6 +42,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
             switch source {
             case .antigravity: return try await AntigravityClient().fetch()
             case .cursor: return try await cursor.quota()
+            case .kiro: return try await KiroClient().fetch()
             case .grok: return try await GrokClient().fetch()
             case .copilot: return try await CopilotClient().fetch()
             case .openclaw, .hermes, .zcode, .codebuddy, .workbuddy, .qwen: return ProviderQuota()
@@ -146,7 +147,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
                                workingDirectory: item.workspace)
         }
         let snapshots = windows.map {
-            UsageSnapshot(agentId: $0.id, remainingPct: $0.remaining, resetAt: $0.reset, windowDuration: $0.duration, updatedAt: observedAt)
+            UsageSnapshot(agentId: $0.id, remainingPct: $0.remaining, resetAt: $0.reset, windowDuration: $0.duration, amounts: $0.amounts, updatedAt: observedAt)
         }
         var insights: [String: UsageInsights] = [:]
         for snapshot in snapshots {

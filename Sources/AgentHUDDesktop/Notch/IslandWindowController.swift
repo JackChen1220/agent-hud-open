@@ -31,7 +31,9 @@ final class IslandWindowController {
 
     /// Resolve the natural height before expansion so the first frame has its final target.
     func contentHeight(for view: IslandRootView) -> CGFloat {
-        let content = AnyView(view.content.fixedSize(horizontal: false, vertical: true))
+        var measured = view
+        measured.observesRepositories = false
+        let content = AnyView(measured.content.fixedSize(horizontal: false, vertical: true))
         if let measurement {
             measurement.rootView = content
         } else {
@@ -39,6 +41,8 @@ final class IslandWindowController {
         }
         return measurement!.fittingSize.height
     }
+
+    func invalidateMeasurement() { measurement = nil }
 
     func setFrame(_ frame: CGRect) {
         guard panel.frame != frame else { return }

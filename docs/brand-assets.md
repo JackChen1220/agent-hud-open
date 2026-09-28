@@ -40,9 +40,13 @@ These seven use the clients' official artwork instead of SF Symbols.
 
 The bundled files are 256 × 256 transparent PNG renders of those SVGs, fitted and centered without changing their proportions. Pi's excess transparent canvas is trimmed before fitting, without changing the mark's geometry. The original SVGs are not distributed in this repository.
 
+## Kiro
+
+`kiro.png` is the user-provided 128 × 128 purple Kiro app icon, kept as supplied with its original colors and transparency. It is rendered as original artwork in both light and dark appearance. In the island logo queue, Kiro has no extra outline and fills the same visible slot as the other marks. Its attribution is also included in the bundled third-party notices.
+
 ## Rendering rules
 
-Every logo is drawn into a 16 × 16 point image. Grok, Cursor, Kimi, Pi, GitHub Copilot, Hermes Agent and ZCode are template images (monochrome, foreground-colored); Claude, ChatGPT (tinted), Antigravity, DeepSeek, GLM, OpenCode, OpenClaw, CodeBuddy, WorkBuddy, Qwen Code and Qoder are drawn as original images. SwiftUI views and the status-item menu use the same images.
+Compact views draw logos into a 16 × 16 point image; the island queue draws marks at the selected size. Grok, Cursor, Kimi, Pi, GitHub Copilot, Hermes Agent and ZCode are template images (monochrome, foreground-colored); Claude, ChatGPT (tinted), Antigravity, DeepSeek, GLM, OpenCode, OpenClaw, CodeBuddy, WorkBuddy, Qwen Code, Qoder and Kiro are drawn as original images. SwiftUI views and the status-item menu use the same bundled artwork.
 
 ## Licenses and trademarks
 

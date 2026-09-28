@@ -149,7 +149,7 @@ public enum CodexLocator {
                                   applications: URL = URL(fileURLWithPath: "/Applications"),
                                   path: String = ProcessInfo.processInfo.environment["PATH"] ?? "",
                                   registered: [URL] = VendorCatalog.applications("Codex")) -> [URL] {
-        desktop(home: home, applications: applications) + registered.map(engine(in:)) + cli(home: home, path: path)
+        desktop(home: home, applications: applications) + registered.flatMap(engines(in:)) + cli(home: home, path: path)
     }
 
     /// The same order as `candidates`, asking Launch Services only when no app sits under a known name.
@@ -159,15 +159,19 @@ public enum CodexLocator {
                             registered: @autoclosure () -> [URL] = VendorCatalog.applications("Codex")) -> URL? {
         let runnable = { (url: URL) in FileManager.default.isExecutableFile(atPath: url.path) }
         return desktop(home: home, applications: applications).first(where: runnable)
-            ?? registered().map(engine(in:)).first(where: runnable)
+            ?? registered().flatMap(engines(in:)).first(where: runnable)
             ?? cli(home: home, path: path).first(where: runnable)
     }
 
-    private static func engine(in app: URL) -> URL { app.appendingPathComponent("Contents/Resources/codex") }
+    private static func engines(in app: URL) -> [URL] {
+        ["Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+         "Contents/Resources/codex-cli/bin/codex",
+         "Contents/Resources/codex"].map { app.appendingPathComponent($0) }
+    }
 
     private static func desktop(home: URL, applications: URL) -> [URL] {
         [applications, home.appendingPathComponent("Applications")].flatMap { root in
-            ["Codex.app", "ChatGPT.app"].map { engine(in: root.appendingPathComponent($0)) }
+            ["Codex.app", "ChatGPT.app"].flatMap { engines(in: root.appendingPathComponent($0)) }
         }
     }
 

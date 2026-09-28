@@ -2,6 +2,52 @@
 
 Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the same number. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
+## 0.4.33 — Local build, 2026-09-28
+
+- Match the borderless Kiro icon’s visible size to outlined icons in the island queue while preserving alignment and spacing.
+
+## 0.4.32 — Local build, 2026-09-28
+
+- Remove the additional dark outline from Kiro in the island logo queue; preserve the supplied purple artwork.
+
+## 0.4.31 — Local build, 2026-09-28
+
+- Replace the Kiro icon with the user-provided 128 px purple PNG.
+
+## 0.4.30 — Local build, 2026-09-28
+
+- Use Kiro’s purple app icon with its original colors throughout the Hub, settings and menus.
+
+## 0.4.29 — Local build, 2026-09-28
+
+- Show the Kiro logo in the Hub, settings and menus, with automatic contrast on light and dark backgrounds.
+
+## 0.4.28 — Local build, 2026-09-28
+
+- Add Kiro account credits using its existing local sign-in: plan, used/total/remaining credits, reset date and separate trial, bonus and add-on pools. No token counts are inferred from credits; expired login prompts the user to open Kiro. Authentication is read-only and requests only target official Kiro management hosts.
+
+## 0.4.27 — Local build, 2026-09-28
+
+- Read local task lifecycle events independently of serial account requests, so slow quota queries no longer delay completion status. File event delivery uses a shorter batching interval, and filesystem paths such as `/private/var` are mapped back to the watched log roots correctly.
+
+## 0.4.26 — Local build, 2026-09-28
+
+- Add a Pin button next to Hub settings. Pinned panels stay open when the pointer leaves or another window is clicked; unpinning restores hover collapse. Explicit dismissal clears the pin.
+
+## 0.4.25 — Local build, 2026-09-27
+
+- Keep the Hub and its hover cards dark while settings and independent detail windows continue to follow the selected appearance.
+
+## 0.4.24 — Local build, 2026-09-27
+
+- Expanded Hub content, quota hover details and the Branches tab now follow light, dark and system appearance settings. The collapsed notch stays black.
+
+## 0.4.23 — Local build, 2026-09-27
+
+- Add a configurable shortcut to expand or collapse the Hub and Agent / Branches tabs with larger click targets and immediate panel resizing.
+- Add local repository and worktree status, branch switching, selected-file commits, reviewed pushes and safe local branch deletion. Branch notes support colored progress labels and TEST / UAT ancestry checks.
+- Find the Codex engine in the updated desktop app layout while retaining support for older installations. A missing executable no longer incorrectly asks signed-in users to log in.
+
 ## 0.4.22 — 2026-09-26
 
 - Clicking a turn on a session's page lays out its calls below the chart, one bar each, in tokens or cost as the turns are, with sub-agents' calls faded, the context each of the session's own calls read against the model's window, and a line with the number of calls, how many came from sub-agents, the time they spanned, what they would cost at API list prices and the largest call's share. Hovering a call shows its model, whether the session or which sub-agent made it, the pause before it, the tools whose results it read in and the tools it asked for. The calls are read from the usage ledger when the turn opens and the tool names from its Claude Code or Codex logs; a turn that fanned out to more than 16 sub-agents names only its own tools. Clicking the turn again closes it, and demo mode shows calls too.

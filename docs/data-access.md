@@ -10,6 +10,7 @@ Agent HUD Open reads agent activity and usage metadata on your Mac. It has no Ag
 | --- | --- | --- |
 | Claude Code | Session records and account profile | Installed Claude engine usage interface |
 | Codex Desktop / CLI | Session records, including `CODEX_HOME` | Installed Codex app-server account rate limits |
+| Kiro | Existing sign-in record and profile ARN; no project files or conversations | Official Kiro credits endpoint, using its existing bearer token |
 | DeepSeek Harness | Session records and profile-owning Node process metadata, including `DSH_HOME` | Official DeepSeek balance endpoint with the configured Harness API key |
 | Antigravity | Local application process and conversation metadata | Running application's local language server |
 | Cursor | Local application database and session metadata | Official Cursor usage endpoints with the installed client's session token |
@@ -24,7 +25,8 @@ Per-client fields, endpoints and stored data: [providers](providers.md). Token c
 
 - A provider that needs a key or token reads it from the client's own configuration, environment variables or local credential files, uses it only for that provider's usage request, and never includes it in reports or stored data.
 - Claude and Codex quota queries use the installed clients' existing sign-in; Codex `auth.json` is not read. Pi ChatGPT OAuth uses the existing access token for the official usage endpoint, without using its refresh token or writing credentials. No request sends a model message or consumes a usage-reset credit.
-- Account identity comes only from data a provider already reads or a response it already requests: the Claude profile, Codex `account/read` and Pi’s authenticated ChatGPT usage response, Cursor's local database, the Grok login record, Antigravity's local server and, for GitHub Copilot, GitHub's `/user` response. Provider user and workspace ids are stored as hashes; the account's email or name is kept locally to label its rows.
+- Kiro quota reads use its existing `~/.aws/sso/cache/kiro-auth-token.json` bearer token with the official, region-allowlisted management endpoint. The request is read-only; it does not refresh or rewrite credentials and never sends project data. An expired sign-in asks the user to open Kiro.
+- Account identity comes only from data a provider already reads or a response it already requests: the Claude profile, Codex `account/read` and Pi’s authenticated ChatGPT usage response, Kiro's `userInfo`, Cursor's local database, the Grok login record, Antigravity's local server and, for GitHub Copilot, GitHub's `/user` response. Provider user and workspace ids are stored as hashes; an email or name returned by the provider is kept locally to label its rows. Kiro's enterprise response may omit email, in which case the Hub displays a short account hash.
 - GitHub Copilot quota reads no credential until the user confirms Settings → Agents → GitHub Copilot → Read quota; the dialog, shown each time it is switched on, names the environment variables, the keychain item `gh:github.com` and the GitHub CLI `hosts.yml`, and macOS may ask for keychain access. Switching it off forgets the account, its rows and its quota history at once.
 - OpenClaw's agent database also stores authentication profiles; only its session tables are queried.
 - Custom endpoints are not assumed to share official billing accounts, and executable key resolvers are never run.

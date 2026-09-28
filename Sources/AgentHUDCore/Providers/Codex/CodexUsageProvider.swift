@@ -40,7 +40,7 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
         let pi = PiCodexClient(directory: PiCodexClient.directory)
         return CodexUsageProvider(readLimits: {
             guard let executable = CodexLocator.find() else {
-                throw UsageProviderError(L10n.text("安装并登录后即可读取额度", "Install and sign in to read quota"))
+                throw UsageProviderError(L10n.text("未找到 Codex 可执行程序，请检查安装位置", "Codex executable not found; check its installation location"))
             }
             return try await CodexAppServerClient(executable: executable, dataDirectory: directory).fetch()
         }, transcripts: .standard(directory: directory, ledger: ledger),

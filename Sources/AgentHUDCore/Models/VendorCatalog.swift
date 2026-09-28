@@ -36,6 +36,7 @@ public enum VendorCatalog {
             bundleIDs: ["com.openai.codex"],
             clients: ["Codex Desktop": "Desktop", "codex_vscode": "IDE", "codex-tui": "CLI", "codex_exec": "CLI · exec"],
             windows: ["gpt-reserve": "Luna Reserve"]),
+        "Kiro": Entry(bundleIDs: ["dev.kiro.desktop"]),
         "Cursor": Entry(bundleIDs: ["com.todesktop.230313mzl4w4u92"]),
         // An API balance, not a subscription: its rows stay out of the HUD until switched on.
         "DeepSeek": Entry(startsHidden: true),

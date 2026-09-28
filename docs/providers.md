@@ -177,3 +177,30 @@ Files in the data directory ([architecture](architecture.md#storage)); none cont
 | [Pi](https://github.com/earendil-works/pi/tree/6160683a4a8012f0d1cd30c145df18b4ca6f5176), [zai-coding-plugins](https://github.com/zai-org/zai-coding-plugins/blob/0446d0bb0bc537d97d3ab3664c4b8b9c4a0e1254/plugins/glm-plan-usage/skills/usage-query-skill/scripts/query-usage.mjs) | `6160683a…`, `0446d0bb…` | MIT, Apache-2.0 | Reference-only: Pi provider naming, environment variables and OAuth credential fields; the `/api/anthropic` ↔ monitor endpoint mapping |
 
 Official protocol documents: [ZCode hooks](https://zcode.z.ai/en/docs/hooks), [Qwen Code hooks](https://qwenlm.github.io/qwen-code-docs/en/users/features/hooks/), [CodeBuddy plugins reference](https://www.codebuddy.ai/docs/cli/plugins-reference), [Copilot hooks configuration](https://docs.github.com/en/copilot/reference/hooks-configuration), [Copilot CLI directory](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference), [CodeBuddy hooks](https://www.codebuddy.ai/docs/cli/hooks) and [environment variables](https://www.codebuddy.ai/docs/cli/env-vars), [Antigravity hooks](https://antigravity.google/docs/hooks/), [Antigravity CLI `/resume`](https://antigravity.google/docs/cli/commands/resume/), [Cursor hooks](https://cursor.com/docs/hooks), [Codex app-server](https://learn.chatgpt.com/docs/app-server), [DeepSeek balance](https://api-docs.deepseek.com/api/get-user-balance/) and [pricing](https://api-docs.deepseek.com/quick_start/pricing/).
+
+## Kiro
+
+`KiroClient` reads `~/.aws/sso/cache/kiro-auth-token.json` and, for IDE profiles,
+`~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/profile.json`.
+It sends a read-only `GET /getUsageLimits` to an allowlisted official Kiro management
+host using the existing bearer login, `origin=AI_EDITOR` and the available profile ARN.
+It never refreshes or rewrites Kiro's credentials; expired credentials prompt opening Kiro.
+The shared HTTP client disables redirects, cookies and response caches. Tokens and raw
+response errors are not persisted or logged. No project files or conversations are sent.
+
+Account identity is hashed from the response's user ID (email fallback). Plan credits,
+active trial credits, unexpired bonuses and add-on credit packs remain separate rows.
+Precision usage/limit fields take precedence over integer fields. Unknown, invalid or
+unlimited caps are not represented as a percentage; over-limit usage keeps its actual
+count while remaining credits clamp to zero. Each row shows exact used, total and remaining
+credits (`UsageSnapshot.amounts`) and the server's reset/expiry. Billing duration is not
+inferred from calendar months. The host's existing account polling schedule applies.
+
+This integration reports account-wide credits, not local token statistics or task lifecycle.
+The inspected local CLI sessions sometimes contain zero token counters despite nonzero
+metering credits, and IDE session metadata does not provide equivalent reliable counts.
+Credits are never converted into estimated tokens. Source settings state this limitation.
+
+Run the opt-in, read-only authenticated smoke check with
+`AGENTHUD_KIRO_LIVE_PROBE=1 swift test --disable-sandbox --build-system native --filter KiroProviderTests`.
+All other Kiro tests use synthetic credentials and quota fixtures.

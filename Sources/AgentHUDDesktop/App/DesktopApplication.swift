@@ -13,6 +13,8 @@ public final class DesktopApplication {
     /// The requests already on the island, so a change to the waiting list says which ones arrived and which left.
     private var shownRequests: [String] = []
     private var notch: IslandController?
+    private lazy var repositories = RepositoryStore(storageURL: options.demo ? nil : AppSupport.directory.appendingPathComponent("repositories-v1.json"))
+    private lazy var repositoryWindow = RepositoryWindowController(store: repositories)
     private var statusItem: StatusItemController?
     private lazy var settingsWindow = SettingsWindowController(
         settings: settings, store: store, additionalPages: additionalSettingsPages
@@ -45,6 +47,9 @@ public final class DesktopApplication {
         notch.onOpenStats = { [weak self] in self?.showStats() }
         notch.onOpenSettings = { [weak self] in self?.showSettings() }
         self.notch = notch
+        notch.repositories = repositories
+        notch.onOpenRepositories = { [weak self] in self?.repositoryWindow.show() }
+        Task { await repositories.load() }
         let statusItem = StatusItemController(store: store, settings: settings)
         statusItem.actions = MenuActions(
             toggleGlow: { [weak self] in self?.toggleGlow() },
@@ -56,6 +61,9 @@ public final class DesktopApplication {
         HotKeyCenter.shared.register(id: 1, keyCode: HotKeyCenter.keyH, modifiers: HotKeyCenter.commandOption) { [weak self] in
             self?.toggleGlow()
         }
+        configurePanelShortcut()
+        observeChanges({ [weak self] in self?.settings.settings.panelShortcut },
+                       onChange: { [weak self] in self?.configurePanelShortcut() })
         observeChanges({ [weak self] in
             self?.settings.settings.appearance
         }, onChange: { [weak self] in self?.applyAppearance() })
@@ -114,6 +122,10 @@ public final class DesktopApplication {
         // Quitting must never leave a client waiting on an answer that is no longer coming.
         PermissionRequests.shared.stop()
         store.stop()
+        repositories.stop()
+        notch?.stop()
+        HotKeyCenter.shared.unregister(id: 1)
+        HotKeyCenter.shared.unregister(id: 2)
     }
 
     /// Mirrors the requests waiting for the user onto the island: a new one is shown, and one the client took back
@@ -152,6 +164,19 @@ public final class DesktopApplication {
         for grant in update.resetCreditGrants { notch?.present(.resetCredits(grant)) }
         for completion in update.completions { notch?.present(.completion(completion)) }
         onIslandEvents?(update, report, now)
+    }
+
+    private func configurePanelShortcut() {
+        let shortcut = settings.settings.panelShortcut
+        let center = HotKeyCenter.shared
+        center.unregister(id: 2)
+        center.panelShortcutError = nil
+        guard shortcut.enabled else { return }
+        if !center.register(id: 2, keyCode: shortcut.keyCode, modifiers: shortcut.modifiers, handler: { [weak self] in
+            self?.notch?.togglePanel()
+        }) {
+            center.panelShortcutError = L10n.text("快捷键被占用或不可用，请更换组合。", "Shortcut is unavailable or in use. Choose another combination.")
+        }
     }
 
     private func applyAppearance() {

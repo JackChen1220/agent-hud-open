@@ -24,6 +24,7 @@ The five kinds (`TokenKind`, selected as `TokenDimensions`) are additive and nev
 - Rows come from the response, never from a template: `primary` is not assumed to mean 5 hours, and a window the service names by period (minutes, "7d", weekly, monthly, "MCP") keeps that label.
 - One account's windows are shown once even when two programs share the account (Codex Desktop and CLI); usage recorded by one client is never duplicated into another client's account, and model token spend is shown separately from quota windows.
 - Money keeps its currency and is never converted or turned into a percentage; API-billed clients (DeepSeek) show balance and estimated cost instead of windows, and estimates are labelled as estimates.
+- When a service reports exact usage units, the row keeps the used amount, limit, and unit alongside its percentage. Kiro reports credits; credits are not converted into tokens.
 - Codex reset credits show the service's `availableCount`; the per-credit expiry list is supplementary and never derives the count.
 - A missing reading is "—", not 0; zero is shown only when the service reported zero.
 - Tokens are never converted into quota, and an unavailable quota is never inferred from token counts. Claude Code's session share is its share of the tokens in the current 5 h window times the window's utilization, given only to sessions that spent tokens in that window; every other session shows "—".
@@ -66,18 +67,18 @@ The five kinds (`TokenKind`, selected as `TokenDimensions`) are additive and nev
 
 ### Collection cadence
 
-Reads never run in parallel: the usage store runs one pass of source reads or one account step at a time, and a pass starts only after the previous one finished. Every account request is a metadata read: no model message is sent and no reset credit is consumed.
+Local source reads run one pass at a time. Account steps run one request at a time in an independent task, so a waiting network request does not delay local task starts or completions. Ledger writes remain serialized and atomic through the ledger actor. Every account request is a metadata read: no model message is sent and no reset credit is consumed.
 
 | Work | Cadence |
 | --- | --- |
 | One client's local logs | When a file under its data directories changes, when one of its live sessions reaches 120 s or a running turn 120 s or 5 minutes without an observation, and after its account step; passes start at most every 2 s |
 | Local logs of a source that cannot name its directories | Every 5 s |
 | Every client's local logs while the first index is being built | Every 2 s |
-| Account readings: Claude Code engine `get_usage`, Codex `account/rateLimits/read`, DeepSeek balance, Antigravity, Cursor, Grok and GitHub Copilot quota, Cursor account usage events, and Kimi, GLM and OpenCode Go quota per billing pool | Per client: every minute while one of its turns runs, every 3 minutes while a session of its is live between turns, once more for work that finished since its last reading, and when one of its windows resets. Also when the panel, the menu bar menu or the statistics window opens, and at once when GitHub Copilot quota reading is switched on or off |
+| Account readings: Claude Code engine `get_usage`, Codex `account/rateLimits/read`, Kiro credits, DeepSeek balance, Antigravity, Cursor, Grok and GitHub Copilot quota, Cursor account usage events, and Kimi, GLM and OpenCode Go quota per billing pool | Per client: every minute while one of its turns runs, every 3 minutes while a session of its is live between turns, once more for work that finished since its last reading, and when one of its windows resets. Also when the panel, the menu bar menu or the statistics window opens, and at once when GitHub Copilot quota reading is switched on or off |
 
-- A client nobody is using is not asked: its windows move only while its own work runs. A window whose reset has passed, a reading that names no window, and a client whose usage is the account's from every device it signs in on (Cursor and Codex, including Pi logins) keep the 5-minute interval.
+- For providers whose quota follows work on this Mac, an idle client is not asked until its window resets or the five-minute fallback. Kiro, Cursor and Codex usage is account-wide across devices, so those sources keep the five-minute account interval even when this Mac is idle.
 - A known reset takes priority over the normal cadence and stays due until an account request has run at or after it, subject to the 60-second request spacing. An old window returned after that attempt retries on the normal cadence.
-- Account steps run one provider after another, back to back for at most one second before local logs get their turn, so a slow request delays a poll by that request alone.
+- Account steps run one provider after another and signal a new local read when each finishes. Local file events continue to be read while an account request is waiting; stopping collection cancels the pending account task.
 - A pass reads only the clients that signalled; the others keep their last result. Every local source is read again every 5 minutes, which catches a change a directory watch missed. Claude Code and Codex polls examine only the logs the watch reported changed, and list every log again every 5 minutes or after dropped events.
 - A provider never repeats an account request within 60 s, whoever asks, and a failure waits as long as a success; it is reported as a source notice while the other sources keep working.
 

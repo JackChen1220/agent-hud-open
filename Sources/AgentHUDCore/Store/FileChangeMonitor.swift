@@ -70,9 +70,10 @@ final class FileChangeMonitor {
             }
             changes.onChange?()
         }
-        let flags = FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
+        let flags = FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes
+                                            | kFSEventStreamCreateFlagNoDefer)
         guard let created = FSEventStreamCreate(kCFAllocatorDefault, callback, &context, existing as CFArray,
-                                                FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 1, flags) else {
+                                                FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.2, flags) else {
             watched = nil
             return
         }
