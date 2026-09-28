@@ -175,6 +175,31 @@ final class DeepSeekProviderTests: XCTestCase {
         XCTAssertTrue(t.isLive(processStarts: nil), "the fork's own turn is still running")
     }
 
+    func testFormat4ForkDatedAtItsCutStartsAtItsLastMarkerWithoutTheInheritedTurn() throws {
+        var t = DeepSeekTranscript()
+        let parent = now.addingTimeInterval(-60).timeIntervalSince1970 * 1000
+        let inherited = { (type: String, seq: Int, data: [String: Any]) in self.json(["type": type, "seq": seq, "time": parent, "data": data]) }
+        let message = { (kind: String, text: String) -> [String: Any] in ["id": text, "role": "user", "source": ["kind": kind], "content": [["type": "text", "text": text]]] }
+        let closer: [String: Any] = ["id": "forked-tool-result-c1-5", "role": "tool", "toolCallId": "c1", "isError": true, "source": ["kind": "tool", "callId": "c1"], "content": []]
+        // The fork's own marker and the closers of the turn it cut open carry the last inherited event's time.
+        for line in [header(version: 4, seeded: true), inherited("session/end-seed", 0, ["inherited": true]),
+                     inherited("request/header", 1, ["header": ["config": ["provider": "deepseek-official", "model": "deepseek-v4-flash"]], "reason": "initial"]),
+                     inherited("turn/start", 2, ["turn": 1]),
+                     inherited("assistant/message", 3, ["turn": 1, "step": 1, "stream": [], "usage": ["inputTokens": 900, "outputTokens": 90]]),
+                     inherited("session/end-seed", 4, ["inherited": true]), inherited("tool/result", 5, ["turn": 1, "step": 1, "message": closer]),
+                     inherited("step/end", 6, ["turn": 1, "step": 1]), inherited("turn/end", 7, ["turn": 1, "reason": ["kind": "forked"]]),
+                     event("turn/start", seq: 8, data: ["turn": 2]), event("user/message", seq: 9, data: message("runtime-context", "Runtime context")),
+                     event("user/message", seq: 10, data: message("user", "Ship format 4")),
+                     event("assistant/message", seq: 11, data: ["turn": 2, "step": 1, "stream": [], "usage": ["inputTokens": 5, "outputTokens": 2]]),
+                     event("turn/end", seq: 12, data: ["turn": 2, "reason": ["kind": "completed"]])] {
+            try feed(&t, line)
+        }
+        XCTAssertEqual(t.usage.map(\.input), [5])
+        XCTAssertEqual(t.usage.first?.model, "deepseek-v4-flash")
+        XCTAssertEqual(t.completions?.map(\.task), ["Ship format 4"], "a producer's user-role context is not a prompt")
+        XCTAssertEqual(t.sessionTurns.map(\.turnID), ["2"], "the turn the fork closed belongs to its parent")
+    }
+
     func testUpgradedSessionCountsOnceFromItsNewestReadableGeneration() async throws {
         let dir = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -193,7 +218,7 @@ final class DeepSeekProviderTests: XCTestCase {
         XCTAssertEqual(result.sessions.map { URL(fileURLWithPath: $0.path).lastPathComponent }, ["session.v3.jsonl"])
         let counted = try await ledger.buckets(since: .distantPast)
         XCTAssertEqual(counted.map(\.tokensIn), [8100], "the older generation of the same session is not counted again")
-        try "{\"type\":\"session\",\"version\":4,\"id\":\"main\",\"createdAt\":0}\n".write(to: folder.appendingPathComponent("session.v4.jsonl"),
+        try "{\"type\":\"session\",\"version\":5,\"id\":\"main\",\"createdAt\":0}\n".write(to: folder.appendingPathComponent("session.v5.jsonl"),
                                                                                             atomically: true, encoding: .utf8)
         let future = await store.index(since: .distantPast)
         XCTAssertNotNil(future.notice, "a newer Harness format is reported rather than silently skipped")
