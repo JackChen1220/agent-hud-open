@@ -10,7 +10,7 @@ Which clients expose running and terminal turns, which of them say they are wait
 
 | Client | Running turns | Terminal turns | Evidence |
 | --- | --- | --- | --- |
-| Claude Code | Yes | Yes | A prompt line starts the turn; an assistant `stop_reason` of `end_turn` or `stop_sequence` completes it; a `[Request interrupted` user line ends it; `tool_use` keeps it running. `isSidechain` lines, `<synthetic>` messages (API errors) and sub-agent transcripts never start or finish a turn. The turn's message is the latest assistant text block, and its notification hook reports waiting for approval. |
+| Claude Code | Yes | Yes | A prompt line starts the turn; an assistant `stop_reason` of `end_turn` or `stop_sequence` completes it; a `[Request interrupted` user line ends it; `tool_use` keeps it running, and a working assistant line after the turn stopped, with no prompt before it (a sub-agent's report, a queued notification, a Stop hook's feedback), resumes it. Attachment and queue records never date a turn. `isSidechain` lines and `<synthetic>` messages (API errors) never start or finish a turn, and the session's sub-agents keep it running ([Sub-agents](#sub-agents)). The turn's message is the latest assistant text block, and its notification hook reports waiting for approval. |
 | Codex Desktop / CLI | Yes | Yes | `task_started` (`turn_id`) starts the turn and later events refresh it; `task_complete` completes it; `turn_aborted` ends it; an `agent_message` is the running turn's message. Guardian and sub-agent rollouts report none. |
 | DeepSeek Harness | Yes | Yes | `turn/start`, later step, message and tool events (format 0 also logs streaming chunks), `turn/end`; only `reason.kind == completed` is a completion, and sub-agent sessions and inherited fork history record none. A quiet turn stays active while a Node process that predates it holds the Harness profile. |
 | Grok CLI | Yes | Yes | Session updates keyed by `promptId`; `turn_completed` with `stop_reason` `end_turn` completes, other outcomes end without a completion. Older unified logs carry usage only. |
@@ -38,6 +38,12 @@ Which clients expose running and terminal turns, which of them say they are wait
 - Process evidence is separate from the last recorded observation: a quiet process does not manufacture a transcript event, and a disappeared process does not prove completion.
 - The island announces each completed turn once, for clients whose Live status is on (`IslandEventTracker`). Completions that happened before the application started are history, not events, and turns that finished while Live status was off are not replayed when it is turned back on.
 - Hosts that relay completions use the island's update rather than deciding again, and apply the same preference in any other relay or synchronization service.
+
+### Sub-agents
+
+- A Claude Code session also runs while the sub-agents and workflow agents it started work, after its own agent ended its turn or went quiet waiting for them. Their logs sit in a directory named after the session's log (`<session>/subagents/`, workflow agents under `workflows/<run>/`), and their latest activity is the session's latest event.
+- Each of those logs follows its own turn: its prompt starts it; `end_turn`, a `StructuredOutput` call (a workflow agent handing back its result) or a `[Request interrupted` line ends it; 30 quiet minutes abandon it, as for any running turn. An agent stopped without any of these, such as one closed with its session, keeps the session running until then.
+- The session's turn keeps its id and start while its agents work. Sub-agent logs report no completions and mark no prompts, so the agent's own answer is still announced when it ends its turn.
 
 ### Pi observer
 
@@ -87,6 +93,7 @@ Antigravity, Cursor, GitHub Copilot CLI, CodeBuddy and Qwen Code do not record f
 | Completion hooks and handler entry | `Sources/AgentHUDCore/Providers/Additional/CompletionHooks.swift`, `Sources/AgentHUDOpenApp/main.swift` |
 | Pi observer and its extension script | `Sources/AgentHUDCore/Providers/OpenAgents/PiSessionObserver.swift` |
 | Per-client turn parsing | `Sources/AgentHUDCore/Providers/Claude/ClaudeTranscripts.swift`, `Codex/CodexTranscripts.swift`, `DeepSeek/DeepSeekTranscript.swift`, `Grok/GrokSessions.swift`, `OpenAgents/OpenAgentSessions.swift` |
+| Claude sub-agents keeping their session running | `Sources/AgentHUDCore/Providers/Claude/ClaudeCodeProvider.swift` |
 
 ## Related
 

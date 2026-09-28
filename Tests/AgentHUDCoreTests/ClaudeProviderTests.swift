@@ -420,6 +420,75 @@ final class ClaudeTranscriptTests: XCTestCase {
         XCTAssertEqual(accumulator.build()?.turn?.startedAtMs, now + 30_000)
     }
 
+    func testAnAnswerWrittenAfterALaterStampedAttachmentStillEndsTheTurn() throws {
+        // Claude Code writes its deferred-tools record before the answer, stamped a moment after it.
+        let lines = [
+            #"{"isSidechain":false,"sessionId":"s-a","type":"user","message":{"role":"user","content":"Explain"},"timestamp":"2026-09-28T10:42:56.354Z"}"#,
+            #"{"isSidechain":false,"sessionId":"s-a","type":"attachment","attachment":{"type":"deferred_tools_record"},"timestamp":"2026-09-28T10:44:37.496Z"}"#,
+            #"{"isSidechain":false,"sessionId":"s-a","type":"assistant","message":{"id":"msg_a","role":"assistant","model":"claude-opus-5-5","content":[{"type":"text","text":"Done"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}},"timestamp":"2026-09-28T10:44:37.494Z"}"#,
+        ]
+        var accumulator = TranscriptAccumulator(path: "/p/s-a.jsonl", isSubagent: false)
+        accumulator.ingest(FastTranscriptParser.parse(Data((lines.joined(separator: "\n") + "\n").utf8)))
+        let turn = try XCTUnwrap(accumulator.build()?.turn)
+        XCTAssertEqual(turn.state, .completed)
+        XCTAssertEqual(turn.observedAtMs, RecordCoding.milliseconds(try XCTUnwrap(DateParsing.iso8601("2026-09-28T10:44:37.494Z"))))
+    }
+
+    func testAnAgentWokenWithoutAPromptResumesItsTurn() throws {
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        func event(_ offset: Double, role: TranscriptEvent.Role = .assistant, prompt: String? = nil, stop: String? = nil, id: String? = nil) -> TranscriptEvent {
+            .init(timestamp: base.addingTimeInterval(offset), role: role, model: "claude-test", inputTokens: 0, cacheCreationTokens: 0,
+                  cacheReadTokens: 0, outputTokens: 0, text: prompt, sessionId: "claude-session", cwd: nil, messageId: id,
+                  stopReason: stop, isPrompt: role == .user && prompt != nil)
+        }
+        var accumulator = TranscriptAccumulator(path: "/fixture/claude-session.jsonl", isSubagent: false)
+        accumulator.ingest([event(0, role: .user, prompt: "Research this"), event(5, stop: "tool_use", id: "launch"), event(9, stop: "end_turn", id: "waiting")])
+        let stopped = try XCTUnwrap(accumulator.build()?.turn)
+        XCTAssertEqual(stopped.state, .completed)
+        // A sub-agent's report arrives as a queue record and a meta line, neither of them a prompt.
+        accumulator.ingest([event(60, role: .other), event(61, role: .user), event(62, stop: "tool_use", id: "reading")])
+        let resumed = try XCTUnwrap(accumulator.build()?.turn)
+        XCTAssertEqual(resumed.state, .running)
+        XCTAssertEqual(resumed.turnID, stopped.turnID, "the agent is still working on what it was asked")
+        XCTAssertEqual(resumed.observedAtMs, RecordCoding.milliseconds(base.addingTimeInterval(62)))
+        accumulator.ingest([event(70, stop: "end_turn", id: "report")])
+        XCTAssertEqual(accumulator.build()?.turn?.state, .completed)
+        XCTAssertEqual(accumulator.build()?.completions.count, 2)
+    }
+
+    func testSubagentLogsFollowTheirOwnTurnWithoutCompletionsOrMarks() throws {
+        func line(_ type: String, _ message: String, at second: Int) -> String {
+            #"{"isSidechain":true,"agentId":"a1","sessionId":"s-p","type":"\#(type)","message":\#(message),"timestamp":"2026-09-28T10:00:\#(String(format: "%02d", second)).000Z"}"#
+        }
+        func call(_ id: String, _ name: String, stop: String, at second: Int) -> String {
+            line("assistant", #"{"id":"\#(id)","role":"assistant","model":"claude-opus-5-5","content":[{"type":"tool_use","id":"t-\#(id)","name":"\#(name)","input":{}}],"stop_reason":\#(stop),"usage":{"input_tokens":1,"output_tokens":1}}"#, at: second)
+        }
+        let prompt = line("user", #"{"role":"user","content":"Review the parser"}"#, at: 0)
+        let working = call("msg_1", "Read", stop: "null", at: 5)
+        let result = line("user", #"{"role":"user","content":[{"type":"tool_result","tool_use_id":"t","content":"ok"}]}"#, at: 6)
+        let answer = line("assistant", #"{"id":"msg_2","role":"assistant","model":"claude-opus-5-5","content":[{"type":"text","text":"Found it"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}"#, at: 9)
+        let handBack = call("msg_3", "StructuredOutput", stop: "\"tool_use\"", at: 9)
+        let interrupted = line("user", #"{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}"#, at: 9)
+        let returned = line("user", #"{"role":"user","content":[{"type":"tool_result","tool_use_id":"t-msg_3","content":"Structured output provided successfully"}]}"#, at: 10)
+        func build(_ lines: [String], path: String = "/p/s-p/subagents/agent-a1.jsonl") -> TranscriptSession? {
+            let text = lines.joined(separator: "\n") + "\n"
+            XCTAssertEqual(FastTranscriptParser.parse(Data(text.utf8)).map(\.returnsStructuredOutput),
+                           ClaudeTranscriptParser.parse(text).map(\.returnsStructuredOutput))
+            var agent = TranscriptAccumulator(path: path, isSubagent: true)
+            agent.ingest(FastTranscriptParser.parse(Data(text.utf8)))
+            XCTAssertEqual(agent.drainMarks(), [], "a sub-agent's prompts are steps of its parent's turn")
+            return agent.build()
+        }
+        XCTAssertEqual(build([prompt, working, result])?.turn?.state, .running)
+        let done = try XCTUnwrap(build([prompt, working, result, answer]))
+        XCTAssertEqual(done.turn?.state, .completed)
+        XCTAssertEqual(done.completions, [], "only the session's own agent reports completions")
+        let workflow = "/p/s-p/subagents/workflows/wf_1/agent-b2.jsonl"
+        XCTAssertEqual(build([prompt, working, result, handBack, returned], path: workflow)?.turn?.state, .completed,
+                       "a workflow agent stops once it hands back its result, without an end_turn")
+        XCTAssertEqual(build([prompt, working, result, interrupted], path: workflow)?.turn?.state, .ended)
+    }
+
     /// A final Claude response whose usage includes cached input.
     static func endTurn(_ id: String, at date: Date) -> String {
         #"{"sessionId":"s","type":"assistant","message":{"id":"\#(id)","role":"assistant","model":"claude-test","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":20,"cache_read_input_tokens":800}},"timestamp":"\#(date.ISO8601Format())","entrypoint":"claude-desktop"}"#
@@ -821,6 +890,50 @@ final class ClaudeCodeProviderTests: XCTestCase {
             XCTAssertEqual(count, 0)
         }
         XCTAssertEqual(try String(contentsOf: directory.appendingPathComponent("calls"), encoding: .utf8), "called\n")
+    }
+
+    func testASessionKeepsRunningWhileItsSubagentsWork() async throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("agenthud-\(UUID().uuidString)", isDirectory: true)
+        let project = base.appendingPathComponent("projects/-p", isDirectory: true)
+        let agents = project.appendingPathComponent("s-bg/subagents", isDirectory: true)
+        try FileManager.default.createDirectory(at: agents, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let iso = Date.ISO8601FormatStyle(includingFractionalSeconds: true), now = Date()
+        func line(_ type: String, _ message: String, ago: TimeInterval, sidechain: Bool = false) -> String {
+            #"{"isSidechain":\#(sidechain),"sessionId":"s-bg","cwd":"/p","type":"\#(type)","message":\#(message),"timestamp":"\#(iso.format(now.addingTimeInterval(-ago)))"}"#
+        }
+        func assistant(_ id: String, stop: String, ago: TimeInterval, sidechain: Bool = false) -> String {
+            line("assistant", #"{"id":"\#(id)","role":"assistant","model":"claude-opus-5-5","content":[{"type":"text","text":"…"}],"stop_reason":\#(stop),"usage":{"input_tokens":1,"output_tokens":1}}"#,
+                 ago: ago, sidechain: sidechain)
+        }
+        // The agent starts a background sub-agent and ends its turn while the sub-agent works.
+        try ([line("user", #"{"role":"user","content":"Research the options"}"#, ago: 600),
+              assistant("msg_launch", stop: "\"tool_use\"", ago: 598),
+              assistant("msg_wait", stop: "\"end_turn\"", ago: 590)].joined(separator: "\n") + "\n")
+            .write(to: project.appendingPathComponent("s-bg.jsonl"), atomically: true, encoding: .utf8)
+        let agentLog = agents.appendingPathComponent("agent-a1.jsonl")
+        try ([line("user", #"{"role":"user","content":"Compare the options"}"#, ago: 597, sidechain: true),
+              assistant("msg_a1", stop: "null", ago: 30, sidechain: true)].joined(separator: "\n") + "\n")
+            .write(to: agentLog, atomically: true, encoding: .utf8)
+        let provider = ClaudeCodeProvider(engine: nil, transcripts: ClaudeTranscriptStore(root: base.appendingPathComponent("projects")),
+                                          history: QuotaHistoryStore())
+
+        var report = try await provider.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(report.sessions.map(\.id), ["s-bg"], "a sub-agent belongs to its session rather than listing as one")
+        XCTAssertNil(report.sessions.first?.endedAt, "the session runs while its sub-agent does")
+        XCTAssertEqual(report.turns.map(\.state), [.running])
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(report.turns.first).observedAtMs, RecordCoding.milliseconds(now.addingTimeInterval(-31)),
+                                    "the sub-agent's work is the session's latest event")
+        XCTAssertEqual(report.completions.count, 1, "the agent's own answer still counts as a completion")
+
+        let handle = try FileHandle(forWritingTo: agentLog)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data((assistant("msg_a2", stop: "\"end_turn\"", ago: 5, sidechain: true) + "\n").utf8))
+        try handle.close()
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: agentLog.path)
+        report = try await provider.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertNotNil(report.sessions.first?.endedAt, "the session stops with its last sub-agent")
+        XCTAssertEqual(report.turns.map(\.state), [.completed])
     }
 }
 

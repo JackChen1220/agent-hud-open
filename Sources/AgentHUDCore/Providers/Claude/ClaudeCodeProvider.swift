@@ -131,11 +131,15 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
             ))
         }
 
-        // 2. Session list: running first, then most recent.
+        // 2. Session list: running first, then most recent. A session also runs while the sub-agents and workflow agents
+        // it started are at work, after its own agent stopped or went quiet waiting for them.
         let windowStart = usage?.fiveHour?.resetsAt.map { $0.addingTimeInterval(-5 * 3600) } ?? now.addingTimeInterval(-5 * 3600)
+        let agents = Self.workingAgents(sessions, now: now)
+        func isLive(_ session: TranscriptSession) -> Bool {
+            session.isLive(now: now, threshold: Self.liveThreshold) || agents[session.path] != nil
+        }
         let candidates = sessions.filter { !$0.isSubagent }.sorted { lhs, rhs in
-            let lhsLive = lhs.isLive(now: now, threshold: Self.liveThreshold)
-            let rhsLive = rhs.isLive(now: now, threshold: Self.liveThreshold)
+            let lhsLive = isLive(lhs), rhsLive = isLive(rhs)
             if lhsLive != rhsLive { return lhsLive }
             return lhs.lastActivityAt > rhs.lastActivityAt
         }
@@ -143,7 +147,7 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
         let windowTotal = windowTokens.values.reduce(0, +)
         let utilization = usage?.fiveHour?.utilizationPct ?? 0
         let listed = candidates.map { session -> LiveSession in
-            let live = session.isLive(now: now, threshold: Self.liveThreshold)
+            let live = isLive(session)
             let share = windowTotal > 0 ? Double(windowTokens[session.path] ?? 0) / Double(windowTotal) : 0
             let agentId = session.dominantAgentId
             return LiveSession(
@@ -214,7 +218,7 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
             sourceNotices: notice.map { ["Claude": $0] } ?? [:],
             consumerIdsByQuota: consumerIdsByQuota,
             completions: sessions.flatMap(\.completions),
-            turns: Self.awaiting(sessions.compactMap(\.turn), now: now),
+            turns: Self.awaiting(candidates.compactMap { Self.turn(of: $0, agentsWorkingAt: agents[$0.path]) }, now: now),
             // A login without plan limits has no current subscription account; earlier accounts keep their last readings.
             accounts: reading.map { reading in
                 ["Claude": usage == nil ? [] : [AccountObservation(account: self.account(for: reading), home: home,
@@ -273,6 +277,27 @@ actor EngineUsageCache {
 }
 
 extension ClaudeCodeProvider {
+    /// When the sub-agents still at work last did something, keyed by the log of the session that started them. Claude
+    /// Code keeps a session's sub-agent and workflow agent logs in a directory named after its own log.
+    static func workingAgents(_ sessions: [TranscriptSession], now: Date) -> [String: Date] {
+        var latest: [String: Date] = [:]
+        for agent in sessions where agent.isSubagent && agent.isLive(now: now, threshold: liveThreshold) {
+            guard let directory = agent.path.range(of: "/subagents/") else { continue }
+            let parent = String(agent.path[..<directory.lowerBound]) + ".jsonl"
+            latest[parent] = max(latest[parent] ?? agent.lastActivityAt, agent.lastActivityAt)
+        }
+        return latest
+    }
+
+    /// The session's turn, running while its agents work: the agent that stopped, or went quiet waiting for them, has not
+    /// finished what it was asked.
+    static func turn(of session: TranscriptSession, agentsWorkingAt: Date?) -> SessionTurn? {
+        guard let turn = session.turn, let agentsWorkingAt else { return session.turn }
+        return SessionTurn(provider: turn.provider, sessionID: turn.sessionID, turnID: turn.turnID, state: .running,
+                           startedAtMs: turn.startedAtMs,
+                           observedAtMs: max(turn.observedAtMs, RecordCoding.milliseconds(agentsWorkingAt)), message: turn.message)
+    }
+
     /// A turn Claude Code said it is blocked on. The hook only says it needs the user; a turn that is still running is
     /// waiting for approval, and one that already finished is simply waiting for the next prompt. A request older than
     /// the transcript has been answered.

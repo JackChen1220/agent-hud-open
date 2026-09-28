@@ -35,12 +35,15 @@ public struct TranscriptEvent: Hashable, Sendable {
     /// Surface that wrote the line, from the `entrypoint` current builds stamp on every message ("cli",
     /// "claude-desktop", "claude-vscode", "sdk-ts"); nil for older builds.
     public let entrypoint: String?
+    /// An assistant line calling `StructuredOutput`: the result a workflow agent hands back, after which its log ends
+    /// without an `end_turn`.
+    public let returnsStructuredOutput: Bool
 
     public init(
         timestamp: Date, role: Role, model: String?, inputTokens: Int, cacheCreationTokens: Int, cacheReadTokens: Int,
         outputTokens: Int, thinkingTokens: Int = 0, text: String?, sessionId: String?, cwd: String?, messageId: String? = nil,
         requestId: String? = nil, stopReason: String? = nil, isSidechain: Bool = false, isPrompt: Bool = false,
-        isCompaction: Bool = false, entrypoint: String? = nil
+        isCompaction: Bool = false, entrypoint: String? = nil, returnsStructuredOutput: Bool = false
     ) {
         self.timestamp = timestamp
         self.role = role
@@ -60,6 +63,7 @@ public struct TranscriptEvent: Hashable, Sendable {
         self.isPrompt = isPrompt
         self.isCompaction = isCompaction
         self.entrypoint = entrypoint
+        self.returnsStructuredOutput = returnsStructuredOutput
     }
 
     /// Key used to count each API response once.
@@ -107,6 +111,7 @@ public enum ClaudeTranscriptParser {
         let isMeta = object["isMeta"] as? Bool ?? false
         let isSummary = object["isCompactSummary"] as? Bool ?? false
         let details = usage?["output_tokens_details"] as? [String: Any]
+        let calls = role == .assistant ? message?["content"] as? [[String: Any]] ?? [] : []
         return TranscriptEvent(
             timestamp: timestamp,
             role: role,
@@ -125,7 +130,8 @@ public enum ClaudeTranscriptParser {
             isSidechain: object["isSidechain"] as? Bool ?? false,
             isPrompt: role == .user && !isMeta && !isToolResult && !isSummary,
             isCompaction: object["type"] as? String == "system" && object["subtype"] as? String == "compact_boundary",
-            entrypoint: object["entrypoint"] as? String
+            entrypoint: object["entrypoint"] as? String,
+            returnsStructuredOutput: calls.contains { $0["type"] as? String == "tool_use" && $0["name"] as? String == "StructuredOutput" }
         )
     }
 
@@ -264,36 +270,50 @@ public struct TranscriptAccumulator: Hashable, Sendable, Codable {
             if task == nil, event.role == .user, let text = event.text {
                 task = SessionTitle.from(text)
             }
-            if !isSubagent, !event.isSidechain {
-                if event.isCompaction { marks.append(.init(.compaction, at: event.timestamp)) }
+            // A sub-agent's own log follows its turn too, so its session can tell that the agent is still at work; only
+            // a main log records prompts, compactions, completions and the answer.
+            if isSubagent || !event.isSidechain {
+                if !isSubagent, event.isCompaction { marks.append(.init(.compaction, at: event.timestamp)) }
                 if event.isPrompt {
                     // Claude Code records an interruption as a user line; that turn is over without a completion.
                     let interrupted = event.text?.hasPrefix("[Request interrupted") == true
-                    if !interrupted { marks.append(.init(.prompt, at: event.timestamp)) }
+                    if !interrupted, !isSubagent { marks.append(.init(.prompt, at: event.timestamp)) }
                     if event.timestamp >= (currentTurn?.observedAt ?? .distantPast) {
                         currentTurn = Turn(startedAt: interrupted ? currentTurn?.startedAt : event.timestamp,
                             state: interrupted ? .ended : .running, observedAt: event.timestamp)
                     }
                 } else if event.role == .assistant, event.model != "<synthetic>" {
                     if let reason = event.stopReason, Self.completedStopReasons.contains(reason) {
-                        let completionID = RecordCoding.hash(["Claude", sessionId ?? URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent,
-                            event.messageId ?? String(RecordCoding.milliseconds(event.timestamp))])
-                        let duplicate = completions?.contains { $0.id == completionID } == true
-                        recordCompletion(event)
+                        var duplicate = false
+                        if !isSubagent {
+                            let completionID = RecordCoding.hash(["Claude", sessionId ?? URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent,
+                                event.messageId ?? String(RecordCoding.milliseconds(event.timestamp))])
+                            duplicate = completions?.contains { $0.id == completionID } == true
+                            recordCompletion(event)
+                        }
                         if !duplicate, event.timestamp >= (currentTurn?.observedAt ?? .distantPast) {
                             currentTurn = Turn(startedAt: currentTurn?.startedAt, state: .completed, observedAt: event.timestamp,
                                                message: currentTurn?.message)
                         }
+                    } else if isSubagent, event.returnsStructuredOutput, event.timestamp >= (currentTurn?.observedAt ?? .distantPast) {
+                        // A workflow agent hands back its result and stops without an end_turn.
+                        currentTurn = Turn(startedAt: currentTurn?.startedAt, state: .completed, observedAt: event.timestamp)
                     } else if currentTurn == nil {
                         // A partial legacy transcript can show work, but cannot invent a prompt start time.
                         currentTurn = Turn(startedAt: nil, state: .running, observedAt: event.timestamp)
+                    } else if currentTurn?.state != .running, event.timestamp > currentTurn!.observedAt {
+                        // Claude Code woke the agent without a prompt: a sub-agent's report, a queued notification or a
+                        // Stop hook's feedback. The turn that stopped is being worked on again.
+                        currentTurn?.state = .running
                     }
                 }
-                if currentTurn?.state == .running, event.timestamp > currentTurn!.observedAt {
+                // Only the conversation dates a running turn. An attachment or queue record can carry a later time than
+                // the answer written after it, which would then look older than the turn and leave it running.
+                if currentTurn?.state == .running, event.role != .other, event.timestamp > currentTurn!.observedAt {
                     currentTurn?.observedAt = event.timestamp
                 }
                 // The visible answer, taken from whichever block carried it last.
-                if event.role == .assistant, event.model != "<synthetic>",
+                if !isSubagent, event.role == .assistant, event.model != "<synthetic>",
                    let text = event.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
                     currentTurn?.message = text
                 }
