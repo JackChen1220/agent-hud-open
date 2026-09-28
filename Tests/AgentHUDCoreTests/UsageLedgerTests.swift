@@ -308,6 +308,22 @@ final class UsageLedgerTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(buckets.map(\.tokensIn), [4, 30])
     }
 
+    func testAMovedConsumerTakesItsNewIdOrJoinsTheUsageThere() async throws {
+        let ledger = UsageLedger.inMemory()
+        try await ledger.write { writer in
+            try writer.replace(source: "open-agents", contribution: "s1", events: [self.event("a", minute: 1, agent: "pi-model:old-a", input: 10)])
+            try writer.replace(source: "open-agents", contribution: "s2", events: [
+                self.event("b", minute: 2, agent: "pi-model:old-b", input: 20), self.event("c", minute: 3, agent: "pi-model:new-b", input: 5),
+            ])
+        }
+        try await ledger.moveConsumers(["pi-model:old-a": "pi-model:new-a", "pi-model:old-b": "pi-model:new-b", "pi-model:none": "pi-model:x"])
+        let buckets = try await ledger.buckets(since: base)
+        XCTAssertEqual(buckets.map(\.agentId), ["pi-model:new-a", "pi-model:new-b"], "no bucket keeps an old id")
+        XCTAssertEqual(buckets.map(\.tokensIn), [10, 25], "usage already under the new id adds up with the moved usage")
+        let usage = try await ledger.sessionUsage([SessionUsageRequest(sessionID: "s2", keys: ["s2"])])
+        XCTAssertEqual(usage["s2"]?.models.map(\.agentId), ["pi-model:new-b"])
+    }
+
     func testCostsStayUnknownWhereAnEventHadNoPrice() async throws {
         let ledger = UsageLedger.inMemory()
         try await ledger.write { try $0.upsert(source: "deepseek", contribution: "s1", events: [

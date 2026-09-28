@@ -1,3 +1,4 @@
+import AgentHUDSupport
 import XCTest
 import SQLite3
 @testable import AgentHUDCore
@@ -151,6 +152,24 @@ final class OpenAgentProviderTests: XCTestCase {
         let kimi = try XCTUnwrap(OpenAgentParser.kimi(Data(#"{"type":"usage.record","model":"kimi-code/kimi-for-coding","usageScope":"turn","time":1788800001000,"usage":{"inputOther":10,"output":5}}"#.utf8),
                                                       path: "/.kimi-code/sessions/work/session/agents/main/wire.jsonl").first)
         XCTAssertNil(ModelCatalog.model(for: kimi.events[0].agentId), "Kimi Code's plan id follows whichever model Moonshot ships")
+    }
+
+    func testASessionRecordedUnderTheHashedIdIsPricedWhole() async throws {
+        let luna = try XCTUnwrap(OpenAgentParser.pi(Data(piLines(model: "gpt-5.6-luna").utf8), path: "/a.jsonl").first)
+        let ledger = UsageLedger.inMemory(), now = self.now
+        // Consumers once were a hash of the route's provider and model.
+        let hashed = "pi-model:" + RecordCoding.hash(["openai-codex", "gpt-5.6-luna"])
+        try await ledger.write { try $0.replace(source: OpenAgentUsageProvider.source, contribution: luna.id, events: [
+            UsageLedger.Event(key: "earlier", timestamp: now.addingTimeInterval(-20 * 86400), agentId: hashed, tokensIn: 1_000, tokensOut: 10),
+        ]) }
+        let provider = OpenAgentUsageProvider(credentials: { [] }, sessions: { _ in .init(sessions: [luna]) }, fetchQuota: { _, _ in ProviderQuota() },
+                                              history: QuotaHistoryStore(), clock: { now }, ledger: ledger)
+        let report = try await provider.fetchUsage(agents: [], historyHours: 24)
+        let buckets = try await ledger.buckets(since: now.addingTimeInterval(-30 * 86400))
+        XCTAssertEqual(Set(buckets.map(\.agentId)), [luna.events[0].agentId], "no unpriced twin of the same model")
+        let usage = try await ledger.sessionUsage(report.sessions.map(SessionUsageRequest.init))
+        XCTAssertEqual(usage[luna.id]?.calls, 2)
+        XCTAssertNotNil(usage[luna.id]?.listCost, "the call recorded before is priced too")
     }
 
     func testKimiUsageRecordWinsOverStepSummaryAndLegacyStatusIsCumulative() throws {

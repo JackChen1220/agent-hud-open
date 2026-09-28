@@ -1,3 +1,4 @@
+import AgentHUDSupport
 import Foundation
 
 /// Clients supply request observations. Billing services supply account observations, exactly once per pool.
@@ -69,6 +70,15 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
     /// Writes each session's usage once the index is complete and something changed.
     private func record(_ local: OpenAgentLocalStore.Result, since: Date) async {
         guard local.indexing == nil else { return }
+        // Usage recorded under a hash of a route's provider and model joins the route's id, which names the model.
+        var moves: [String: String] = [:], seen = Set<String>()
+        for session in local.sessions {
+            for event in session.events where seen.insert(event.agentId).inserted {
+                guard let provider = event.attribution?.providerID, let model = session.models[event.agentId] else { continue }
+                moves["\(session.client.rawValue)-model:" + RecordCoding.hash([provider, model])] = event.agentId
+            }
+        }
+        try? await ledger.moveConsumers(moves)
         await sessionLedger.record(files: local.files, revision: local.revision, window: SessionContributions.windowStart(since)) {
             local.sessions.map { ($0.id, $0.events) }
         }

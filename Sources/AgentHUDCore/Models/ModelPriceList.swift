@@ -29,7 +29,8 @@ extension ModelCatalog {
             "gpt-6-astra": openAI("10", "1", "50"),
             "gpt-6-sol": openAI("2", "0.20", "10"),
             "gpt-6-luna": openAI("0.10", "0.01", "0.50"),
-            "gpt-5.6-sol": openAI("4", "0.40", "20"),
+            // OpenAI sells gpt-5.6-sol for less as a promotion, at least through 2026-11-21.
+            "gpt-5.6-sol": openAI("5", "0.50", "30"),
             "gpt-5.6-terra": openAI("2", "0.20", "12"),
             "gpt-5.6-luna": openAI("0.20", "0.02", "1.20"),
             "gpt-5.5": openAI("5", "0.50", "30"),

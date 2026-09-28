@@ -148,6 +148,16 @@ public actor UsageLedger {
         return try storage.connection.transaction { try body(writer) }
     }
 
+    /// Moves the usage of the consumers keyed in `moves` to the ids they map to, adding it to usage recorded there.
+    /// Writes only when the ledger knows one of them.
+    func moveConsumers(_ moves: [String: String]) throws {
+        let known = moves.filter { $0.key != $0.value && storage.knownAgentID($0.key) != nil }
+        guard !known.isEmpty else { return }
+        _ = try write { writer in
+            for (old, new) in known.sorted(by: { $0.key < $1.key }) { try writer.moveConsumer(old, to: new) }
+        }
+    }
+
     /// Deletes rows that left the retention window, aligned to a bucket so no bucket keeps half its events.
     public func expire(now: Date) throws {
         let cutoff = LedgerWriter.bucket(RecordCoding.milliseconds(now.addingTimeInterval(-Self.retention)))
@@ -527,6 +537,21 @@ final class LedgerStorage {
 
     func agentName(_ id: Int64) -> String { names[id] ?? "" }
 
+    /// A consumer's id in the catalog, without adding one.
+    func knownAgentID(_ name: String) -> Int64? { agents[name] }
+
+    /// Follows a consumer that took the name `name`, or whose usage joined `existing`.
+    func moved(_ id: Int64, to name: String, joining existing: Int64?) {
+        if let old = names[id] { agents[old] = nil }
+        guard let existing else {
+            agents[name] = id
+            names[id] = name
+            return
+        }
+        names[id] = nil
+        if let largest = largestContext.removeValue(forKey: id) { largestContext[existing] = max(largestContext[existing] ?? 0, largest) }
+    }
+
     /// A rolled-back transaction can leave catalog entries that no longer exist.
     func reset() {
         agents = [:]
@@ -562,6 +587,35 @@ public struct LedgerWriter {
 
     public func removeFile(source: String, path: String) throws {
         try storage.connection.run("DELETE FROM source_file WHERE source = ? AND path = ?", [.text(source), .text(path)])
+    }
+
+    /// Moves a consumer's usage to the id `new`, adding it to usage already recorded there. Nothing happens when the
+    /// ledger does not know `old`.
+    public func moveConsumer(_ old: String, to new: String) throws {
+        guard old != new, let from = storage.knownAgentID(old) else { return }
+        let connection = storage.connection
+        try connection.query("SELECT DISTINCT c.key FROM usage_event e JOIN contribution c ON c.id = e.contribution_id WHERE e.agent = ?",
+                             [.integer(from)]) { storage.touch($0.text(0) ?? "") }
+        guard let to = storage.knownAgentID(new) else {
+            try connection.run("UPDATE agent SET name = ? WHERE id = ?", [.text(new), .integer(from)])
+            storage.moved(from, to: new, joining: nil)
+            return
+        }
+        try connection.run("UPDATE usage_event SET agent = ? WHERE agent = ?", [.integer(to), .integer(from)])
+        try connection.run("""
+            INSERT INTO usage_bucket (start_ms, source, account, agent, tokens_in, tokens_out, cache_read, cache_write, reasoning)
+            SELECT start_ms, source, account, ?, tokens_in, tokens_out, cache_read, cache_write, reasoning FROM usage_bucket WHERE agent = ?
+            ON CONFLICT (start_ms, source, account, agent) DO UPDATE SET tokens_in = tokens_in + excluded.tokens_in,
+                tokens_out = tokens_out + excluded.tokens_out, cache_read = cache_read + excluded.cache_read,
+                cache_write = cache_write + excluded.cache_write, reasoning = reasoning + excluded.reasoning
+            """, [.integer(to), .integer(from)])
+        try connection.run("""
+            INSERT INTO model_context (agent, largest) SELECT ?, largest FROM model_context WHERE agent = ?
+            ON CONFLICT (agent) DO UPDATE SET largest = MAX(largest, excluded.largest)
+            """, [.integer(to), .integer(from)])
+        for table in ["usage_bucket", "model_context"] { try connection.run("DELETE FROM \(table) WHERE agent = ?", [.integer(from)]) }
+        try connection.run("DELETE FROM agent WHERE id = ?", [.integer(from)])
+        storage.moved(from, to: new, joining: to)
     }
 
     /// Records where a contribution's turns start and where its client compacted the conversation; marks already

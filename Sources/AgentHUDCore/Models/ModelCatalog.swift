@@ -74,12 +74,12 @@ public enum ModelCatalog {
     }
 
     /// The catalog name of a consumer id: the model its client called, after the client's `<source>-model:` prefix and
-    /// before a `#` that tells routes to the model apart, without a dated snapshot suffix or Claude Code's 1M marker.
-    /// Whichever client made the call, the same model has the same list price, so Claude Code pointed at DeepSeek's API
-    /// prices its calls as DeepSeek's.
+    /// before a `#` that tells routes to the model apart, without the vendor a gateway puts in front (`openai/gpt-5.5`),
+    /// a dated snapshot suffix or Claude Code's 1M marker. Whichever client made the call, the same model has the same
+    /// list price, so Claude Code pointed at DeepSeek's API prices its calls as DeepSeek's.
     static func name(of agentId: String) -> String? {
         guard let prefix = agentId.range(of: "-model:") else { return nil }
-        var name = agentId[prefix.upperBound...].prefix { $0 != "#" }.lowercased()
+        var name = agentId[prefix.upperBound...].prefix { $0 != "#" }.split(separator: "/").last.map { $0.lowercased() } ?? ""
         if name.hasSuffix("[1m]") { name.removeLast(4) }
         if let date = name.range(of: #"-[0-9]{8}$|-[0-9]{4}-[0-9]{2}-[0-9]{2}$"#, options: .regularExpression) { name.removeSubrange(date) }
         return name.isEmpty ? nil : name

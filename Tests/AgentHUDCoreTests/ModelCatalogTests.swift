@@ -13,6 +13,8 @@ final class ModelCatalogTests: XCTestCase {
         XCTAssertEqual(ModelCatalog.name(of: "claude-model:claude-haiku-4-5-20251001"), "claude-haiku-4-5", "a dated snapshot prices like its alias")
         XCTAssertEqual(ModelCatalog.name(of: "cursor-model:auto"), "auto")
         XCTAssertNil(ModelCatalog.model(for: "cursor-model:auto"), "a client's own routing name has no list price")
+        XCTAssertEqual(ModelCatalog.name(of: "opencode-model:openai/gpt-5.5#route"), "gpt-5.5", "a gateway's vendor prefix is not part of the name")
+        XCTAssertNil(ModelCatalog.model(for: "opencode-model:anthropic/claude-opus-4.6#route"), "a gateway's own spelling is not the vendor's name")
         XCTAssertNil(ModelCatalog.cost(agentId: "codex-model:codex-auto-review", kinds: TokenKinds(input: 1)))
         // Fresh input, cache reads and output at $10, $1 and $50 per million, reasoning billed as output.
         XCTAssertEqual(ModelCatalog.cost(agentId: "codex-model:gpt-6-astra",
