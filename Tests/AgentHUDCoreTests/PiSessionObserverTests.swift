@@ -59,6 +59,20 @@ final class PiSessionObserverTests: XCTestCase, @unchecked Sendable {
         XCTAssertTrue(PiSessionObserver.isInstalled(home: home, environment: env))
     }
 
+    func testTheSessionsOwnLogNamesItOverTheObserversSnapshot() async throws {
+        let home = try temporaryHome(), paths = OpenAgentPaths(home: home, environment: [:])
+        try write(JSONEncoder().encode(observation(.completed)), to: paths.piTurns.appendingPathComponent("turn.json"))
+        let transcript = paths.pi.appendingPathComponent("sessions/workspace/session.jsonl")
+        let header = #"{"type":"session","id":"session","cwd":"/workspace","timestamp":"\#(now.addingTimeInterval(-600).ISO8601Format())"}"#
+        try write(Data(header.utf8), to: transcript)
+        let store = OpenAgentLocalStore(paths: paths)
+        let observed = await store.index(since: now.addingTimeInterval(-86400))
+        XCTAssertEqual(observed.sessions.map(\.title), ["Pi task"], "without a name or a message in the log, the observer's title stands")
+        try write(Data((header + "\n" + #"{"type":"session_info","id":"i","name":"Renamed while idle"}"#).utf8), to: transcript)
+        let renamed = await store.index(since: now.addingTimeInterval(-86400))
+        XCTAssertEqual(renamed.sessions.map(\.title), ["Renamed while idle"], "a name given after the turn settled beats the observer's copy")
+    }
+
     func testRunningBeforeFirstResponseThenUsageAndCompletionMergeIntoOneSession() async throws {
         let home = try temporaryHome(), paths = OpenAgentPaths(home: home, environment: [:])
         let observerFile = paths.piTurns.appendingPathComponent("turn.json")

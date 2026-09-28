@@ -202,7 +202,11 @@ public struct TranscriptAccumulator: Hashable, Sendable, Codable {
     private var cwd: String?
     private var startedAt: Date?
     private var lastActivityAt: Date?
+    /// The first prompt's title, the latest name the user or the desktop app gave the session, and the latest title
+    /// Claude Code generated for it.
     private var task: String?
+    private var customTitle: String?
+    private var generatedTitle: String?
     private var tokensIn = 0
     private var tokensOut = 0
     private var cacheReadTokens = 0
@@ -237,6 +241,15 @@ public struct TranscriptAccumulator: Hashable, Sendable, Codable {
         self.path = path
         self.isSubagent = isSubagent
     }
+
+    /// Takes the titles `FastTranscriptParser.titles(in:)` read from the same lines as the next events.
+    public mutating func noteTitles(custom: String?, generated: String?) {
+        if let custom = SessionTitle.named(custom) { customTitle = custom }
+        if let generated = SessionTitle.named(generated) { generatedTitle = generated }
+    }
+
+    /// Claude Code's own order: the name given to the session, then the generated title, then the first prompt.
+    private var title: String? { customTitle ?? generatedTitle ?? task }
 
     /// Returns the usage these lines added, keyed by response so a repeated line never counts twice.
     @discardableResult
@@ -326,7 +339,7 @@ public struct TranscriptAccumulator: Hashable, Sendable, Codable {
         let completion = SessionCompletion(
             sessionID: sessionId ?? fileName, vendor: "Claude",
             turnID: event.messageId ?? String(RecordCoding.milliseconds(event.timestamp)),
-            task: task ?? cwd.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Claude Code",
+            task: title ?? cwd.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Claude Code",
             model: event.model.map { ClaudeModelInfo.parse($0)?.displayName ?? $0 } ?? "Claude",
             startedAt: currentTurn?.state == .running ? currentTurn?.startedAt : nil, completedAt: event.timestamp
         )
@@ -367,7 +380,7 @@ public struct TranscriptAccumulator: Hashable, Sendable, Codable {
             isSubagent: isSubagent,
             startedAt: startedAt,
             lastActivityAt: lastActivityAt,
-            task: task,
+            task: title,
             tokensIn: tokensIn,
             tokensOut: tokensOut,
             cacheReadTokens: cacheReadTokens,

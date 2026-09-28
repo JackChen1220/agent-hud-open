@@ -77,6 +77,16 @@ final class OpenClawProviderTests: XCTestCase, @unchecked Sendable {
         XCTAssertTrue(session.turns.isEmpty, "A window without Gateway lifecycle status has no turn")
     }
 
+    func testTheLabelTheUserGaveBeatsTheDisplayName() throws {
+        let url = try agentDatabase(try directory(), windows: [("s1", nil, "{}", nil)], events: [("s1", assistant("a1"), nil)])
+        XCTAssertEqual(try OpenClawSessions.read(url, since: now.addingTimeInterval(-86400)).sessions.first?.title, "Fixture s1")
+        var handle: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(url.path, &handle), SQLITE_OK)
+        try sql(try XCTUnwrap(handle), "UPDATE session_nodes SET label = 'Release notes', display_name = 'Generated title'")
+        sqlite3_close(handle)
+        XCTAssertEqual(try OpenClawSessions.read(url, since: now.addingTimeInterval(-86400)).sessions.first?.title, "Release notes")
+    }
+
     func testGatewayStatusMapsToTurnsAndOnlyDoneCompletes() throws {
         let url = try agentDatabase(try directory(), windows: [
             ("run", "running", #"{"lifecycleRunId":"run-a"}"#, nil),

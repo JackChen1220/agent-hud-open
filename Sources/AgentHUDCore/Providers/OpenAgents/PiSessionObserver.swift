@@ -57,6 +57,7 @@ public enum PiSessionObserver {
         var session: OpenAgentSession {
             var value = OpenAgentSession(id: sessionID, client: .pi, title: title, workspace: workspace,
                 path: sessionFile ?? "", start: RecordCoding.date(startedAtMs), end: RecordCoding.date(observedAtMs), turns: [turn])
+            value.titleSource = .observer
             if let model, let providerID { value.setModel(model, provider: providerID) }
             if state == .completed {
                 value.completions = [.init(sessionID: sessionID, vendor: "Pi", turnID: turnID,

@@ -58,7 +58,10 @@ enum GrokSessions: LocalSessionLayout {
         let workspace = directory.deletingLastPathComponent().lastPathComponent.removingPercentEncoding
         let summary = (try? ProviderFiles.json(directory.appendingPathComponent("summary.json"))) ?? .null
         var model = "Unknown"
-        let title = summary["title"].stringValue ?? workspace.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Grok CLI"
+        // Grok keeps a generated title current as the conversation goes on, and a `/rename` pins it.
+        let title = SessionTitle.named(summary["generated_title"].stringValue) ?? SessionTitle.named(summary["title"].stringValue)
+            ?? SessionTitle.named(summary["session_summary"].stringValue)
+            ?? workspace.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Grok CLI"
         var session = ProviderSession(id: id, title: title, workspace: workspace, path: url.path, client: "Grok CLI")
         var seen = Set<String>(), turnID: String?, turnStart: Date?, incomplete = false, hasContextOnly = false
         try ProviderFiles.lines(url) { json, line in

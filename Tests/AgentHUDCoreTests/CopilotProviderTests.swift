@@ -158,6 +158,15 @@ final class CopilotProviderTests: XCTestCase, @unchecked Sendable {
         XCTAssertTrue(item.completions.isEmpty, "Completions come from the agentStop hook")
     }
 
+    func testWorkspaceReadsTheBlockScalarOfALongName() throws {
+        let url = try directory().appendingPathComponent("workspace.yaml")
+        try "id: s1\nname: |-\n  Investigate the flaky login test\n  on CI\nsummary: >\n  Folded\n  summary\nuser_named: false\n"
+            .write(to: url, atomically: true, encoding: .utf8)
+        let values = CopilotSessions.workspace(url)
+        XCTAssertEqual(values["name"], "Investigate the flaky login test\non CI")
+        XCTAssertEqual(values["summary"], "Folded summary")
+    }
+
     func testTracesOwnUsageOfCoveredSessions() async throws {
         let root = try directory()
         try write(root.appendingPathComponent("session-state/s1/events.jsonl"), [

@@ -103,8 +103,10 @@ enum OpenClawSessions: LocalSessionLayout {
         let agent = url.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
         let cutoff = String(RecordCoding.milliseconds(since))
         var sessions: [(raw: String, session: ProviderSession, turn: SessionTurn?)] = []
+        // A session's label is the name the user gave it and wins, as in OpenClaw; the display name holds the title
+        // OpenClaw generated or the channel's name.
         try db.rows("""
-            SELECT w.session_id, COALESCE(w.display_name, n.display_name, n.label), w.created_at,
+            SELECT w.session_id, COALESCE(NULLIF(n.label, ''), NULLIF(w.display_name, ''), NULLIF(n.display_name, '')), w.created_at,
                    MAX(w.updated_at, COALESCE(w.transcript_updated_at, 0), COALESCE(w.ended_at, 0)), w.started_at, w.ended_at, w.status,
                    n.session_key, COALESCE(w.spawned_by, n.spawned_by), json_extract(n.entry_json, '$.lifecycleRunId'), json_extract(n.entry_json, '$.lastRunId'),
                    (SELECT CASE WHEN json_extract(e.event_json, '$.type') = 'session' THEN json_extract(e.event_json, '$.cwd') END
@@ -114,7 +116,7 @@ enum OpenClawSessions: LocalSessionLayout {
             """, strings: [cutoff]) { row in
             guard let raw = ReadOnlySQLite.text(row, 0), let observed = milliseconds(row, 3) else { throw ProviderFailure.format }
             let id = "openclaw:\(raw)"
-            let session = ProviderSession(id: id, title: ReadOnlySQLite.text(row, 1) ?? "OpenClaw · \(agent)", workspace: ReadOnlySQLite.text(row, 11),
+            let session = ProviderSession(id: id, title: SessionTitle.named(ReadOnlySQLite.text(row, 1)) ?? "OpenClaw · \(agent)", workspace: ReadOnlySQLite.text(row, 11),
                 path: url.path, client: "OpenClaw", startedAt: milliseconds(row, 2).map(RecordCoding.date), lastActivity: RecordCoding.date(observed))
             // Gateway lifecycle status belongs to the session's current window; sub-agents never finish their parent's turn.
             var turn: SessionTurn?

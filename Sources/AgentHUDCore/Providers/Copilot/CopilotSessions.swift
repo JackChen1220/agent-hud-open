@@ -120,7 +120,8 @@ enum CopilotSessions: LocalSessionLayout {
             default: break
             }
         }
-        session.title = metadata["name"] ?? metadata["summary"] ?? session.workspace.map { URL(fileURLWithPath: $0).lastPathComponent } ?? client
+        session.title = SessionTitle.named(metadata["name"]) ?? SessionTitle.named(metadata["summary"])
+            ?? session.workspace.map { URL(fileURLWithPath: $0).lastPathComponent } ?? client
         // Each snapshot is the process's running total per model; a resumed session writes another one.
         var peaks: [String: [Int]] = [:], seen = Set<String>()
         for snapshot in snapshots.enumerated().sorted(by: { ($0.element.date, $0.offset) < ($1.element.date, $1.offset) }).map(\.element)
@@ -191,17 +192,23 @@ enum CopilotSessions: LocalSessionLayout {
         return ProviderSessions(sessions: sessions.keys.sorted().compactMap { sessions[$0] })
     }
 
-    /// Top-level scalars of `workspace.yaml`; nested and block values are not needed.
+    /// Top-level scalars of `workspace.yaml`, including the block scalar Copilot writes for a long name; nested values
+    /// are not needed.
     static func workspace(_ url: URL) -> [String: String] {
         guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 1024 * 1024,
               let text = try? String(contentsOf: url, encoding: .utf8) else { return [:] }
         var values: [String: String] = [:]
-        for line in text.split(whereSeparator: \.isNewline) where !(line.first?.isWhitespace ?? true) {
+        let lines = text.split(whereSeparator: \.isNewline)
+        for (index, line) in lines.enumerated() where !(line.first?.isWhitespace ?? true) {
             guard let colon = line.firstIndex(of: ":") else { continue }
             let key = String(line[..<colon])
             var value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-            guard ["name", "summary", "cwd"].contains(key), !value.isEmpty, !value.hasPrefix("|"), !value.hasPrefix(">") else { continue }
-            if value.count >= 2, let quote = value.first, quote == "\"" || quote == "'", value.last == quote {
+            guard ["name", "summary", "cwd"].contains(key), !value.isEmpty else { continue }
+            if let style = value.first, style == "|" || style == ">" {
+                // The indented lines that follow, kept as lines (`|`) or folded into one (`>`).
+                value = lines[(index + 1)...].prefix { $0.first?.isWhitespace ?? false }
+                    .map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: style == "|" ? "\n" : " ")
+            } else if value.count >= 2, let quote = value.first, quote == "\"" || quote == "'", value.last == quote {
                 value = String(value.dropFirst().dropLast())
                 value = quote == "'" ? value.replacingOccurrences(of: "''", with: "'")
                     : value.replacingOccurrences(of: "\\\"", with: "\"").replacingOccurrences(of: "\\\\", with: "\\")

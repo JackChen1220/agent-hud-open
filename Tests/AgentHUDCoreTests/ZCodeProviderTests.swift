@@ -57,6 +57,22 @@ final class ZCodeProviderTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(other.events[0].model, "Unknown")
     }
 
+    func testZCodesOwnTitleBeatsTheFolderName() throws {
+        let url = try directory().appendingPathComponent("db.sqlite")
+        try database(url, sessions: false, ["'r1', 's1', 'glm', \(ms(-10)), \(ms(-9)), 100, 50, 10, 80, 5, 150",
+                                           "'r2', 's2', 'glm', \(ms(-8)), \(ms(-7)), 100, 50, 10, 80, 5, 150"])
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(url.path, &db), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(db, """
+            CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, title TEXT NOT NULL, title_source TEXT);
+            INSERT INTO session VALUES ('s1', '/Users/alice/work/demo', 'Fix the login flow', 'generated'),
+                ('s2', '/Users/alice/work/demo', 'Untitled session', 'first_input');
+            """, nil, nil, nil), SQLITE_OK)
+        sqlite3_close(db)
+        let result = try ZCodeSessions.read(url, since: now.addingTimeInterval(-86400))
+        XCTAssertEqual(result.sessions.map(\.title), ["Fix the login flow", "demo"], "ZCode's name for an empty first input is no title")
+    }
+
     func testOlderSchemaWithoutTotalIsInclusive() throws {
         let url = try directory().appendingPathComponent("db.sqlite")
         try database(url, total: false, sessions: false, ["'legacy', 's1', 'glm-5.2', NULL, \(ms(0)), 100, 50, 10, 80, 5"])

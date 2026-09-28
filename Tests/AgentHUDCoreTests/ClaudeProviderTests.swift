@@ -73,6 +73,8 @@ final class ClaudeTranscriptTests: XCTestCase {
         XCTAssertNil(SessionTitle.from("<command-name>/clear</command-name>"))
         XCTAssertNil(SessionTitle.from("   "))
         XCTAssertEqual(SessionTitle.from(String(repeating: "a", count: 80))?.count, 60)
+        XCTAssertEqual(SessionTitle.named("\n <Draft> plan \nmore"), "<Draft> plan", "a given title keeps what a prompt title skips")
+        XCTAssertNil(SessionTitle.named(" \n "))
     }
 
     func testFastParserMatchesJSONParserOnRealShapes() throws {
@@ -278,6 +280,29 @@ final class ClaudeTranscriptTests: XCTestCase {
         XCTAssertEqual(recorded.map(\.tokensOut), [80], "only the appended line reaches the ledger")
         let none = await store.sessions(modifiedSince: Date().addingTimeInterval(3600))
         XCTAssertEqual(none.count, 0)
+    }
+
+    func testStoreTakesTheSessionsGivenOrGeneratedTitle() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("agenthud-\(UUID().uuidString)/projects/-Users-me-proj", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("s-1.jsonl")
+        // Title lines carry no timestamp; the same text inside a message is escaped and names nothing.
+        let quoted = #"{"cwd":"/Users/me/proj","sessionId":"s-1","type":"user","message":{"role":"user","content":"{\"type\":\"custom-title\",\"customTitle\":\"Not a title\"}"},"timestamp":"2026-09-07T05:41:50.000Z"}"#
+        let generated = #"{"type":"ai-title","aiTitle":"Fix the auth middleware","sessionId":"s-1"}"#
+        try ([Self.user, quoted, generated].joined(separator: "\n") + "\n").write(to: file, atomically: true, encoding: .utf8)
+        let store = ClaudeTranscriptStore(root: dir.deletingLastPathComponent())
+        let first = await store.sessions(modifiedSince: .distantPast)
+        XCTAssertEqual(first.map(\.task), ["Fix the auth middleware"], "a generated title beats the first prompt")
+
+        let given = #"{"type":"custom-title","customTitle":"Auth \"middleware\" fix","sessionId":"s-1"}"#
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(([given, Self.assistant, generated].joined(separator: "\n") + "\n").utf8))
+        try handle.close()
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: file.path)
+        let second = await store.sessions(modifiedSince: .distantPast)
+        XCTAssertEqual(second.map(\.task), ["Auth \"middleware\" fix"], "the name the session was given beats a later generated title")
+        XCTAssertEqual(second.map(\.tokensOut), [80])
     }
 
     private func claude(_ type: String, at: Date, message: [String: Any], extra: [String: Any] = [:]) -> String {

@@ -5,6 +5,8 @@ import Foundation
 actor CursorClient {
     struct Session: Sendable { let account: String; let cookie: String; var email: String? = nil }
     let database: URL
+    /// The agent CLI's folder, `~/.cursor`, where its chats and ACP sessions keep their names.
+    let agentFolder: URL
     let http: ProviderHTTP
     private var cached: (at: Date, account: String, since: Date, result: ProviderSessions)?
     private var fetches = 0
@@ -16,8 +18,9 @@ actor CursorClient {
     }
 
     init(database: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb"),
+         agentFolder: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cursor"),
          http: ProviderHTTP = ProviderHTTP()) {
-        self.database = database; self.http = http
+        self.database = database; self.agentFolder = agentFolder; self.http = http
     }
 
     func session(now: Date = Date()) throws -> Session {
@@ -108,7 +111,7 @@ actor CursorClient {
         if cached?.account != auth.account { cached = nil }
         do {
             let events = try await fetchEvents(auth: auth, since: start, until: now)
-            let result = try Self.parseEvents(events, account: auth.account)
+            let result = named(try Self.parseEvents(events, account: auth.account), account: auth.account)
             cached = (now, auth.account, start, result)
             fetches += 1
             return result
@@ -168,6 +171,36 @@ actor CursorClient {
             result += current.dropFirst(overlap); remove -= overlap
         }
         guard remove == 0, result.count == expected else { throw ProviderFailure.format }
+        return result
+    }
+
+    /// The names Cursor keeps on this Mac for the conversations the events name, read when the events are: an IDE
+    /// composer's in its header, an agent CLI chat's or ACP session's in its `meta.json`. A conversation that ran on
+    /// another machine or in the cloud keeps its placeholder.
+    func named(_ result: ProviderSessions, account: String) -> ProviderSessions {
+        let prefix = "cursor-account:\(account):"
+        let conversations = result.sessions.map { String($0.id.dropFirst(prefix.count)) }.filter { !$0.hasPrefix("unassigned-") }
+        guard !conversations.isEmpty else { return result }
+        var titles: [String: String] = [:]
+        if let reader = try? ReadOnlySQLite(database), let list = try? JSONSerialization.data(withJSONObject: conversations) {
+            // Only the name leaves the database; a header's other fields and the composers' contents are never read.
+            try? reader.rows("SELECT composerId, json_extract(value, '$.name') FROM composerHeaders WHERE composerId IN (SELECT value FROM json_each(?))",
+                             strings: [String(decoding: list, as: UTF8.self)]) { row in
+                if let id = ReadOnlySQLite.text(row, 0), let title = SessionTitle.named(ReadOnlySQLite.text(row, 1)) { titles[id] = title }
+            }
+        }
+        let chats = (try? FileManager.default.contentsOfDirectory(at: agentFolder.appendingPathComponent("chats"), includingPropertiesForKeys: nil)) ?? []
+        for id in conversations where titles[id] == nil {
+            for folder in [agentFolder.appendingPathComponent("acp-sessions")] + chats {
+                let meta = folder.appendingPathComponent(id).appendingPathComponent("meta.json")
+                guard FileManager.default.fileExists(atPath: meta.path) else { continue }
+                // The agent calls a chat "New Agent" until its title arrives.
+                if let title = SessionTitle.named((try? ProviderFiles.json(meta))?["title"].stringValue), title != "New Agent" { titles[id] = title }
+                break
+            }
+        }
+        var result = result
+        result.sessions = result.sessions.map { var item = $0; if let title = titles[String(item.id.dropFirst(prefix.count))] { item.title = title }; return item }
         return result
     }
 

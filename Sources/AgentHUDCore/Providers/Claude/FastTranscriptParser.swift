@@ -37,6 +37,34 @@ public enum FastTranscriptParser {
     private static let contentTextKey = Array("\"content\":[{\"type\":\"text\",\"text\":\"".utf8)
     // Block keys are not written in a fixed order (`tool_use_id` usually precedes `type`), so match the type alone.
     private static let toolResultMarker = Array("\"type\":\"tool_result\"".utf8)
+    private static let customTitleLine = Array("{\"type\":\"custom-title\"".utf8)
+    private static let customTitleKey = Array("\"customTitle\":\"".utf8)
+    private static let aiTitleLine = Array("{\"type\":\"ai-title\"".utf8)
+    private static let aiTitleKey = Array("\"aiTitle\":\"".utf8)
+
+    /// The last `custom-title` and `ai-title` lines in `data`: the name the user or the desktop app gave the session,
+    /// and the one Claude Code generated. Claude Code writes them without a timestamp, so `parse` skips them.
+    public static func titles(in data: Data) -> (custom: String?, generated: String?) {
+        data.withUnsafeBytes { buffer in
+            (lastTitle(customTitleLine, key: customTitleKey, in: buffer), lastTitle(aiTitleLine, key: aiTitleKey, in: buffer))
+        }
+    }
+
+    private static func lastTitle(_ marker: [UInt8], key: [UInt8], in buffer: UnsafeRawBufferPointer) -> String? {
+        var title: String?
+        var start = 0
+        while start < buffer.count, let offset = find(marker, in: UnsafeRawBufferPointer(rebasing: buffer[start...])) {
+            let lineStart = start + offset
+            let rest = UnsafeRawBufferPointer(rebasing: buffer[lineStart...])
+            let end = memchr(rest.baseAddress!, 0x0A, rest.count).map { lineStart + rest.baseAddress!.distance(to: $0) } ?? buffer.count
+            // A title line starts a line; the same text inside a message is escaped and never matches.
+            if lineStart == 0 || buffer[lineStart - 1] == 0x0A {
+                title = value(after: key, in: UnsafeRawBufferPointer(rebasing: buffer[lineStart..<end])) ?? title
+            }
+            start = end + 1
+        }
+        return title
+    }
 
     /// Parses complete lines in `data` (a trailing partial line is ignored by the caller).
     public static func parse(_ data: Data) -> [TranscriptEvent] {

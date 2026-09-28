@@ -121,6 +121,26 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         XCTAssertThrowsError(try CursorClient.parseEvents([json(#"{"timestamp":1788800000000,"model":"x","tokenUsage":{"inputTokens":1,"outputTokens":2,"cacheReadTokens":-1}}"#)], account: "a"))
     }
 
+    func testCursorNamesConversationsFromTheIDEAndTheAgentCLI() async throws {
+        let url = try authDB(), agent = try directory()
+        try database(url) { db in
+            try sql(db, "CREATE TABLE composerHeaders (composerId TEXT PRIMARY KEY, value TEXT)")
+            try sql(db, #"INSERT INTO composerHeaders VALUES ('ide', '{"name":"Codebase tour"}'), ('empty', '{}')"#)
+        }
+        for (folder, id, title) in [("acp-sessions", "acp", "Feishu round one"), ("chats/0cc175b9", "cli", "New Agent")] {
+            let meta = agent.appendingPathComponent("\(folder)/\(id)/meta.json")
+            try FileManager.default.createDirectory(at: meta.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try #"{"schemaVersion":1,"title":"\#(title)"}"#.write(to: meta, atomically: true, encoding: .utf8)
+        }
+        let rows = try ["ide", "empty", "acp", "cli", "elsewhere"].map {
+            try json(#"{"timestamp":"1788800000000","conversationId":"\#($0)","model":"m","tokenUsage":{"inputTokens":1,"outputTokens":1}}"#)
+        }
+        let parsed = try CursorClient.parseEvents(rows, account: "a")
+        let named = await CursorClient(database: url, agentFolder: agent).named(parsed, account: "a")
+        XCTAssertEqual(named.sessions.map(\.title), ["Feishu round one", "Cursor · cli", "Cursor · elsewher", "Cursor · empty", "Codebase tour"],
+                       "a chat still called New Agent, or run elsewhere, keeps its placeholder")
+    }
+
     private actor Requests {
         var values: [URLRequest] = []
         func record(_ value: URLRequest) { values.append(value) }
@@ -163,6 +183,17 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(result.sessions[0].turns.first?.state, .running)
     }
 
+    func testGrokTakesTheTitleItKeepsCurrent() throws {
+        let folder = try directory().appendingPathComponent("%2FUsers%2Fme%2Frepo/s1")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent("updates.jsonl")
+        try "".write(to: url, atomically: true, encoding: .utf8)
+        XCTAssertEqual(try GrokSessions.read(url).sessions.first?.title, "repo", "the folder until Grok names the session")
+        try #"{"generated_title":"Weekly quota check","session_summary":"Weekly quota check","title_is_manual":false}"#
+            .write(to: folder.appendingPathComponent("summary.json"), atomically: true, encoding: .utf8)
+        XCTAssertEqual(try GrokSessions.read(url).sessions.first?.title, "Weekly quota check")
+    }
+
     private func varint(_ value: UInt64) -> [UInt8] {
         var value = value, result: [UInt8] = []
         repeat { var byte = UInt8(value & 127); value >>= 7; if value > 0 { byte |= 128 }; result.append(byte) } while value > 0
@@ -189,6 +220,20 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(events[0].input, 30)
         XCTAssertEqual(events[0].output, 8)
         XCTAssertEqual(events[0].cacheRead, 40)
+    }
+
+    func testAntigravityTakesTheTitleFromItsAnnotations() throws {
+        let root = try directory(), url = root.appendingPathComponent("conversations/0e9830ef-dce6.db")
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try database(url) { db in try sql(db, "CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB)") }
+        XCTAssertEqual(try AntigravitySessions.read(url).sessions.first?.title, "Antigravity · 0e9830ef", "a headless run has no title")
+        let annotations = AntigravitySessions.annotations(url)
+        XCTAssertEqual(annotations.path, root.appendingPathComponent("annotations/0e9830ef-dce6.pbtxt").path)
+        try FileManager.default.createDirectory(at: annotations.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try #"pinned:true title:"Fix \"quota\" \344\275\240 你\x21""#.write(to: annotations, atomically: true, encoding: .utf8)
+        XCTAssertEqual(try AntigravitySessions.read(url).sessions.first?.title, "Fix \"quota\" 你 你!")
+        XCTAssertTrue(AntigravitySessions.related(url).contains(annotations), "a rename rereads the conversation")
+        XCTAssertNil(AntigravitySessions.textField("title", in: Array(#"subtitle:"x""#.utf8)))
     }
 
     func testAntigravityRejectsOpaqueTimeAndAmbiguousStepJoin() throws {

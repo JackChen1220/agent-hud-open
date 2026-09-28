@@ -101,15 +101,17 @@ public actor ClaudeTranscriptStore {
 enum ClaudeTranscripts: TailLog {
     static let source = "claude"
     static let summaryKey = "accumulator"
-    /// 2: cache writes, thinking, prompts and compactions.
-    static let version = 2
+    /// 2: cache writes, thinking, prompts and compactions. 3: the session's given and generated titles.
+    static let version = 3
 
     static func summary(for url: URL) -> TranscriptAccumulator {
         TranscriptAccumulator(path: url.path, isSubagent: ClaudeTranscriptStore.isSubagent(url))
     }
 
     static func ingest(_ lines: Data, into accumulator: inout TranscriptAccumulator) -> [UsageLedger.Event] {
-        accumulator.ingest(FastTranscriptParser.parse(lines))
+        let titles = FastTranscriptParser.titles(in: lines)
+        accumulator.noteTitles(custom: titles.custom, generated: titles.generated)
+        return accumulator.ingest(FastTranscriptParser.parse(lines))
     }
 
     static func drainMarks(_ accumulator: inout TranscriptAccumulator) -> [UsageLedger.Mark] { accumulator.drainMarks() }

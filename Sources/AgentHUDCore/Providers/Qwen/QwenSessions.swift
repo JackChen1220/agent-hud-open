@@ -45,7 +45,7 @@ enum QwenSessions: LocalSessionLayout {
             if let date { session.startedAt = min(session.startedAt ?? date, date); session.lastActivity = max(session.lastActivity ?? date, date) }
             // A title the user or Qwen gave the session wins; else the first prompt typed into it.
             if json["type"].stringValue == "system", json["subtype"].stringValue == "custom_title",
-               let title = nonEmpty(json["systemPayload"]["customTitle"]).flatMap(SessionTitle.from) {
+               let title = SessionTitle.named(json["systemPayload"]["customTitle"].stringValue) {
                 session.title = title; titled.insert(id)
             } else if !titled.contains(id), json["type"].stringValue == "user", json["subtype"] == .null,
                       let text = json["message"]["parts"].arrayValue?.compactMap({ $0["text"].stringValue }).first,

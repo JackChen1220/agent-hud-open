@@ -38,6 +38,7 @@ struct OpenAgentSession: Sendable {
     var id: String
     var client: OpenAgentSource
     var title: String
+    var titleSource = TitleSource.log
     var workspace: String?
     var path: String
     var events: [UsageEvent] = []
@@ -47,6 +48,10 @@ struct OpenAgentSession: Sendable {
     var end: Date?
     var turns: [SessionTurn] = []
     var completions: [SessionCompletion] = []
+
+    /// Which copy's title wins when copies of one session merge: a name or first prompt from the session's own log,
+    /// then the name Pi's observer saw when a turn settled, then a name standing in for a missing title.
+    enum TitleSource: Comparable, Sendable { case placeholder, observer, log }
 
     /// A consumer is the model as the log names it and, after `#`, the provider the calls went through: routes to one
     /// model stay apart, and the price catalog prices only the vendor's own.
@@ -70,7 +75,8 @@ struct OpenAgentSession: Sendable {
 }
 
 /// Provider licenses are listed in THIRD_PARTY_NOTICES.txt.
-/// Only metadata and counters leave these parsers; prompts, tool bodies and credentials do not.
+/// Only metadata, counters and session titles (a name, or the first line of the first prompt) leave these parsers;
+/// prompts, tool bodies and credentials do not.
 enum OpenAgentParser {
     static func jsonLines(_ data: Data, visit: (ProviderJSON, Int) throws -> Void) throws {
         guard data.count <= 64 * 1024 * 1024 else { throw ProviderFailure.limit }
@@ -88,20 +94,29 @@ enum OpenAgentParser {
 
     static func pi(_ data: Data, path: String) throws -> [OpenAgentSession] {
         var session: OpenAgentSession?
+        // Pi's own session list: the name last given with `/name` (an empty one clears it), else the first message.
+        var name: String?, prompt: String?
         try jsonLines(data) { line, index in
             let type = line["type"].stringValue
             if type == "session", let id = line["id"].stringValue {
                 session = .init(id: "pi:\(id)", client: .pi, title: "Pi", workspace: line["cwd"].stringValue, path: path,
                                 start: ProviderDate.iso(line["timestamp"].stringValue))
+                name = nil; prompt = nil
                 return
             }
             guard session != nil else { return }
-            if type == "session_info", let name = line["name"].stringValue { session?.title = name; return }
+            if type == "session_info" { name = SessionTitle.named(line["name"].stringValue); return }
             if type == "model_change", let model = line["modelId"].stringValue, let provider = line["provider"].stringValue {
                 session?.setModel(model, provider: provider)
                 return
             }
             let message = line["message"]
+            if prompt == nil, type == "message", message["role"].stringValue == "user" {
+                let content = message["content"]
+                let text = content.stringValue ?? content.arrayValue?.first { $0["type"].stringValue == "text" }?["text"].stringValue
+                prompt = text.flatMap(SessionTitle.from)
+                return
+            }
             guard type == "message", message["role"].stringValue == "assistant", message["usage"].objectValue != nil else { return }
             guard let at = ProviderDate.iso(line["timestamp"].stringValue) ?? ProviderDate.milliseconds(message["timestamp"]) else { throw ProviderFailure.format }
             let usage = message["usage"]
@@ -120,15 +135,32 @@ enum OpenAgentParser {
                          output: output, cacheRead: read, cacheWrite: write)
             // An assistant stop is not agent_settled; retries, tools and queued followups can still run.
         }
+        if let title = name ?? prompt { session?.title = title } else { session?.titleSource = .placeholder }
         return session.map { [$0] } ?? []
     }
 
+    /// The session folder of a Kimi wire log (Kimi Code's `<session>/agents/<agent>/wire.jsonl`, or kimi-cli's
+    /// `<session>/wire.jsonl`) and the agent that wrote it.
+    static func kimiSession(_ wire: URL) -> (folder: URL, agent: String, modern: Bool) {
+        let directory = wire.deletingLastPathComponent()
+        guard directory.deletingLastPathComponent().lastPathComponent == "agents" else { return (directory, "main", false) }
+        return (directory.deletingLastPathComponent().deletingLastPathComponent(), directory.lastPathComponent, true)
+    }
+
+    /// The title in the session's `state.json`: Kimi Code's first prompt until a generated title or a `/title` replaces
+    /// it, or the `/title` kimi-cli kept as `custom_title`.
+    static func kimiTitle(_ folder: URL) -> String? {
+        let state = (try? ProviderFiles.json(folder.appendingPathComponent("state.json"))) ?? .null
+        return (SessionTitle.named(state["title"].stringValue) ?? SessionTitle.named(state["custom_title"].stringValue))
+            .flatMap { $0 == "New Session" ? nil : $0 }
+    }
+
     static func kimi(_ data: Data, path: String) throws -> [OpenAgentSession] {
-        let file = URL(fileURLWithPath: path), directory = file.deletingLastPathComponent()
-        let modern = directory.deletingLastPathComponent().lastPathComponent == "agents"
-        let sessionID = modern ? directory.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent : directory.lastPathComponent
-        let agent = modern ? directory.lastPathComponent : "main"
-        var session = OpenAgentSession(id: "kimi:\(sessionID):\(agent)", client: .kimi, title: "Kimi", path: path)
+        let (folder, agent, modern) = kimiSession(URL(fileURLWithPath: path))
+        // Sub-agents keep the client's name; the title belongs to the conversation the main agent holds.
+        let title = agent == "main" ? kimiTitle(folder) : nil
+        var session = OpenAgentSession(id: "kimi:\(folder.lastPathComponent):\(agent)", client: .kimi, title: title ?? "Kimi",
+                                       titleSource: title == nil ? .placeholder : .log, path: path)
         var requestModel: String?, keyed: [String: Int] = [:]
         func concrete(_ name: String?) -> String? {
             guard let name, !name.isEmpty, !name.hasPrefix("__") else { return nil }; return name
@@ -196,6 +228,14 @@ enum OpenAgentParser {
         return [session]
     }
 
+    /// OpenCode names a session `New session - <ISO time>` (`Child session - …` for a sub-agent's) until its title agent
+    /// answers the first message, and keeps that name when the title call fails.
+    static func openCodeTitle(_ title: String?) -> String? {
+        guard let title = SessionTitle.named(title),
+              title.range(of: #"^(New|Child) session - \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$"#, options: .regularExpression) == nil else { return nil }
+        return title
+    }
+
     static func openCodeMessage(_ value: ProviderJSON, id: String, sessionID: String, path: String,
                                 title: String? = nil, workspace: String? = nil, assistant: Bool = false) throws -> OpenAgentSession? {
         guard value["role"].stringValue == "assistant" || (assistant && value["role"] == .null) else { return nil }
@@ -206,8 +246,10 @@ enum OpenAgentParser {
         let read = try tokens["cache"]["read"].optionalCounter(), write = try tokens["cache"]["write"].optionalCounter()
         let model = value["modelID"].stringValue ?? value["model"]["id"].stringValue ?? "Unknown"
         let provider = value["providerID"].stringValue ?? value["model"]["providerID"].stringValue ?? "Unknown"
-        var session = OpenAgentSession(id: "opencode:\(sessionID)", client: .opencode, title: title ?? "OpenCode",
-            workspace: workspace ?? value["path"]["root"].stringValue, path: path)
+        let workspace = workspace ?? value["path"]["root"].stringValue, named = openCodeTitle(title)
+        var session = OpenAgentSession(id: "opencode:\(sessionID)", client: .opencode,
+            title: named ?? workspace.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "OpenCode",
+            titleSource: named == nil ? .placeholder : .log, workspace: workspace, path: path)
         try session.add(id: "opencode:\(id)", model: model, provider: provider, at: at,
                     input: try TokenCount.sum(input, write), output: try TokenCount.sum(output, tokens["reasoning"].optionalCounter()), cacheRead: read,
                     cacheWrite: write, reasoning: try tokens["reasoning"].optionalCounter())

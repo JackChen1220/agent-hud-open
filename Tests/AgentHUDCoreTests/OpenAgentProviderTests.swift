@@ -270,6 +270,29 @@ final class OpenAgentProviderTests: XCTestCase {
         XCTAssertNil(sqlite.events[0].attribution?.pool)
     }
 
+    func testTitlesComeFromWhatEachClientKeeps() throws {
+        // OpenCode keeps its placeholder name when the title call fails.
+        let reply = #"{"role":"assistant","modelID":"m","providerID":"p","time":{"created":1788800000000},"tokens":{"input":1,"output":1},"path":{"root":"/work/app"}}"#
+        let failed = try OpenAgentParser.openCodeMessage(json(reply), id: "m", sessionID: "s", path: "/m.json", title: "New session - 2026-09-28T07:46:18.123Z")
+        XCTAssertEqual(failed?.title, "app")
+        XCTAssertEqual(try OpenAgentParser.openCodeMessage(json(reply), id: "m", sessionID: "s", path: "/m.json", title: "News update query")?.title, "News update query")
+        // Pi: the name last given, else the first message.
+        let prompt = #"{"type":"message","id":"u","timestamp":"2026-09-07T00:00:00Z","message":{"role":"user","content":[{"type":"text","text":"Fix the parser\nplease"}]}}"#
+        XCTAssertEqual(try OpenAgentParser.pi(Data((piLines() + "\n" + prompt).utf8), path: "/a").first?.title, "Fix the parser")
+        let named = piLines() + "\n" + prompt + "\n" + #"{"type":"session_info","id":"i","name":"Parser work"}"#
+        XCTAssertEqual(try OpenAgentParser.pi(Data(named.utf8), path: "/a").first?.title, "Parser work")
+        XCTAssertEqual(try OpenAgentParser.pi(Data((named + "\n" + #"{"type":"session_info","id":"j","name":""}"#).utf8), path: "/a").first?.title,
+                       "Fix the parser", "an empty name clears the one given before")
+        XCTAssertEqual(try OpenAgentParser.pi(Data(piLines().utf8), path: "/a").first?.titleSource, .placeholder)
+        // Kimi Code keeps the title in the session's state.json; sub-agents keep the client's name.
+        let session = try temp().appendingPathComponent("sessions/wd/session")
+        try FileManager.default.createDirectory(at: session.appendingPathComponent("agents/main"), withIntermediateDirectories: true)
+        try #"{"title":"hello?","titleKind":"replaceable","isCustomTitle":false}"#.write(to: session.appendingPathComponent("state.json"), atomically: true, encoding: .utf8)
+        let usage = #"{"type":"usage.record","model":"kimi-for-coding","usageScope":"turn","time":1788800001000,"usage":{"inputOther":10,"output":5}}"#
+        XCTAssertEqual(try OpenAgentParser.kimi(Data(usage.utf8), path: session.appendingPathComponent("agents/main/wire.jsonl").path).first?.title, "hello?")
+        XCTAssertEqual(try OpenAgentParser.kimi(Data(usage.utf8), path: session.appendingPathComponent("agents/child/wire.jsonl").path).first?.title, "Kimi")
+    }
+
     func testSameRequestCannotMergeAcrossPools() {
         let a = credential().pool, b = credential(key: "another-account").pool
         func event(_ pool: BillingPool) -> UsageEvent {
