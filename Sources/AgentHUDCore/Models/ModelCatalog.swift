@@ -74,10 +74,10 @@ public enum ModelCatalog {
     }
 
     /// The catalog name of a consumer id: the model its client called, after the client's `<source>-model:` prefix and
-    /// before a `#` that tells routes to the model apart, without a dated snapshot suffix or Claude Code's 1M marker.
-    /// Whichever client made the call, the same model has the same list price, so Claude Code pointed at DeepSeek's API
-    /// prices its calls as DeepSeek's. A gateway's name for a model, such as `openai/gpt-5.5`, names a model the gateway
-    /// sells at its own price, so it has none here.
+    /// before a `#` that names the provider the call went through, without a dated snapshot suffix or Claude Code's 1M
+    /// marker. Whichever client made the call, the same model has the same list price, so Claude Code pointed at
+    /// DeepSeek's API prices its calls as DeepSeek's. A gateway's name for a model, such as `openai/gpt-5.5`, names a
+    /// model the gateway sells at its own price, so it has none here.
     static func name(of agentId: String) -> String? {
         guard let prefix = agentId.range(of: "-model:") else { return nil }
         var name = agentId[prefix.upperBound...].prefix { $0 != "#" }.lowercased()
@@ -86,7 +86,16 @@ public enum ModelCatalog {
         return name.isEmpty ? nil : name
     }
 
-    public static func model(for agentId: String) -> Model? { name(of: agentId).flatMap { models[$0] } }
+    /// The model a consumer called, where its list price applies: a consumer that names the provider it went through is
+    /// priced only when that provider is the vendor's own API or plan (`vendorServices`).
+    public static func model(for agentId: String) -> Model? {
+        guard let model = listed(agentId) else { return nil }
+        guard let mark = agentId.firstIndex(of: "#") else { return model }
+        return vendorServices[String(agentId[agentId.index(after: mark)...])] == model.vendor ? model : nil
+    }
+
+    /// The model a consumer called, whichever provider served it.
+    private static func listed(_ agentId: String) -> Model? { name(of: agentId).flatMap { models[$0] } }
 
     /// What one call would cost at list price on the platform it went through, in that platform's currency: at the tier
     /// its prompt reaches, and at DeepSeek's peak rates when made in Beijing working hours. nil when the model has no
@@ -148,7 +157,7 @@ public enum ModelCatalog {
     /// report it, and a Claude model runs with 200K or 1M, so a model this Mac has seen hold more than 200K counts as 1M.
     public static func contextWindow(agentId: String, reported: Int?, largestSeen: Int?) -> Int? {
         if let reported, reported > 0 { return reported }
-        let published = model(for: agentId)?.contextWindow ?? (agentId.hasPrefix("claude-model:") ? 200_000 : nil)
+        let published = listed(agentId)?.contextWindow ?? (agentId.hasPrefix("claude-model:") ? 200_000 : nil)
         guard let published else { return nil }
         return (largestSeen ?? 0) > published ? max(published, 1_000_000) : published
     }

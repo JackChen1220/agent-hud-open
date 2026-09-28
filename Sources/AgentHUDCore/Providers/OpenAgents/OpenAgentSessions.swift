@@ -48,10 +48,10 @@ struct OpenAgentSession: Sendable {
     var turns: [SessionTurn] = []
     var completions: [SessionCompletion] = []
 
-    /// A consumer is the model as the log names it, which the price catalog reads, and after `#` a hash of the provider
-    /// the calls went through, which keeps routes to the same model apart.
+    /// A consumer is the model as the log names it and, after `#`, the provider the calls went through: routes to one
+    /// model stay apart, and the price catalog prices only the vendor's own.
     mutating func setModel(_ model: String, provider: String) {
-        let id = "\(client.rawValue)-model:\(model)#" + RecordCoding.hash([provider])
+        let id = "\(client.rawValue)-model:\(model)#\(provider)"
         models[id] = model
         currentModel = (id, model, provider)
     }

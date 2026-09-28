@@ -134,15 +134,17 @@ final class OpenAgentProviderTests: XCTestCase {
         XCTAssertTrue(a.turns.isEmpty)
     }
 
-    func testCallsArePricedByTheModelTheyNamedOnEveryRoute() async throws {
+    func testCallsArePricedByTheModelTheyNamedThroughTheVendorsOwnService() async throws {
         let luna = try XCTUnwrap(OpenAgentParser.pi(Data(piLines(model: "gpt-5.6-luna").utf8), path: "/a.jsonl").first)
         let route = try XCTUnwrap(OpenAgentParser.pi(Data(piLines(provider: "openai", model: "gpt-5.6-luna").utf8), path: "/b.jsonl").first)
+        let gateway = try XCTUnwrap(OpenAgentParser.pi(Data(piLines(provider: "openrouter", model: "gpt-5.6-luna").utf8), path: "/c.jsonl").first)
         let call = luna.events[0]
         XCTAssertNotEqual(call.agentId, route.events[0].agentId, "each route stays its own consumer")
         let kinds = TokenKinds(tokensIn: call.tokensIn, tokensOut: call.tokensOut, cacheRead: call.cacheReadTokens, cacheWrite: call.cacheWriteTokens)
         let price = try XCTUnwrap(ModelCatalog.cost(agentId: "codex-model:gpt-5.6-luna", kinds: kinds))
         XCTAssertEqual(ModelCatalog.cost(agentId: call.agentId, kinds: kinds), price, "the same model costs the same whichever client called it")
-        XCTAssertEqual(ModelCatalog.cost(agentId: route.events[0].agentId, kinds: kinds), price)
+        XCTAssertEqual(ModelCatalog.cost(agentId: route.events[0].agentId, kinds: kinds), price, "OpenAI's API and its ChatGPT plan are both OpenAI's")
+        XCTAssertNil(ModelCatalog.cost(agentId: gateway.events[0].agentId, kinds: kinds), "a gateway sells the model at its own price")
         let ledger = UsageLedger.inMemory(), now = self.now
         let provider = OpenAgentUsageProvider(credentials: { [] }, sessions: { _ in .init(sessions: [luna]) }, fetchQuota: { _, _ in ProviderQuota() },
                                               history: QuotaHistoryStore(), clock: { now }, ledger: ledger)
@@ -157,10 +159,12 @@ final class OpenAgentProviderTests: XCTestCase {
     func testASessionRecordedUnderTheHashedIdIsPricedWhole() async throws {
         let luna = try XCTUnwrap(OpenAgentParser.pi(Data(piLines(model: "gpt-5.6-luna").utf8), path: "/a.jsonl").first)
         let ledger = UsageLedger.inMemory(), now = self.now
-        // Consumers once were a hash of the route's provider and model.
+        // Consumers were once a hash of the route's provider and model, then the model and a hash of the provider.
         let hashed = "pi-model:" + RecordCoding.hash(["openai-codex", "gpt-5.6-luna"])
+        let routeHashed = "pi-model:gpt-5.6-luna#" + RecordCoding.hash(["openai-codex"])
         try await ledger.write { try $0.replace(source: OpenAgentUsageProvider.source, contribution: luna.id, events: [
             UsageLedger.Event(key: "earlier", timestamp: now.addingTimeInterval(-20 * 86400), agentId: hashed, tokensIn: 1_000, tokensOut: 10),
+            UsageLedger.Event(key: "later", timestamp: now.addingTimeInterval(-10 * 86400), agentId: routeHashed, tokensIn: 500, tokensOut: 5),
         ]) }
         let provider = OpenAgentUsageProvider(credentials: { [] }, sessions: { _ in .init(sessions: [luna]) }, fetchQuota: { _, _ in ProviderQuota() },
                                               history: QuotaHistoryStore(), clock: { now }, ledger: ledger)
@@ -168,8 +172,8 @@ final class OpenAgentProviderTests: XCTestCase {
         let buckets = try await ledger.buckets(since: now.addingTimeInterval(-30 * 86400))
         XCTAssertEqual(Set(buckets.map(\.agentId)), [luna.events[0].agentId], "no unpriced twin of the same model")
         let usage = try await ledger.sessionUsage(report.sessions.map(SessionUsageRequest.init))
-        XCTAssertEqual(usage[luna.id]?.calls, 2)
-        XCTAssertNotNil(usage[luna.id]?.listCost, "the call recorded before is priced too")
+        XCTAssertEqual(usage[luna.id]?.calls, 3)
+        XCTAssertNotNil(usage[luna.id]?.listCost, "the calls recorded before are priced too")
     }
 
     func testKimiUsageRecordWinsOverStepSummaryAndLegacyStatusIsCumulative() throws {

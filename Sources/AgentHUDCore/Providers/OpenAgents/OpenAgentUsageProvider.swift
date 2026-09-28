@@ -70,12 +70,14 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
     /// Writes each session's usage once the index is complete and something changed.
     private func record(_ local: OpenAgentLocalStore.Result, since: Date) async {
         guard local.indexing == nil else { return }
-        // Usage recorded under a hash of a route's provider and model joins the route's id, which names the model.
+        // Usage recorded under a hash of a route's provider and model, or of its provider alone, joins the route's id.
         var moves: [String: String] = [:], seen = Set<String>()
         for session in local.sessions {
             for event in session.events where seen.insert(event.agentId).inserted {
                 guard let provider = event.attribution?.providerID, let model = session.models[event.agentId] else { continue }
-                moves["\(session.client.rawValue)-model:" + RecordCoding.hash([provider, model])] = event.agentId
+                let prefix = "\(session.client.rawValue)-model:"
+                moves[prefix + RecordCoding.hash([provider, model])] = event.agentId
+                moves[prefix + "\(model)#" + RecordCoding.hash([provider])] = event.agentId
             }
         }
         try? await ledger.moveConsumers(moves)

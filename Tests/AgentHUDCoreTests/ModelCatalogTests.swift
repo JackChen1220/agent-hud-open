@@ -63,6 +63,17 @@ final class ModelCatalogTests: XCTestCase {
                        "a retired name prices as the model that serves it")
     }
 
+    func testAnOpenAgentsCallIsPricedOnlyThroughTheVendorsOwnService() {
+        let million = TokenKinds(input: 1_000_000)
+        XCTAssertEqual(ModelCatalog.cost(agentId: consumer(.pi, "claude-fable-5[1m]", via: "anthropic"), kinds: million)?.amount, 10)
+        XCTAssertEqual(ModelCatalog.cost(agentId: consumer(.opencode, "glm-5.1", via: "zhipuai-coding-plan"), kinds: million, region: .china)?.currency, "CNY")
+        for route in ["opencode", "opencode-go", "openrouter", "azure", "google-vertex-anthropic", "vibearound-custom-anthropic"] {
+            XCTAssertNil(ModelCatalog.cost(agentId: consumer(.opencode, "claude-fable-5", via: route), kinds: million), "\(route) sets its own price")
+        }
+        XCTAssertEqual(ModelCatalog.contextWindow(agentId: consumer(.opencode, "claude-fable-5", via: "opencode"), reported: nil, largestSeen: nil),
+                       1_000_000, "the model's window is the same whoever serves it")
+    }
+
     func testDeepSeekChargesTwiceInBeijingWorkingHours() throws {
         let formatter = ISO8601DateFormatter()
         for (instant, peak) in [("2026-09-07T00:59:59Z", false), ("2026-09-07T01:00:00Z", true), ("2026-09-07T04:00:00Z", false),
