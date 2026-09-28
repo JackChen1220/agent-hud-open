@@ -2,6 +2,10 @@
 
 Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the same number. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
+## 0.4.24 — 2026-09-28
+
+- With Press Option to open on, Option is needed only to open the panel: a tap while hovering is enough and holding still works, and the open panel stays until the pointer leaves, where letting go of Option used to close it under the pointer. A pointer that slips off the panel and comes back before the collapse delay runs out keeps it open without Option.
+
 ## 0.4.23 — 2026-09-28
 
 - A session's title is the one its client keeps — a name the user gave, else one the client generated — else the first line of its first prompt, else its workspace folder, where most clients used to show the first prompt and the rest a placeholder. A Claude Code session takes the title the desktop app generates or a `/rename` gives, else the one Claude Code generates; CodeBuddy and WorkBuddy take the title lines of their transcripts, and a WorkBuddy sidebar rename from its database; Grok takes the title it keeps current, where the key read before no longer exists; Kimi takes the title in the session's `state.json`, Pi a `/name` or else the first message, ZCode and Antigravity the titles they store, and a Cursor conversation the name of its IDE composer or agent CLI chat on this Mac. An OpenCode session whose title call failed shows its folder instead of New session and a time, a label an OpenClaw user gave wins over the generated name, and a Copilot name written as a YAML block is read. The titles reach the panel, the Sessions page, the island's completed turns and the iPhone. The first launch reads the week's Claude Code logs again once, so sessions already read take their titles.
