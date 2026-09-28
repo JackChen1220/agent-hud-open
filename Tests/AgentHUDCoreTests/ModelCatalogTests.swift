@@ -2,6 +2,13 @@ import XCTest
 @testable import AgentHUDCore
 
 final class ModelCatalogTests: XCTestCase {
+    /// The id an open agent's provider gives a model it called through `provider`.
+    private func consumer(_ client: OpenAgentSource, _ model: String, via provider: String) -> String {
+        var session = OpenAgentSession(id: "", client: client, title: "", path: "")
+        session.setModel(model, provider: provider)
+        return session.currentModel!.id
+    }
+
     func testListPricesFollowTheModelAndThePromptLength() {
         XCTAssertEqual(ModelCatalog.name(of: "claude-model:claude-haiku-4-5-20251001"), "claude-haiku-4-5", "a dated snapshot prices like its alias")
         XCTAssertEqual(ModelCatalog.name(of: "cursor-model:auto"), "auto")
@@ -39,7 +46,7 @@ final class ModelCatalogTests: XCTestCase {
         XCTAssertEqual(ModelCatalog.cost(agentId: "claude-model:glm-5.1", kinds: short, region: .china),
                        .init(amount: Decimal(string: "0.084")!, currency: "CNY"))
         XCTAssertEqual(ModelCatalog.cost(agentId: "claude-model:glm-5.1", kinds: long, region: .china)?.amount, Decimal(string: "0.348"))
-        XCTAssertEqual(ModelCatalog.cost(agentId: "opencode-model:glm-5.1", kinds: short),
+        XCTAssertEqual(ModelCatalog.cost(agentId: consumer(.opencode, "glm-5.1", via: "zai"), kinds: short),
                        .init(amount: Decimal(string: "0.0184")!, currency: "USD"))
         XCTAssertNil(ModelCatalog.cost(agentId: "claude-model:glm-5-turbo", kinds: short), "a model one platform does not sell has no price there")
         XCTAssertNil(ModelCatalog.cost(agentId: "claude-model:glm-4.6", kinds: short, region: .china))
@@ -86,9 +93,9 @@ final class ModelCatalogTests: XCTestCase {
             AgentService(client: "OpenCode", provider: "Anthropic", product: .api),
         ], billing: [deepSeek])
         XCTAssertEqual(regions.region(for: "claude-model:glm-5.1"), .china, "Claude Code signed in to BigModel's plan")
-        XCTAssertEqual(regions.region(for: "opencode-model:glm-5.1"), .international)
+        XCTAssertEqual(regions.region(for: consumer(.opencode, "glm-5.1", via: "zai")), .international)
         XCTAssertEqual(regions.region(for: "glm-model:glm-5.1"), .international, "clients that disagree name no platform for others")
-        XCTAssertEqual(regions.region(for: "pi-model:kimi-k3"), .international, "one client on both platforms is priced abroad")
+        XCTAssertEqual(regions.region(for: consumer(.pi, "kimi-k3", via: "kimi-coding")), .international, "one client on both platforms is priced abroad")
         XCTAssertEqual(regions.region(for: "claude-model:deepseek-v4-pro"), .china, "a yuan account bills DeepSeek in yuan")
         XCTAssertEqual(regions.region(for: "claude-model:claude-opus-5"), .international)
         XCTAssertEqual(regions.region(for: "cursor-model:auto"), .international)

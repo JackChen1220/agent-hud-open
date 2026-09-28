@@ -48,21 +48,23 @@ struct OpenAgentSession: Sendable {
     var turns: [SessionTurn] = []
     var completions: [SessionCompletion] = []
 
+    /// A consumer is the model as the log names it, which the price catalog reads, and after `#` a hash of the provider
+    /// the calls went through, which keeps routes to the same model apart.
     mutating func setModel(_ model: String, provider: String) {
-        let id = "\(client.rawValue)-model:" + RecordCoding.hash([provider, model])
+        let id = "\(client.rawValue)-model:\(model)#" + RecordCoding.hash([provider])
         models[id] = model
         currentModel = (id, model, provider)
     }
 
     /// - input, output: including `cacheWrite` and `reasoning`.
     mutating func add(id eventID: String, model: String, provider: String, at: Date, input: Int, output: Int,
-                      cacheRead: Int, cacheWrite: Int = 0, reasoning: Int = 0, estimate: Decimal? = nil) throws {
+                      cacheRead: Int, cacheWrite: Int = 0, reasoning: Int = 0) throws {
         _ = try TokenCount.sum(input, output, cacheRead)
         setModel(model, provider: provider)
         let consumer = currentModel!.id
         events.append(.init(timestamp: at, agentId: consumer, tokensIn: input, tokensOut: output,
             cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite, reasoningTokens: reasoning, eventID: eventID,
-            attribution: .init(client: client.name, providerID: provider, estimatedUSD: estimate)))
+            attribution: .init(client: client.name, providerID: provider)))
         start = min(start ?? at, at); end = max(end ?? at, at)
     }
 }
@@ -70,10 +72,6 @@ struct OpenAgentSession: Sendable {
 /// Provider licenses are listed in THIRD_PARTY_NOTICES.txt.
 /// Only metadata and counters leave these parsers; prompts, tool bodies and credentials do not.
 enum OpenAgentParser {
-    static func decimal(_ value: ProviderJSON) -> Decimal? {
-        guard let number = value.numberValue, number >= 0 else { return nil }
-        return Decimal(string: String(number), locale: Locale(identifier: "en_US_POSIX"))
-    }
     static func jsonLines(_ data: Data, visit: (ProviderJSON, Int) throws -> Void) throws {
         guard data.count <= 64 * 1024 * 1024 else { throw ProviderFailure.limit }
         let lines = data.split(separator: 10, omittingEmptySubsequences: false)
@@ -119,7 +117,7 @@ enum OpenAgentParser {
                 identity = "pi:entry:" + RecordCoding.hash([entry, String(RecordCoding.milliseconds(at)), provider, model])
             } else { identity = "\(session!.id):line:\(index)" }
             try session?.add(id: identity, model: model, provider: provider, at: at, input: try TokenCount.sum(input, write),
-                         output: output, cacheRead: read, cacheWrite: write, estimate: decimal(usage["cost"]["total"]))
+                         output: output, cacheRead: read, cacheWrite: write)
             // An assistant stop is not agent_settled; retries, tools and queued followups can still run.
         }
         return session.map { [$0] } ?? []
@@ -212,34 +210,42 @@ enum OpenAgentParser {
             workspace: workspace ?? value["path"]["root"].stringValue, path: path)
         try session.add(id: "opencode:\(id)", model: model, provider: provider, at: at,
                     input: try TokenCount.sum(input, write), output: try TokenCount.sum(output, tokens["reasoning"].optionalCounter()), cacheRead: read,
-                    cacheWrite: write, reasoning: try tokens["reasoning"].optionalCounter(), estimate: decimal(value["cost"]))
+                    cacheWrite: write, reasoning: try tokens["reasoning"].optionalCounter())
         session.end = ProviderDate.milliseconds(value["time"]["completed"]) ?? at
         return session
     }
 
+    /// Replies are in `message`, and in `session_message` for sessions of OpenCode's newer kind, whose table also holds
+    /// agent and model switches before it holds any reply. The two name one reply by different ids, so a session is read
+    /// from `session_message` once that table has its replies, and from `message` until then.
     static func openCodeSQLite(_ url: URL, since: Date = .distantPast) throws -> [OpenAgentSession] {
         let db = try ReadOnlySQLite(url)
         var tables = Set<String>()
         try db.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('session_message', 'message', 'session_v2', 'session')") { row in
             if let name = ReadOnlySQLite.text(row, 0) { tables.insert(name) }
         }
+        for table in tables { try db.requireTable(table) }
+        let newer = tables.contains("session_message")
+        guard newer || tables.contains("message") else { throw ProviderFailure.format }
         var sessions: [OpenAgentSession] = []
         // Prefer SQLite records. Stable message IDs deduplicate JSON records.
-        let message = tables.contains("session_message") ? "session_message" : "message"
-        guard tables.contains(message) else { throw ProviderFailure.format }
-        try db.requireTable(message)
-        let session = tables.contains("session_v2") ? "session_v2" : "session"
-        let hasSession = tables.contains(session)
-        if hasSession { try db.requireTable(session) }
-        let metadata = hasSession ? "s.title, s.directory" : "NULL, NULL"
-        let join = hasSession ? "LEFT JOIN \(session) s ON s.id = m.session_id" : ""
-        let filter = message == "session_message" ? "m.type = 'assistant'" : "json_extract(m.data, '$.role') = 'assistant'"
-        try db.rows("SELECT m.id, m.session_id, m.data, \(metadata) FROM \(message) m \(join) WHERE \(filter) AND json_extract(m.data, '$.time.created') >= CAST(? AS REAL) ORDER BY m.id DESC", strings: [String(since.timeIntervalSince1970 * 1000)]) { row in
-            guard let id = ReadOnlySQLite.text(row, 0), let sid = ReadOnlySQLite.text(row, 1), let raw = ReadOnlySQLite.text(row, 2) else { throw ProviderFailure.format }
-            if let item = try openCodeMessage(ProviderJSON.read(Data(raw.utf8)), id: id, sessionID: sid, path: url.path,
-                title: ReadOnlySQLite.text(row, 3), workspace: ReadOnlySQLite.text(row, 4), assistant: message == "session_message") {
-                sessions.append(item)
+        func read(_ messages: String, titles table: String?, where filter: String) throws {
+            let metadata = table == nil ? "NULL, NULL" : "s.title, s.directory"
+            let join = table.map { "LEFT JOIN \($0) s ON s.id = m.session_id" } ?? ""
+            try db.rows("SELECT m.id, m.session_id, m.data, \(metadata) FROM \(messages) m \(join) WHERE \(filter) AND json_extract(m.data, '$.time.created') >= CAST(? AS REAL) ORDER BY m.id DESC", strings: [String(since.timeIntervalSince1970 * 1000)]) { row in
+                guard let id = ReadOnlySQLite.text(row, 0), let sid = ReadOnlySQLite.text(row, 1), let raw = ReadOnlySQLite.text(row, 2) else { throw ProviderFailure.format }
+                if let item = try openCodeMessage(ProviderJSON.read(Data(raw.utf8)), id: id, sessionID: sid, path: url.path,
+                    title: ReadOnlySQLite.text(row, 3), workspace: ReadOnlySQLite.text(row, 4), assistant: messages == "session_message") {
+                    sessions.append(item)
+                }
             }
+        }
+        if newer {
+            try read("session_message", titles: ["session_v2", "session"].first(where: tables.contains), where: "m.type = 'assistant'")
+        }
+        if tables.contains("message") {
+            try read("message", titles: ["session", "session_v2"].first(where: tables.contains), where: "json_extract(m.data, '$.role') = 'assistant'"
+                + (newer ? " AND m.session_id NOT IN (SELECT session_id FROM session_message WHERE type = 'assistant' AND session_id IS NOT NULL)" : ""))
         }
         return sessions
     }

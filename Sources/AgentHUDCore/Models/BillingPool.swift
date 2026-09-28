@@ -39,9 +39,7 @@ public struct UsageAttribution: Hashable, Codable, Sendable {
     public let client: String
     public let providerID: String
     public let pool: BillingPool?
-    /// The client may price a subscription request at API list prices. This is an estimate, not a bill.
-    public let estimatedUSD: Decimal?
-    public init(client: String, providerID: String, pool: BillingPool? = nil, estimatedUSD: Decimal? = nil) {
-        self.client = client; self.providerID = providerID; self.pool = pool; self.estimatedUSD = estimatedUSD
+    public init(client: String, providerID: String, pool: BillingPool? = nil) {
+        self.client = client; self.providerID = providerID; self.pool = pool
     }
 }
