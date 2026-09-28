@@ -72,10 +72,13 @@ public final class DesktopApplication {
         }, onChange: { [weak self] in
             if let error = self?.store.lastError { NSLog("[AgentHUD] refresh failed: %@", error) }
         })
+        // A new install starts with launch at login on, and nothing registers it until the setting is applied, so it is
+        // applied at every start; later it applies when it changes. The demo leaves the system's login items alone.
+        if !options.demo { LoginItem.set(settings.settings.launchAtLogin) }
         observeChanges({ [weak self] in
             self?.settings.settings.launchAtLogin
         }, onChange: { [weak self] in
-            guard let self else { return }
+            guard let self, !self.options.demo else { return }
             LoginItem.set(self.settings.settings.launchAtLogin)
         })
         PermissionRequests.shared.holdTime = TimeInterval(settings.settings.approvalWaitMinutes * 60)
