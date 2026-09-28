@@ -85,7 +85,8 @@ public actor DeepSeekUsageProvider: UsageProvider, LedgerRecording {
         return UsageReport(generatedAt: now, snapshots: [], sessions: sessions,
                            notice: notice.isEmpty ? nil : notice, discoveredAgents: installed ? discovered : [], consumers: consumers,
                            indexing: indexed.indexing,
-                           sourceNotices: notice.isEmpty ? [:] : ["DeepSeek": notice], billing: installed ? [billing] : [],
+                           sourceNotices: notice.isEmpty ? [:] : ["DeepSeek": notice], quotaNotices: balanceNotice.map { ["DeepSeek": $0] } ?? [:],
+                           billing: installed ? [billing] : [],
                            completions: indexed.sessions.flatMap { $0.transcript.completions ?? [] },
                            turns: indexed.sessions.flatMap { $0.transcript.sessionTurns })
     }

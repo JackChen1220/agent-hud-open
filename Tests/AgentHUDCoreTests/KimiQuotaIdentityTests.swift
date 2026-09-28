@@ -17,9 +17,9 @@ final class KimiQuotaIdentityTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
         return dir
     }
-    private func provider(_ input: Inputs, _ server: Server, identityCache: URL? = nil) -> OpenAgentUsageProvider {
+    private func provider(_ input: Inputs, _ server: Server, identityCache: URL? = nil, notices: [String: String] = [:]) -> OpenAgentUsageProvider {
         let client = OpenAgentQuotaClient(http: ProviderHTTP(send: { try await server.send($0) }))
-        return OpenAgentUsageProvider(credentials: { input.credentials }, sessions: { _ in .init() },
+        return OpenAgentUsageProvider(credentials: { input.credentials }, sessions: { _ in .init(notices: notices) },
             fetchQuota: { try await client.fetch($0, now: $1) }, history: QuotaHistoryStore(),
             identify: { try await client.identify($0) }, clock: { input.now }, identityCacheURL: identityCache)
     }
@@ -148,12 +148,22 @@ final class KimiQuotaIdentityTests: XCTestCase {
         input.advance(121)
         let offline = try await retained.fetchAccountAndLocalUsage(agents: [], historyHours: 24)
         XCTAssertEqual(offline.snapshots, good.snapshots)
+        XCTAssertTrue(offline.discoveredAgents.allSatisfy { offline.quotaNotice(for: $0) != nil }, "a kept reading raises no alert")
         await server.setUsageStatus(401)
         input.advance(121)
         let invalid = try await retained.fetchAccountAndLocalUsage(agents: [], historyHours: 24)
         XCTAssertTrue(invalid.snapshots.isEmpty)
         XCTAssertTrue(invalid.discoveredAgents.isEmpty)
         XCTAssertEqual(invalid.activeQuotaPoolIDs?["Kimi"], [])
+    }
+
+    func testANoticeAboutKimiLogsLeavesThePoolsQuotaInCharge() async throws {
+        let input = Inputs(now: now, credentials: [credential("first-key")])
+        let report = try await provider(input, Server(), notices: ["Kimi": "Some local sessions could not be read"])
+            .fetchAccountAndLocalUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(report.sourceNotices["Kimi"], "Some local sessions could not be read")
+        XCTAssertEqual(report.discoveredAgents.count, 2)
+        XCTAssertTrue(report.discoveredAgents.allSatisfy { report.quotaNotice(for: $0) == nil })
     }
 
     func testExpiredAliasDoesNotHideValidAccountOrRetainExpiredClient() async throws {

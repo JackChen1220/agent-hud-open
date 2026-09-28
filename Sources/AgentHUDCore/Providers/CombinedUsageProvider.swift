@@ -107,10 +107,16 @@ public struct CombinedUsageProvider: UsageProvider {
         }
         await ledger.commitPass()
         let reports = results.compactMap { $0.1 }
-        var notices: [String: String] = [:]
+        var notices: [String: String] = [:], quotaNotices: [String: String] = [:]
         for (index, report, error) in results {
-            if let report { notices.merge(report.sourceNotices, uniquingKeysWith: { _, new in new }) }
-            if let message = error ?? (report?.sourceNotices.isEmpty == true ? report?.notice : nil) { notices[vendors[index].vendor] = message }
+            if let report {
+                notices.merge(report.sourceNotices, uniquingKeysWith: { _, new in new })
+                quotaNotices.merge(report.quotaNotices ?? report.sourceNotices, uniquingKeysWith: { _, new in new })
+            }
+            if let message = error ?? (report?.sourceNotices.isEmpty == true ? report?.notice : nil) {
+                notices[vendors[index].vendor] = message
+                quotaNotices[vendors[index].vendor] = message
+            }
         }
         guard !reports.isEmpty else { throw UsageProviderError(notices.keys.sorted().map { "\($0): \(notices[$0]!)" }.joined(separator: " · ")) }
         let now = reports.map(\.generatedAt).max() ?? Date()
@@ -136,6 +142,7 @@ public struct CombinedUsageProvider: UsageProvider {
                            indexing: progress.isEmpty ? nil : IndexProgress(done: progress.reduce(0) { $0 + $1.done }, total: progress.reduce(0) { $0 + $1.total }),
                            insightsByAgent: reports.reduce(into: [:]) { $0.merge($1.insightsByAgent, uniquingKeysWith: { _, new in new }) },
                            subscriptions: reports.reduce(into: [:]) { $0.merge($1.subscriptions, uniquingKeysWith: { _, new in new }) }, sourceNotices: notices,
+                           quotaNotices: quotaNotices,
                            consumerIdsByQuota: reports.reduce(into: [:]) { $0.merge($1.consumerIdsByQuota, uniquingKeysWith: { $0.union($1) }) },
                            billing: Self.mergeBilling(reports.flatMap(\.billing)), codexResetCredits: reports.first { $0.codexResetCredits != nil }?.codexResetCredits,
                            codexResetCreditsObservedAt: reports.first { $0.codexResetCredits != nil }?.codexResetCreditsObservedAt,

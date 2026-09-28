@@ -157,6 +157,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
                 timeToExhaust: burn?.timeToExhaust(remainingPct: snapshot.remainingPct), weeklyCapHits: caps.hits,
                 weeklyWaitTotal: caps.totalWait, weeklyWaitLongest: caps.longestWait, weeklyWaitLongestAt: caps.longestAt)
         }
+        // Every notice is shown; only the quota reading's holds back the vendor's alerts, levels and retained sessions.
         let notice = [quotaNotice, local.notice, hookNotice].compactMap { $0 }.joined(separator: " · ")
         let descriptors = windows.map {
             AgentDescriptor(id: $0.id, vendor: source.vendor, model: $0.label, source: L10n.sourceAdditionalUsage, enabled: true, account: account)
@@ -166,7 +167,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
         return UsageReport(generatedAt: now, snapshots: snapshots, sessions: sessions,
             notice: notice.isEmpty ? nil : notice, discoveredAgents: descriptors, consumers: consumers,
             indexing: local.indexing, insightsByAgent: insights, subscriptions: quota.plan.map { [source.vendor: $0] } ?? [:],
-            sourceNotices: notice.isEmpty ? [:] : [source.vendor: notice],
+            sourceNotices: notice.isEmpty ? [:] : [source.vendor: notice], quotaNotices: quotaNotice.map { [source.vendor: $0] } ?? [:],
             consumerIdsByQuota: Dictionary(uniqueKeysWithValues: quotaIDs.map { ($0, consumerIDs) }),
             completions: local.sessions.flatMap(\.completions) + hookCompletions, turns: local.sessions.flatMap(\.turns),
             accounts: quota.isSignedIn ? [source.vendor: [AccountObservation(account: account, label: quota.label, plan: quota.plan, observedAt: observedAt)]] : nil,

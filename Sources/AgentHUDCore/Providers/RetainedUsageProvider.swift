@@ -59,7 +59,7 @@ extension UsageReport {
         UsageReport(generatedAt: generatedAt, snapshots: snapshots, sessions: sessions,
                     notice: notice, discoveredAgents: discoveredAgents, consumers: consumers, usage: usage,
                     indexing: indexing, insightsByAgent: insightsByAgent, subscriptions: subscriptions, sourceNotices: sourceNotices,
-                    consumerIdsByQuota: consumerIdsByQuota, billing: billing, codexResetCredits: codexResetCredits,
+                    quotaNotices: quotaNotices, consumerIdsByQuota: consumerIdsByQuota, billing: billing, codexResetCredits: codexResetCredits,
                     codexResetCreditsObservedAt: codexResetCreditsObservedAt, services: services, activeQuotaPoolIDs: activeQuotaPoolIDs,
                     accounts: accounts, forgottenAccountProviders: forgottenAccountProviders, periods: periods,
                     rowSeenAt: rowSeenAt)
@@ -69,7 +69,7 @@ extension UsageReport {
     func startingRowClocks() -> UsageReport {
         UsageReport(generatedAt: generatedAt, snapshots: snapshots, sessions: sessions, notice: notice,
                     discoveredAgents: discoveredAgents, consumers: consumers, usage: usage, indexing: indexing,
-                    insightsByAgent: insightsByAgent, subscriptions: subscriptions, sourceNotices: sourceNotices,
+                    insightsByAgent: insightsByAgent, subscriptions: subscriptions, sourceNotices: sourceNotices, quotaNotices: quotaNotices,
                     consumerIdsByQuota: consumerIdsByQuota, billing: billing, codexResetCredits: codexResetCredits,
                     codexResetCreditsObservedAt: codexResetCreditsObservedAt, completions: completions, turns: turns,
                     services: services, activeQuotaPoolIDs: activeQuotaPoolIDs, accounts: accounts,
@@ -120,7 +120,8 @@ extension UsageReport {
                 updatedAt: old.updatedAt, costs: value.costs, sessionCosts: value.sessionCosts, notice: value.notice, billingPool: value.billingPool)
         } + previous.billing.filter { !billingIDs.contains($0.id) }
         let knownAgents = UsageAggregation.consumersUnion([discoveredAgents, consumers, previous.discoveredAgents, previous.consumers])
-        let failedIDs = Set(knownAgents.filter { sourceNotices[$0.vendor] != nil }.map(\.id))
+        // A source whose read or quota reading failed keeps its last sessions; a notice about its local logs or hooks does not.
+        let failedIDs = Set(knownAgents.filter { quotaNotice(vendor: $0.vendor) != nil }.map(\.id))
         let retainedSessions = UsageAggregation.sessionsUnion([sessions, previous.sessions.filter { failedIDs.contains($0.agentId) }])
         let rows = UsageAggregation.consumersUnion([discoveredAgents, previous.discoveredAgents.filter(isRetained)])
         return UsageReport(generatedAt: generatedAt,
@@ -134,7 +135,7 @@ extension UsageReport {
             indexing: indexing,
             insightsByAgent: previous.insightsByAgent.filter { !retiredWindowIDs.contains($0.key) }.merging(insightsByAgent, uniquingKeysWith: { _, new in new }),
             subscriptions: previous.subscriptions.filter { !retiredPoolIDs.contains($0.key) }.merging(subscriptions, uniquingKeysWith: { _, new in new }),
-            sourceNotices: sourceNotices,
+            sourceNotices: sourceNotices, quotaNotices: quotaNotices,
             consumerIdsByQuota: previous.consumerIdsByQuota.filter { !retiredWindowIDs.contains($0.key) }.merging(consumerIdsByQuota, uniquingKeysWith: { _, new in new }),
             billing: retainedBilling, codexResetCredits: codexResetCredits ?? (sameCurrentAccount(as: previous, provider: "Codex") ? previous.codexResetCredits : nil),
             codexResetCreditsObservedAt: codexResetCredits != nil ? codexResetCreditsObservedAt

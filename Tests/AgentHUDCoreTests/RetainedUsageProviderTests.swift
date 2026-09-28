@@ -135,6 +135,27 @@ final class RetainedUsageProviderTests: XCTestCase {
         XCTAssertEqual(store.sessionStatusLabel(session), L10n.text("状态待更新", "Status out of date"))
     }
 
+    func testOnlyAQuotaNoticeKeepsTheSessionsASourceNoLongerReports() async throws {
+        let agent = AgentDescriptor(id: "grok-model:test", vendor: "Grok", model: "test", source: "local", enabled: true)
+        let session = LiveSession(id: "grok:old", agentId: agent.id, task: "old task", terminal: nil,
+            startedAt: now, pctOfWindow: nil, tokensIn: 10, tokensOut: 2, observedAt: now)
+        let previous = UsageReport(generatedAt: now, snapshots: [], sessions: [session], consumers: [agent])
+        func next(quotaNotices: [String: String]) -> UsageReport {
+            UsageReport(generatedAt: now.addingTimeInterval(60), snapshots: [], sessions: [],
+                        sourceNotices: ["Grok": "Grok log formats overlap"], quotaNotices: quotaNotices)
+        }
+        let provider = RetainedUsageProvider(provider: SequenceProvider([
+            previous, next(quotaNotices: [:]), previous, next(quotaNotices: ["Grok": "Sign in to Grok CLI, then refresh quota"]),
+        ]))
+        _ = try await provider.fetchUsage(agents: [], historyHours: 24)
+        let local = try await provider.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(local.sourceNotices["Grok"], "Grok log formats overlap")
+        XCTAssertTrue(local.sessions.isEmpty, "a notice about local logs keeps nothing its read no longer has")
+        _ = try await provider.fetchUsage(agents: [], historyHours: 24)
+        let failed = try await provider.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(failed.sessions, [session])
+    }
+
     func testARowUnseenForTheRetentionPeriodRetiresWithItsReading() async throws {
         let kept = AgentDescriptor(id: "kept", vendor: "Antigravity", model: "Gemini", source: "", enabled: true)
         let gone = AgentDescriptor(id: "gone", vendor: "Antigravity", model: "Claude", source: "", enabled: true)

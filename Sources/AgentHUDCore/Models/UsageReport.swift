@@ -74,6 +74,10 @@ public struct UsageReport: Hashable, Codable, Sendable {
     /// Unlike an empty inventory, which keeps earlier accounts as last readings, their readings, rows and settings retire at once.
     public let forgottenAccountProviders: Set<String>?
     public let sourceNotices: [String: String]
+    /// The part of `sourceNotices` about readings, by vendor: a quota or balance read that failed or could not be verified,
+    /// which holds back that vendor's alerts, status levels and retained sessions. Notices about local logs and hooks are
+    /// only in `sourceNotices`. Nil when a report does not tell them apart, so that all of its source notices count.
+    public let quotaNotices: [String: String]?
     /// Consumer ids covered by each quota row. Providers own the relationship between model and quota ids.
     public let consumerIdsByQuota: [String: Set<String>]
     public let billing: [APIBilling]
@@ -101,6 +105,7 @@ public struct UsageReport: Hashable, Codable, Sendable {
         insightsByAgent: [String: UsageInsights] = [:],
         subscriptions: [String: String] = [:],
         sourceNotices: [String: String] = [:],
+        quotaNotices: [String: String]? = nil,
         consumerIdsByQuota: [String: Set<String>] = [:],
         billing: [APIBilling] = [],
         codexResetCredits: CodexResetCredits? = nil,
@@ -130,6 +135,7 @@ public struct UsageReport: Hashable, Codable, Sendable {
         self.insightsByAgent = insightsByAgent
         self.subscriptions = subscriptions
         self.sourceNotices = sourceNotices
+        self.quotaNotices = quotaNotices
         self.consumerIdsByQuota = consumerIdsByQuota
         self.indexing = indexing
         self.generatedAt = generatedAt

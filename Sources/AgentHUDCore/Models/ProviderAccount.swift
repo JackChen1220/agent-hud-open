@@ -119,10 +119,14 @@ public enum ClientHome {
 }
 
 public extension UsageReport {
+    /// Why an agent's quota reading is not to be trusted: its account's failed read, else its vendor's quota notice.
     func quotaNotice(for agent: AgentDescriptor) -> String? {
-        if let id = agent.account?.id, let account = observation(accountID: id) { return account.quotaNotice ?? sourceNotices[agent.vendor] }
-        return sourceNotices[agent.vendor]
+        if let id = agent.account?.id, let account = observation(accountID: id) { return account.quotaNotice ?? quotaNotice(vendor: agent.vendor) }
+        return quotaNotice(vendor: agent.vendor)
     }
+
+    /// A vendor's notice about a quota or balance reading; a notice about its local logs or hooks is not one.
+    func quotaNotice(vendor: String) -> String? { (quotaNotices ?? sourceNotices)[vendor] }
 
     /// Older reports carry one unscoped credit balance. It is safe only with a single current account.
     func resetCredits(for accountID: String) -> CodexResetCredits? {

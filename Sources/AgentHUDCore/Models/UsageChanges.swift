@@ -35,7 +35,7 @@ public struct UsageChanges: Hashable, Sendable {
         completions = new.completions.filter { !known.contains($0.id) }
         inventory = old?.discoveredAgents != new.discoveredAgents || old?.consumers != new.consumers || old?.accounts != new.accounts
             || old?.services != new.services || old?.activeQuotaPoolIDs != new.activeQuotaPoolIDs || old?.notice != new.notice
-            || old?.sourceNotices != new.sourceNotices || old?.indexing != new.indexing
+            || old?.sourceNotices != new.sourceNotices || old?.quotaNotices != new.quotaNotices || old?.indexing != new.indexing
     }
 
     private static func costs(_ report: UsageReport) -> [String: [CostBucket]] {
