@@ -54,45 +54,67 @@ final class ProviderAccountTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("agenthud-codex-identity-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let json = #"{"accountId":"workspace-1","rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":10,"windowDurationMins":300}}},"account":{"type":"chatgpt","email":"A@Example.com","planType":"prolite"}}"#
-        let signedIn = try JSONDecoder().decode(CodexRateLimits.self, from: Data(json.utf8))
+        let signedIn = try codexLimits(workspace: "workspace-1")
         var late = signedIn
         late.account = nil  // account/read answered after the grace
-        final class Readings: @unchecked Sendable {
-            var queue: [CodexRateLimits]
-            var now: Date
-            init(_ queue: [CodexRateLimits], now: Date) { self.queue = queue; self.now = now }
-        }
         let cache = directory.appendingPathComponent("codex-identities.json")
-        func provider(_ readings: Readings) -> CodexUsageProvider {
-            CodexUsageProvider(readLimits: { readings.queue.removeFirst() }, transcripts: CodexTranscriptStore(roots: [directory]),
-                               history: QuotaHistoryStore(), clock: { readings.now }, identityCacheURL: cache)
-        }
-        let readings = Readings([signedIn, late], now: now)
-        let running = provider(readings)
+        let readings = CodexReadings([signedIn, late], now: now)
+        let running = codexProvider(readings, directory: directory, cache: cache)
         let first = try await running.fetchAccountAndLocalUsage(agents: [], historyHours: 1)
         XCTAssertEqual(first.accounts?["Codex"]?.map(\.account), [accountA])
-        XCTAssertEqual(first.accounts?["Codex"]?.first?.aliases, [ProviderAccount.identified(provider: "Codex", user: nil, workspace: "workspace-1")!.id])
+        XCTAssertEqual(first.accounts?["Codex"]?.first?.aliases, [ProviderAccount.identified(provider: "Codex", user: nil, workspace: "workspace-1")!.id,
+                                                                  ProviderAccount.identified(provider: "Codex", user: "a@example.com", workspace: nil)!.id])
         readings.now = now.addingTimeInterval(UsageRefresh.accountRequestSpacing)
         let second = try await running.fetchAccountAndLocalUsage(agents: [], historyHours: 1)
         XCTAssertEqual(second.accounts?["Codex"]?.map(\.account), [accountA], "a late account/read does not file the account again")
         XCTAssertEqual(second.accounts?["Codex"]?.first?.label, "A@Example.com")
-        let relaunched = try await provider(Readings([late], now: now)).fetchAccountAndLocalUsage(agents: [], historyHours: 1)
+        let relaunched = try await codexProvider(CodexReadings([late], now: now), directory: directory, cache: cache)
+            .fetchAccountAndLocalUsage(agents: [], historyHours: 1)
         XCTAssertEqual(relaunched.accounts?["Codex"]?.map(\.account), [accountA], "the first reading after a launch keeps it too")
     }
 
-    func testAnAccountReadWithItsEmailRetiresTheKeyItHadWithoutIt() async throws {
+    func testACodexReadingWithoutItsWorkspaceKeepsTheAccountItsEmailCameWith() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("agenthud-codex-identity-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = directory.appendingPathComponent("codex-identities.json")
+        let bare = try codexLimits(workspace: nil)  // an engine that leaves out accountId
+        let readings = CodexReadings([try codexLimits(workspace: "workspace-1"), bare], now: now)
+        let running = codexProvider(readings, directory: directory, cache: cache)
+        _ = try await running.fetchAccountAndLocalUsage(agents: [], historyHours: 1)
+        readings.now = now.addingTimeInterval(UsageRefresh.accountRequestSpacing)
+        let second = try await running.fetchAccountAndLocalUsage(agents: [], historyHours: 1)
+        XCTAssertEqual(second.accounts?["Codex"]?.map(\.account), [accountA], "a reading without accountId does not file the account again")
+        XCTAssertEqual(second.snapshots.map(\.agentId), [accountA.windowID("codex")])
+        let relaunched = try await codexProvider(CodexReadings([bare], now: now), directory: directory, cache: cache)
+            .fetchAccountAndLocalUsage(agents: [], historyHours: 1)
+        XCTAssertEqual(relaunched.accounts?["Codex"]?.map(\.account), [accountA], "the first reading after a launch keeps it too")
+        let other = CodexReadings([try codexLimits(workspace: "workspace-2"), bare], now: now)
+        let switched = codexProvider(other, directory: directory, cache: cache)
+        _ = try await switched.fetchAccountAndLocalUsage(agents: [], historyHours: 1)
+        other.now = now.addingTimeInterval(UsageRefresh.accountRequestSpacing)
+        let ambiguous = try await switched.fetchAccountAndLocalUsage(agents: [], historyHours: 1)
+        XCTAssertEqual(ambiguous.accounts?["Codex"]?.map(\.account), [ProviderAccount.identified(provider: "Codex", user: "a@example.com", workspace: nil)!],
+                       "an email seen with two workspaces cannot say which one it is")
+    }
+
+    func testAnAccountReadInFullRetiresTheKeysItHadWithoutItsEmailOrWorkspace() async throws {
         let withoutEmail = ProviderAccount.identified(provider: "Codex", user: nil, workspace: "workspace-1")!
-        let later = now.addingTimeInterval(120)
-        let complete = UsageReport(generatedAt: later, snapshots: [.init(agentId: accountA.windowID("codex"), remainingPct: 59, updatedAt: later)],
+        let withoutWorkspace = ProviderAccount.identified(provider: "Codex", user: "a@example.com", workspace: nil)!
+        let later = now.addingTimeInterval(240)
+        let complete = UsageReport(generatedAt: later, snapshots: [.init(agentId: accountA.windowID("codex"), remainingPct: 58, updatedAt: later)],
                                    sessions: [], discoveredAgents: [descriptor(accountA)],
                                    accounts: ["Codex": [AccountObservation(account: accountA, label: "a@example.com", observedAt: later,
-                                                                           aliases: [withoutEmail.id])]])
-        let provider = RetainedUsageProvider(provider: Sequence([report(account: withoutEmail, remaining: 60, at: now, credits: nil), complete]))
+                                                                           aliases: [withoutEmail.id, withoutWorkspace.id])]])
+        let provider = RetainedUsageProvider(provider: Sequence([report(account: withoutEmail, remaining: 60, at: now, credits: nil),
+                                                                  report(account: withoutWorkspace, remaining: 59, at: now.addingTimeInterval(120), credits: nil),
+                                                                  complete]))
+        _ = try await provider.fetchUsage(agents: [], historyHours: 24)
         _ = try await provider.fetchUsage(agents: [], historyHours: 24)
         let merged = try await provider.fetchUsage(agents: [], historyHours: 24)
-        XCTAssertEqual(merged.accounts?["Codex"]?.map(\.account), [accountA], "the key read without the email was the same account")
-        XCTAssertNil(merged.snapshot(for: withoutEmail.windowID("codex")), "its last reading leaves with it")
+        XCTAssertEqual(merged.accounts?["Codex"]?.map(\.account), [accountA], "the keys read without the email or the workspace were the same account")
+        XCTAssertNil(merged.snapshot(for: withoutEmail.windowID("codex")), "their last readings leave with them")
+        XCTAssertNil(merged.snapshot(for: withoutWorkspace.windowID("codex")))
     }
 
     @MainActor
@@ -255,12 +277,30 @@ final class ProviderAccountTests: XCTestCase {
         AgentDescriptor(id: account.windowID("codex"), vendor: "Codex", model: "5h", source: "", enabled: true, account: account)
     }
 
+    /// A reading signed in as A@Example.com, from the given workspace or from an engine that does not name one.
+    private func codexLimits(workspace: String?) throws -> CodexRateLimits {
+        let accountId = workspace.map { #""accountId":"\#($0)","# } ?? ""
+        let json = #"{\#(accountId)"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":10,"windowDurationMins":300}}},"account":{"type":"chatgpt","email":"A@Example.com","planType":"prolite"}}"#
+        return try JSONDecoder().decode(CodexRateLimits.self, from: Data(json.utf8))
+    }
+
+    private func codexProvider(_ readings: CodexReadings, directory: URL, cache: URL) -> CodexUsageProvider {
+        CodexUsageProvider(readLimits: { readings.queue.removeFirst() }, transcripts: CodexTranscriptStore(roots: [directory]),
+                           history: QuotaHistoryStore(), clock: { readings.now }, identityCacheURL: cache)
+    }
+
     private func report(account: ProviderAccount, remaining: Double, at date: Date, credits: Int?) -> UsageReport {
         UsageReport(generatedAt: date, snapshots: [.init(agentId: account.windowID("codex"), remainingPct: remaining, updatedAt: date)],
                     sessions: [], discoveredAgents: [descriptor(account)],
                     codexResetCredits: credits.map { .init(availableCount: $0, credits: nil) }, codexResetCreditsObservedAt: credits == nil ? nil : date,
                     accounts: ["Codex": [AccountObservation(account: account, observedAt: date)]])
     }
+}
+
+private final class CodexReadings: @unchecked Sendable {
+    var queue: [CodexRateLimits]
+    var now: Date
+    init(_ queue: [CodexRateLimits], now: Date) { self.queue = queue; self.now = now }
 }
 
 private actor Sequence: UsageProvider {

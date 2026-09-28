@@ -17,8 +17,9 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
     }
     private var readings: [String: Reading] = [:]
     private var failures: [String: String] = [:]
-    /// The email each home's workspace last came with, by home and workspace hash, kept across launches: the email is
-    /// part of the account's key, and `account/read` can answer too late for a reading to carry it.
+    /// The email each home's workspace last came with, by home and workspace hash, kept across launches. Both are part of
+    /// the account's key, and a reading can lack either: `account/read` can answer too late for the email, and an engine
+    /// can leave out `accountId`.
     private var emails: [String: String] = [:]
     private let identityCacheURL: URL?
 
@@ -82,21 +83,31 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
         }
     }
 
-    /// A reading whose `account/read` did not answer takes the email its workspace last came with on this home, so the
-    /// account keeps its key instead of reappearing under a second one without the email.
+    /// A reading with half of its account's key takes the other half from the last reading on this home that had both,
+    /// so the account keeps its key instead of reappearing under a second one: a workspace whose `account/read` did not
+    /// answer takes the email it came with, and an email without `accountId` the workspace it came with, unless it came
+    /// with several.
     private func identified(_ limits: CodexRateLimits, home: String) -> CodexRateLimits {
-        guard let workspace = limits.accountId?.trimmingCharacters(in: .whitespacesAndNewlines), !workspace.isEmpty else { return limits }
-        let key = home + "/" + RecordCoding.hash([workspace])
-        if let email = limits.account?.email, !email.isEmpty {
+        let workspace = limits.accountId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let email = limits.account?.email ?? ""
+        var filled = limits
+        if !workspace.isEmpty, !email.isEmpty {
+            let key = home + "/" + RecordCoding.hash([workspace])
             if emails[key] != email {
                 emails[key] = email
                 saveEmails()
             }
-            return limits
+        } else if !workspace.isEmpty {
+            if limits.account == nil, let known = emails[home + "/" + RecordCoding.hash([workspace])] {
+                filled.account = .init(type: "chatgpt", email: known, planType: nil)
+            }
+        } else if !email.isEmpty {
+            let workspaces = emails.compactMap { key, known -> String? in
+                guard known.lowercased() == email.lowercased(), let slash = key.lastIndex(of: "/"), key[..<slash] == home else { return nil }
+                return String(key[key.index(after: slash)...])
+            }
+            if workspaces.count == 1 { filled.rememberedWorkspace = workspaces[0] }
         }
-        guard limits.account == nil, let email = emails[key] else { return limits }
-        var filled = limits
-        filled.account = .init(type: "chatgpt", email: email, planType: nil)
         return filled
     }
 
@@ -200,7 +211,7 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
             AccountObservation(account: reading.limits.providerAccount(home: source), home: source,
                 label: reading.limits.account?.email, plan: reading.limits.plan, observedAt: reading.at,
                 quotaNotice: failures[source], resetCredits: reading.limits.rateLimitResetCredits,
-                aliases: reading.limits.keyWithoutEmail.map { [$0] })
+                aliases: reading.limits.partialKeys)
         }
         return UsageReport(generatedAt: now, snapshots: snapshots, sessions: sessions,
                            notice: notice, discoveredAgents: windows.map { $0.row.descriptor }, consumers: consumers,

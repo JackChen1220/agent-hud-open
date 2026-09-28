@@ -368,6 +368,21 @@ final class CodexProviderTests: XCTestCase {
         XCTAssertEqual(CodexLocator.find(home: dir, applications: apps, path: "", registered: []), desktop)
     }
 
+    func testLocatorPrefersTheDesktopEngineWhereCurrentBuildsKeepIt() throws {
+        let dir = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let apps = dir.appendingPathComponent("Applications")
+        let engine = apps.appendingPathComponent("ChatGPT.app/Contents/Resources/codex-cli/bin/codex")
+        let cli = dir.appendingPathComponent(".bun/bin/codex")
+        for file in [engine, cli] {
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try "#!/bin/sh\n".write(to: file, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path)
+        }
+        XCTAssertEqual(CodexLocator.find(home: dir, applications: apps, path: "", registered: []), engine,
+                       "an installed CLI can be older than the app's engine and leave out accountId")
+    }
+
     func testLocatorFindsTheAppUnderItsBundleIDWhateverItIsCalled() throws {
         let dir = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

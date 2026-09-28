@@ -1,3 +1,4 @@
+import AgentHUDSupport
 import Foundation
 
 /// The `account/rateLimits/read` fields used by the HUD.
@@ -49,6 +50,8 @@ public struct CodexRateLimits: Decodable, Sendable {
     /// The ChatGPT workspace of this snapshot. Members of one workspace share it, so the email separates users.
     public let accountId: String?
     public var account: SignedInAccount?
+    /// The hash of the workspace this home's account last came with, standing in for an `accountId` the engine left out.
+    public var rememberedWorkspace: String?
 
     /// A present multi-bucket map is authoritative, including an empty map.
     public var buckets: [(id: String, bucket: Bucket)] {
@@ -64,16 +67,27 @@ public struct CodexRateLimits: Decodable, Sendable {
 
     public var plan: String? { buckets.compactMap { $0.bucket.planType }.first ?? account?.planType }
 
-    public func providerAccount(home: String) -> ProviderAccount {
-        ProviderAccount.identified(provider: "Codex", user: account?.email?.lowercased(), workspace: accountId)
-            ?? .unresolved(provider: "Codex", home: home)
+    /// Hashes of the signed-in email and of the workspace, as `ProviderAccount.identified` makes them; empty for a missing one.
+    private var identity: (user: String, workspace: String) {
+        let email = account?.email?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let workspace = accountId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return (email.isEmpty ? "" : RecordCoding.hash([email]),
+                workspace.isEmpty ? rememberedWorkspace ?? "" : RecordCoding.hash([workspace]))
     }
 
-    /// The key the same account got from a reading without its email, as when `account/read` answered too late. Nil
-    /// unless this reading has both the email and the workspace.
-    public var keyWithoutEmail: String? {
-        guard account?.email?.isEmpty == false else { return nil }
-        return ProviderAccount.identified(provider: "Codex", user: nil, workspace: accountId)?.id
+    public func providerAccount(home: String) -> ProviderAccount {
+        let identity = identity
+        guard !identity.user.isEmpty || !identity.workspace.isEmpty else { return .unresolved(provider: "Codex", home: home) }
+        return ProviderAccount(provider: "Codex", user: identity.user, workspace: identity.workspace, evidence: .account)
+    }
+
+    /// The keys the same account got from readings without its email, as when `account/read` answered too late, or
+    /// without its workspace, as from an engine that leaves out `accountId`. Empty unless this reading has both.
+    public var partialKeys: [String] {
+        let identity = identity
+        guard !identity.user.isEmpty, !identity.workspace.isEmpty else { return [] }
+        return [ProviderAccount(provider: "Codex", user: "", workspace: identity.workspace, evidence: .account).id,
+                ProviderAccount(provider: "Codex", user: identity.user, workspace: "", evidence: .account).id]
     }
 
     /// Window rows keyed by their own window id (`codex`, `codex:<limit>:<slot>`); providers scope them to the account.
@@ -149,7 +163,7 @@ public enum CodexLocator {
                                   applications: URL = URL(fileURLWithPath: "/Applications"),
                                   path: String = ProcessInfo.processInfo.environment["PATH"] ?? "",
                                   registered: [URL] = VendorCatalog.applications("Codex")) -> [URL] {
-        desktop(home: home, applications: applications) + registered.map(engine(in:)) + cli(home: home, path: path)
+        desktop(home: home, applications: applications) + registered.flatMap(engines(in:)) + cli(home: home, path: path)
     }
 
     /// The same order as `candidates`, asking Launch Services only when no app sits under a known name.
@@ -159,15 +173,18 @@ public enum CodexLocator {
                             registered: @autoclosure () -> [URL] = VendorCatalog.applications("Codex")) -> URL? {
         let runnable = { (url: URL) in FileManager.default.isExecutableFile(atPath: url.path) }
         return desktop(home: home, applications: applications).first(where: runnable)
-            ?? registered().map(engine(in:)).first(where: runnable)
+            ?? registered().flatMap(engines(in:)).first(where: runnable)
             ?? cli(home: home, path: path).first(where: runnable)
     }
 
-    private static func engine(in app: URL) -> URL { app.appendingPathComponent("Contents/Resources/codex") }
+    /// Current builds keep the engine in `codex-cli`, older ones beside the app's other resources.
+    private static func engines(in app: URL) -> [URL] {
+        ["Contents/Resources/codex-cli/bin/codex", "Contents/Resources/codex"].map { app.appendingPathComponent($0) }
+    }
 
     private static func desktop(home: URL, applications: URL) -> [URL] {
         [applications, home.appendingPathComponent("Applications")].flatMap { root in
-            ["Codex.app", "ChatGPT.app"].map { engine(in: root.appendingPathComponent($0)) }
+            ["Codex.app", "ChatGPT.app"].flatMap { engines(in: root.appendingPathComponent($0)) }
         }
     }
 
