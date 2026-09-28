@@ -30,8 +30,8 @@ struct IslandPane: View {
             }
             SettingsSection(title: L10n.text("悬停交互", "Hover behavior"), theme: theme) {
                 SettingsToggleRow(
-                    label: L10n.text("按住 Option 才展开", "Hold Option to open"),
-                    subtitle: L10n.text("指针经过不展开，按住 Option 悬停才打开面板。", "Hovering alone leaves it closed; hold Option to open the panel."),
+                    label: L10n.text("按 Option 才展开", "Press Option to open"),
+                    subtitle: L10n.text("指针经过不展开，悬停时按一下 Option 打开面板。", "Hovering alone leaves it closed; press Option while hovering to open the panel."),
                     isOn: settings.binding(\.requiresOptionToOpen)
                 )
                 SettingsDivider(theme: theme)

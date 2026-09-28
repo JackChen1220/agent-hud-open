@@ -113,12 +113,22 @@ final class ScreenHUD {
 
     /// Hovering opens the panel, unless the user asked for Option as well. Typing keeps it open either way.
     private func reevaluateHover() {
-        let opens = typing || pointerInside
-            && (!settings.settings.requiresOptionToOpen || NSEvent.modifierFlags.contains(.option))
+        let opens = ScreenHUD.opensOnHover(counted: hoverOpens, open: machine.isOpen, pointerInside: pointerInside,
+                                           typing: typing, requiresOption: settings.settings.requiresOptionToOpen,
+                                           optionDown: NSEvent.modifierFlags.contains(.option))
         guard opens != hoverOpens else { return }
         hoverOpens = opens
         let now = Date()
         transition(machine.reduce(opens ? .pointerEntered(at: now) : .pointerExited(at: now), config: config))
+    }
+
+    /// Whether the hover counts as one that opens the panel; `counted` is whether it already does. Option is asked for
+    /// only to start it: a tap is enough, and from then on the hover counts until the pointer leaves. An open panel
+    /// needs no Option either — it is being read and pointed at, including by a pointer that slipped off the edge and
+    /// came back before it closed.
+    static func opensOnHover(counted: Bool, open: Bool, pointerInside: Bool, typing: Bool,
+                             requiresOption: Bool, optionDown: Bool) -> Bool {
+        typing || pointerInside && (counted || open || !requiresOption || optionDown)
     }
 
     func forceOpen() {

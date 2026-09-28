@@ -153,4 +153,20 @@ final class IslandHoverRegionTests: XCTestCase {
     func testAnOpenPanelOwnsItsWholeFrame() {
         XCTAssertEqual(ScreenHUD.hoverRegion(open: true, panel: panel, alert: wings, marks: marks), panel)
     }
+
+    func testOptionIsNeededOnlyToStartTheHover() {
+        // Passing over the closed HUD leaves it closed; the same hover with Option down opens it.
+        XCTAssertFalse(ScreenHUD.opensOnHover(counted: false, open: false, pointerInside: true, typing: false,
+                                              requiresOption: true, optionDown: false))
+        XCTAssertTrue(ScreenHUD.opensOnHover(counted: false, open: false, pointerInside: true, typing: false,
+                                             requiresOption: true, optionDown: true))
+        // A tap is enough: once the hover counts, letting go of Option does not take it back.
+        XCTAssertTrue(ScreenHUD.opensOnHover(counted: true, open: false, pointerInside: true, typing: false,
+                                             requiresOption: true, optionDown: false), "a tap opens the panel")
+        // An open panel stays under a pointer that came back before it closed, and leaving still closes it.
+        XCTAssertTrue(ScreenHUD.opensOnHover(counted: false, open: true, pointerInside: true, typing: false,
+                                             requiresOption: true, optionDown: false))
+        XCTAssertFalse(ScreenHUD.opensOnHover(counted: true, open: true, pointerInside: false, typing: false,
+                                              requiresOption: true, optionDown: false))
+    }
 }
