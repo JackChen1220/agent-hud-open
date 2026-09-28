@@ -2,26 +2,54 @@ import Foundation
 import SQLite3
 
 /// Normal SQLite read transactions include active WAL data; no copying or immutable reads of live databases.
+/// A WAL database's writer may remove its `-wal` and `-shm` files on close, and the system SQLite does not let a
+/// read-only connection create them again. With no WAL or rollback journal beside it the file alone is the committed
+/// database, so it is read as immutable, and the read fails if the file changes before it ends.
 final class ReadOnlySQLite {
     private let database: OpaquePointer
     private let deadline: Date
+    /// An immutable read's file, with its signature when the read began.
+    private let immutable: (path: String, signature: [Int])?
 
     init(_ url: URL) throws {
-        var handle: OpaquePointer?
-        guard sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let handle else {
-            if let handle { sqlite3_close(handle) }
-            throw ProviderFailure.local
+        let path = url.path
+        var opened = Self.begin(path, flags: SQLITE_OPEN_READONLY), immutable: (path: String, signature: [Int])?
+        if opened.result == SQLITE_CANTOPEN, let signature = Self.signature(path),
+           !["-wal", "-journal"].contains(where: { FileManager.default.fileExists(atPath: path + $0) }) {
+            opened = Self.begin(URL(fileURLWithPath: path).absoluteString + "?immutable=1", flags: SQLITE_OPEN_READONLY | SQLITE_OPEN_URI)
+            immutable = (path, signature)
         }
+        guard let handle = opened.handle else { throw ProviderFailure.local }
         database = handle
+        self.immutable = immutable
         deadline = Date().addingTimeInterval(3)
-        sqlite3_busy_timeout(handle, 250)
-        sqlite3_limit(handle, SQLITE_LIMIT_LENGTH, 16 * 1024 * 1024)
         sqlite3_progress_handler(handle, 1000, { pointer in
             guard let pointer else { return 1 }
             let reader = Unmanaged<ReadOnlySQLite>.fromOpaque(pointer).takeUnretainedValue()
             return Date() > reader.deadline || Task.isCancelled ? 1 : 0
         }, Unmanaged.passUnretained(self).toOpaque())
-        guard sqlite3_exec(handle, "BEGIN", nil, nil, nil) == SQLITE_OK else { throw ProviderFailure.local }
+    }
+
+    /// A connection inside a read transaction, or nil and the result code that prevented one. The transaction's first
+    /// read opens the WAL, which is where a WAL database without its files fails.
+    private static func begin(_ name: String, flags: Int32) -> (handle: OpaquePointer?, result: Int32) {
+        var handle: OpaquePointer?
+        var result = sqlite3_open_v2(name, &handle, flags, nil)
+        if result == SQLITE_OK, let handle {
+            sqlite3_busy_timeout(handle, 250)
+            sqlite3_limit(handle, SQLITE_LIMIT_LENGTH, 16 * 1024 * 1024)
+            result = sqlite3_exec(handle, "BEGIN; PRAGMA schema_version", nil, nil, nil)
+            if result == SQLITE_OK { return (handle, result) }
+        }
+        sqlite3_close(handle)
+        return (nil, result)
+    }
+
+    /// Device, inode, size and modification time, which any write to the file or its replacement changes.
+    private static func signature(_ path: String) -> [Int]? {
+        var info = stat()
+        guard stat(path, &info) == 0 else { return nil }
+        return [Int(info.st_dev), Int(truncatingIfNeeded: info.st_ino), Int(info.st_size), info.st_mtimespec.tv_sec, info.st_mtimespec.tv_nsec]
     }
 
     deinit {
@@ -41,7 +69,11 @@ final class ReadOnlySQLite {
         while true {
             try Task.checkCancellation()
             let result = sqlite3_step(statement)
-            if result == SQLITE_DONE { return }
+            if result == SQLITE_DONE {
+                // Pages an immutable read took before and after a writer's change do not form one database.
+                if let immutable, Self.signature(immutable.path) != immutable.signature { throw ProviderFailure.local }
+                return
+            }
             guard result == SQLITE_ROW else { throw ProviderFailure.local }
             count += 1
             for index in 0..<sqlite3_column_count(statement) { bytes += Int(sqlite3_column_bytes(statement, index)) }

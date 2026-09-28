@@ -236,6 +236,24 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         XCTAssertNil(AntigravitySessions.textField("title", in: Array(#"subtitle:"x""#.utf8)))
     }
 
+    func testAntigravityReadsWALDatabaseWhoseWriterRemovedItsFiles() throws {
+        let url = try directory().appendingPathComponent("conversation.db")
+        let hex = generation().map { String(format: "%02x", $0) }.joined()
+        try database(url) { db in
+            try sql(db, "PRAGMA journal_mode=WAL")
+            try sql(db, "CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB)")
+            try sql(db, "INSERT INTO gen_metadata VALUES (0, X'\(hex)')")
+        }
+        // agy removes the -wal and -shm files when it exits; the system SQLite keeps them on close.
+        let files = ["-wal", "-shm"].map { url.path + $0 }
+        for file in files { try? FileManager.default.removeItem(atPath: file) }
+        XCTAssertEqual(try AntigravitySessions.read(url).sessions[0].events.count, 1)
+        XCTAssertFalse(files.contains { FileManager.default.fileExists(atPath: $0) }, "reading creates no files beside the database")
+        let reader = try ReadOnlySQLite(url)
+        try database(url) { db in try sql(db, "DELETE FROM gen_metadata") }
+        XCTAssertThrowsError(try reader.rows("SELECT idx FROM gen_metadata") { _ in }, "a write during an immutable read fails it")
+    }
+
     func testAntigravityRejectsOpaqueTimeAndAmbiguousStepJoin() throws {
         let turn = try XCTUnwrap(AntigravityProtoReader.parseTurn(generation(timestamp: false)))
         XCTAssertNil(turn.timestampMs)
