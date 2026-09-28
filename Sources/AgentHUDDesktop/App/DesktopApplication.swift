@@ -72,9 +72,10 @@ public final class DesktopApplication {
         }, onChange: { [weak self] in
             if let error = self?.store.lastError { NSLog("[AgentHUD] refresh failed: %@", error) }
         })
-        // A new install starts with launch at login on, and nothing registers it until the setting is applied, so it is
-        // applied at every start; later it applies when it changes. The demo leaves the system's login items alone.
-        if !options.demo { LoginItem.set(settings.settings.launchAtLogin) }
+        // A new install starts with launch at login on, and nothing registers it until the setting is applied: a start
+        // registers an item that was never registered, and a flip of the switch applies at once. The demo leaves the
+        // system's login items alone.
+        if !options.demo, settings.settings.launchAtLogin { LoginItem.registerIfNeverRegistered() }
         observeChanges({ [weak self] in
             self?.settings.settings.launchAtLogin
         }, onChange: { [weak self] in
