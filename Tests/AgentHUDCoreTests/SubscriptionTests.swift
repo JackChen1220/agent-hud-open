@@ -72,6 +72,10 @@ final class SubscriptionTests: XCTestCase {
         XCTAssertEqual(observation.account, account)
         XCTAssertEqual(observation.label, "dev@example.com")
         XCTAssertEqual(observation.plan, "max_20x")
+        // The plan belongs to the engine reading: a pass between readings does not decode the profile again.
+        try Data("{".utf8).write(to: profileURL)
+        let between = try await provider.fetchUsage(agents: [], historyHours: 1)
+        XCTAssertEqual(between.subscriptions["Claude"], "max_20x")
     }
 
     private func profile(tier: String, organization: String = "claude_max", userTier: String? = nil,

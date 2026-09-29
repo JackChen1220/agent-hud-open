@@ -89,7 +89,6 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
         let consumers = ClaudeModelDiscovery.discover(observations).map(\.descriptor)
 
         // 1. Quota from the engine. A login without plan limits (API key, third-party platform) keeps the local data.
-        var subscription: String?
         var usage: ClaudeUsage?
         var notice: String?
         var updatedAt = now
@@ -97,7 +96,6 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
         do {
             if let (result, fetchedAt) = try await engineCache.reading() {
                 reading = result
-                subscription = result.usage.subscriptionType
                 updatedAt = fetchedAt
                 if result.usage.rateLimitsAvailable {
                     // Keep the engine's observation intact. A deadline passing is not a confirmed reset.
@@ -113,7 +111,7 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
             guard !sessions.isEmpty else { throw error }
             notice = error.localizedDescription
         }
-        let plan = ClaudeSubscription.plan(type: subscription, profileData: reading?.profileData)
+        let plan = reading?.plan
         let account = reading.map(account(for:))
         let sessionRowId = account?.windowID(ClaudeUsage.sessionRowId) ?? ClaudeUsage.sessionRowId
 
@@ -232,11 +230,12 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
 
 /// Serialises engine queries and throttles them, since each one spawns a full engine process.
 actor EngineUsageCache {
-    /// One engine reading with the account profile read around it.
+    /// One engine reading with what the account profile read around it says. The profile can run to megabytes, so
+    /// it is decoded once for the reading rather than on every pass that shows it.
     struct Reading: Sendable {
         let usage: ClaudeEngineUsage
         let identity: ClaudeSubscription.Identity?
-        let profileData: Data?
+        let plan: String?
         /// Asked only when there are no plan limits, to say why there are none.
         var signedIn: Bool?
     }
@@ -265,7 +264,8 @@ actor EngineUsageCache {
             // An API-key or third-party login can leave an old profile behind; only plan limits make it the reading's account.
             guard ClaudeSubscription.identity(profileData: before) == identity else { throw ClaudeDataError.accountChanged }
             let signedIn = usage.rateLimitsAvailable ? nil : await client.isSignedIn()
-            result = .success(Reading(usage: usage, identity: usage.rateLimitsAvailable ? identity : nil, profileData: after,
+            result = .success(Reading(usage: usage, identity: usage.rateLimitsAvailable ? identity : nil,
+                                      plan: ClaudeSubscription.plan(type: usage.subscriptionType, profileData: after),
                                       signedIn: signedIn))
         }
         catch {
