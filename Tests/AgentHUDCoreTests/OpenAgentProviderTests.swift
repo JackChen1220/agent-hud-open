@@ -379,6 +379,26 @@ final class OpenAgentProviderTests: XCTestCase {
 
 
 
+    func testAQuotaReadingThatFailsKeepsTheAccountCurrentAtItsLastReading() async throws {
+        let calls = Fetches(), key = credential()
+        final class Clock: @unchecked Sendable { var now = Date(timeIntervalSince1970: 1_788_800_000) }
+        let clock = Clock(), first = clock.now
+        let provider = OpenAgentUsageProvider(credentials: { [key] }, sessions: { _ in .init() }, fetchQuota: { c, _ in
+            await calls.record()
+            guard await calls.count == 1 else { throw ProviderHTTPError(status: 503) }
+            return .init(windows: [.init(id: c.pool.windowID("weekly"), label: "Weekly", remaining: 70)], plan: "Allegretto")
+        }, history: QuotaHistoryStore(), clock: { clock.now })
+        _ = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 168)
+        clock.now = first.addingTimeInterval(UsageRefresh.accountRequestSpacing + 1)
+        let report = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 168)
+        let account = try XCTUnwrap(report.accounts?["Kimi"]?.first, "a failed reading is not a sign-out")
+        XCTAssertTrue(account.isCurrent)
+        XCTAssertEqual(account.observedAt, first, "it keeps the time of the reading that succeeded")
+        XCTAssertEqual(account.plan, "Allegretto")
+        XCTAssertNotNil(account.quotaNotice)
+        XCTAssertNotNil(report.quotaNotice(vendor: "Kimi"))
+    }
+
     func testProviderResolvesDifferentCredentialsBeforeFetchingTheirSharedQuota() async throws {
         let calls = Fetches(), now = now
         let first = credential(key: "first"), second = credential(key: "second", client: "Pi")

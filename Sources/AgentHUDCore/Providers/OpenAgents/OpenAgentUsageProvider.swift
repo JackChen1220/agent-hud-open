@@ -23,6 +23,9 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
         let notice: String?
         let at: Date
         var isActive = true
+        /// The last reading that succeeded, and its plan, kept through failures that are not a sign-out.
+        var readAt: Date? = nil
+        var plan: String? = nil
     }
     /// Nil until the first account scan completes; an empty result is an observed empty inventory.
     private var cached: [String: QuotaResult]?
@@ -130,14 +133,16 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
         var results: [QuotaResult] = []
         accounts: for account in accounts.sorted(by: { $0.pool.id < $1.pool.id }) {
             if let value = old[account.pool.id], now.timeIntervalSince(value.at) < UsageRefresh.accountRequestSpacing {
-                results.append(.init(credential: account, quota: value.quota, notice: value.notice, at: value.at, isActive: value.isActive))
+                results.append(.init(credential: account, quota: value.quota, notice: value.notice, at: value.at, isActive: value.isActive,
+                                     readAt: value.readAt, plan: value.plan))
                 continue
             }
             var failures: [String] = [], allUnauthorized = true
             let identityNotice = identityNotices[account.pool.id] ?? nil
             for alias in aliases[account.pool.id] ?? [account] {
                 do {
-                    results.append(.init(credential: account, quota: try await fetch(alias, now), notice: identityNotice, at: now))
+                    let quota = try await fetch(alias, now)
+                    results.append(.init(credential: account, quota: quota, notice: identityNotice, at: now, readAt: now, plan: quota.plan))
                     continue accounts
                 } catch {
                     failures.append(error.localizedDescription)
@@ -146,7 +151,7 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
             }
             results.append(.init(credential: account, quota: nil,
                 notice: ([identityNotice].compactMap { $0 } + Array(Set(failures)).sorted()).joined(separator: " · "),
-                at: now, isActive: !allUnauthorized))
+                at: now, isActive: !allUnauthorized, readAt: old[account.pool.id]?.readAt, plan: old[account.pool.id]?.plan))
         }
         if Task.isCancelled { return }
         for result in results {
@@ -226,7 +231,14 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
                                  region: pool.realm == "CN" ? .china : pool.realm == "International" ? .international : nil)
                 }
             }
-            guard let quota = result.quota else { continue }
+            guard let quota = result.quota else {
+                // A reading that failed without a sign-out keeps the account current, at its last reading, with the reason.
+                if result.isActive {
+                    accounts[pool.provider, default: []].append(AccountObservation(account: ProviderAccount(pool: pool), plan: result.plan,
+                        observedAt: result.readAt ?? result.at, quotaNotice: result.notice))
+                }
+                continue
+            }
             if let plan = quota.plan {
                 plans[pool.id] = plan
             }
