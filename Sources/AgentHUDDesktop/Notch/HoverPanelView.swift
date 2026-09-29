@@ -481,7 +481,50 @@ struct ModelUsageRow: View {
         .animation(.easeOut(duration: 0.12), value: isHovered)
     }
 
-    private var metricValue: String? {
+    private var metrics: QuotaRowMetrics {
+        QuotaRowMetrics(row: row, insights: insights, now: now, tokensPerHour: tokensPerHour)
+    }
+
+    private var metricValue: String? { metrics.value(metric) }
+
+    private var showsDetail: Bool { metric != .quota || showReset }
+
+    private var metricDetail: String { metrics.detail(metric, isLoading: isLoading) }
+
+    private var exhaustsBeforeReset: Date? { metrics.exhaustsBeforeReset }
+
+    private var exhaustionTimeLabel: String? { metrics.exhaustionTimeLabel }
+
+    private var displayedForecastHint: String? {
+        guard metric == .burnRate, let exhaustionTimeLabel else { return forecastHint }
+        return L10n.text("预计耗尽：\(exhaustionTimeLabel)", "Exhausts \(exhaustionTimeLabel)")
+    }
+
+    private var projectedAtReset: Double? { metrics.projectedAtReset }
+
+    private var projectedUsedPct: Double {
+        guard metric == .burnRate else { return row.usedPct ?? 0 }
+        return exhaustsBeforeReset == nil ? projectedAtReset ?? row.usedPct ?? 0 : 100
+    }
+
+    private var nameText: Text {
+        let label = L10n.modelLabel(row.agent.model)
+        if showVendor {
+            return Text(row.agent.vendorName).fontWeight(.semibold) + Text(" · \(label)").foregroundColor(theme.secondary)
+        }
+        return Text(label).fontWeight(.semibold)
+    }
+}
+
+/// What a quota row's measures read at `now`: the share used, the burn rate from its window's insights and the rate
+/// tokens are spent at, each with the detail shown beside it.
+struct QuotaRowMetrics {
+    let row: AgentRow
+    let insights: UsageInsights?
+    let now: Date
+    let tokensPerHour: Double?
+
+    func value(_ metric: IslandQuotaMetric) -> String? {
         switch metric {
         case .quota:
             row.usedPct.map(TokenFormat.percent)
@@ -492,9 +535,7 @@ struct ModelUsageRow: View {
         }
     }
 
-    private var showsDetail: Bool { metric != .quota || showReset }
-
-    private var metricDetail: String {
+    func detail(_ metric: IslandQuotaMetric, isLoading: Bool) -> String {
         guard row.usedPct != nil else { return isLoading ? "—" : row.missingQuotaLabel }
         switch metric {
         case .quota:
@@ -513,13 +554,13 @@ struct ModelUsageRow: View {
     }
 
     /// Time at which this pace consumes the rest, only when that happens before the provider resets the window.
-    private var exhaustsBeforeReset: Date? {
+    var exhaustsBeforeReset: Date? {
         guard let interval = insights?.timeToExhaust, interval > 0, interval.isFinite else { return nil }
         let date = now.addingTimeInterval(interval)
         return row.resetAt.map { date < $0 ? date : nil } ?? date
     }
 
-    private var exhaustionTimeLabel: String? {
+    var exhaustionTimeLabel: String? {
         guard let date = exhaustsBeforeReset else { return nil }
         if date.timeIntervalSince(now) < 7 * 86400 { return ChartData.weekdayTime(date) }
         return date.formatted(Date.FormatStyle().month(.abbreviated).day()
@@ -527,29 +568,11 @@ struct ModelUsageRow: View {
             .locale(Locale(identifier: L10n.resolved == .zhHans ? "zh_CN" : "en_GB")))
     }
 
-    private var displayedForecastHint: String? {
-        guard metric == .burnRate, let exhaustionTimeLabel else { return forecastHint }
-        return L10n.text("预计耗尽：\(exhaustionTimeLabel)", "Exhausts \(exhaustionTimeLabel)")
-    }
-
     /// Used by the reset at the existing burn rate; the UI does not invent a second forecast.
-    private var projectedAtReset: Double? {
+    var projectedAtReset: Double? {
         guard let used = row.usedPct, let rate = insights?.burnRatePctPerHour,
               let reset = row.resetAt, reset > now else { return nil }
         return min(100, used + rate * reset.timeIntervalSince(now) / 3600)
-    }
-
-    private var projectedUsedPct: Double {
-        guard metric == .burnRate else { return row.usedPct ?? 0 }
-        return exhaustsBeforeReset == nil ? projectedAtReset ?? row.usedPct ?? 0 : 100
-    }
-
-    private var nameText: Text {
-        let label = L10n.modelLabel(row.agent.model)
-        if showVendor {
-            return Text(row.agent.vendorName).fontWeight(.semibold) + Text(" · \(label)").foregroundColor(theme.secondary)
-        }
-        return Text(label).fontWeight(.semibold)
     }
 }
 
