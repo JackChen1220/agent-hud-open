@@ -126,6 +126,26 @@ final class IslandAnimationTests: XCTestCase {
     }
 
     @MainActor
+    func testAGlowThatClosesStopsItsFrames() throws {
+        _ = NSApplication.shared
+        let screen = CGRect(x: -20000, y: -20000, width: 1728, height: 1117)
+        let geometry = NotchGeometry(screenFrame: screen, mode: .notch, edge: .top, hasNotch: true,
+            rect: CGRect(x: screen.midX - 108, y: screen.maxY - 32, width: 216, height: 32),
+            cornerRadius: 12, backingScale: 2, menuBarHeight: 24)
+        let controller = GlowWindowController(geometry: geometry)
+        defer { controller.panel.orderOut(nil) }
+        let breathing = GlowAppearance(stops: GlowGradient.idleStops, peakOpacity: 0.9, troughOpacity: 0.4, breathing: true,
+                                       breathSeconds: 3, hidden: false)
+        controller.update(geometry: geometry, island: geometry.rect, islandRadius: 12,
+            glow: GlowGeometry.compute(islandWidth: 216, islandHeight: 32, islandRadius: 12, range: 14, blur: 8),
+            outwardOnly: true, appearance: breathing, animated: false, pattern: GlowPattern(style: .dots, effect: .flow))
+        try XCTSkipUnless(controller.isAnimating, "motion is reduced on this Mac, so no frames run")
+        controller.close()
+        XCTAssertFalse(controller.isAnimating, "a HUD whose display went away draws no more frames")
+        XCTAssertFalse(controller.panel.isVisible)
+    }
+
+    @MainActor
     private func settle(_ seconds: TimeInterval) async {
         try? await Task.sleep(for: .seconds(seconds))
     }

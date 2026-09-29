@@ -25,6 +25,7 @@ final class GlowWindowController {
     private var softStill: CGImage?
     private let frames = GlowFrameCache()
     private lazy var animator = GlowAnimator(host: host, layer: glowLayer)
+    var isAnimating: Bool { animator.isRunning }
 
     static let panelWidth: CGFloat = 1000
 
@@ -320,6 +321,12 @@ final class GlowWindowController {
         } else {
             stopSoftMotion()
         }
+    }
+
+    /// Takes the glow off screen for good, with its display link: the display went away with the HUD.
+    func close() {
+        animator.stop()
+        panel.orderOut(nil)
     }
 
     private func stopSoftMotion() {

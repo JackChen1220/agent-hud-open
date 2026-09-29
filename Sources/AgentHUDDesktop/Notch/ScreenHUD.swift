@@ -364,7 +364,7 @@ final class ScreenHUD {
         timer?.invalidate()
         shrinkTask?.cancel()
         island.panel.orderOut(nil)
-        glow.panel.orderOut(nil)
+        glow.close()
     }
 
     func apply(animated: Bool) {
