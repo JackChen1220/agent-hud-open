@@ -35,6 +35,7 @@ Per-client fields, endpoints and stored data: [providers](providers.md). Token c
 ## Local storage
 
 - Preferences use the application's UserDefaults domain; the usage ledger, the restart copy of the report and completion records live in `~/Library/Application Support/Agent HUD Open`. Local metadata can include workspace paths and session titles, and a title can be the first line of a prompt, cut to 60 characters; raw conversation bodies and authentication secrets are never stored.
+- `~/Library/Caches/app.agenthud/instance.lock` keeps a second copy of the application from starting while one runs; it holds the path of the running copy's executable and nothing else.
 - Quota, balance and account-wide usage requests run between local polls, one provider at a time and at most once a minute each: more often while that client works, every 5 minutes for a client nobody is using ([cadence](usage-semantics.md#collection-cadence)); a missing or signed-out client does not prevent other sources from reporting.
 - Saved readings appear immediately after a restart with their original observation times; a failed refresh keeps them and reports the failure. Unavailable quotas are never inferred from token counts.
 - Readings of an account a client is no longer signed in to stay until the account has not been seen for 30 days.

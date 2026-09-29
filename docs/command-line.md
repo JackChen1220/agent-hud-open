@@ -19,6 +19,8 @@ Launch options, read-only probes and adapter commands of the standalone applicat
 
 `make demo` runs `--demo --show-settings`; `make snapshot` runs `--snapshot build/snapshots` (override the directory with `SNAPSHOT_DIR=…`).
 
+Only one Agent HUD runs at a time, whichever application built on these libraries it is. A launch while another copy runs shows an alert naming the application that runs and quits before it reads preferences, opens the ledger or touches a client's settings. The lock is `~/Library/Caches/app.agenthud/instance.lock`, released by the system when its holder quits or crashes; a lock that cannot be created lets the launch run. Snapshots, probes and adapter commands run beside the running copy, and so does `--demo`; a launch with `--reset-defaults` does not, since the preferences it removes may be in use.
+
 ## Read-only probes
 
 | Command | Output |
@@ -53,6 +55,7 @@ Normal start-up already runs `SessionObservers.configure(executable:enabled:)` f
 | Concept | Code |
 | --- | --- |
 | Switch parsing | `Sources/AgentHUDDesktop/App/LaunchOptions.swift` |
+| One copy at a time | `Sources/AgentHUDCore/Store/InstanceLock.swift`, `Sources/AgentHUDDesktop/App/SingleInstance.swift` |
 | Probes, adapter commands, hook handler | `Sources/AgentHUDOpenApp/main.swift` |
 | Snapshot rendering | `Sources/AgentHUDDesktop/Debug/SnapshotRunner.swift` |
 | Real-window interaction tests | `Tests/AgentHUDDesktopTests/IslandAnimationTests.swift`, `IslandHoverTests.swift`, `AgentSettingsInteractionTests.swift` |

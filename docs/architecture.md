@@ -65,6 +65,7 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 - Millisecond dates: persisted dates round-trip through milliseconds since 1970.
 - Tests need no credentials or network; the only probe that touches installed clients is opt-in.
 - Isolated sources: a missing, signed-out or failing client never hides another.
+- One copy at a time: every application built on these libraries shares `InstanceLock`, whatever its data directory or bundle identifier. A host calls `SingleInstance.claim()` at launch, after its probes and before it opens preferences, the ledger or a client's settings, and quits when it returns false.
 - No invented lifecycle: inactivity is never a completion, and a passed reset deadline is not a confirmed reset.
 - Observed rows only: rows, groups and first-launch entries come from what providers report or find on the Mac, never from a built-in list of placeholders.
 - Names apart from ids: vendor ids key settings, the ledger, accounts and sync records and never change; `VendorCatalog` holds the names shown, and a value it does not name is shown as written, never filed under another.
@@ -91,6 +92,8 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 | `IslandEventTracker.Update` | AgentHUDCore | `completions` (new, Live status on, oldest first), `quotaAlerts` (warnings, exhaustion, resets), `exhaustedWindows` and `criticalWindows` (threshold crossings with the reading that crossed; reaching zero supersedes critical in the same reading), `resetCreditGrants` (accounts whose Codex reset-credit count rose, with the added credits when the provider lists them) |
 | `DesktopSettingsPage` | AgentHUDDesktop | `id`; `title` closure (follows language changes, also the page heading); `subtitle`; `symbol` and `color` for the sidebar icon; `preferredContentWidth` in points (built-in pages use 640); `@ViewBuilder` `content` |
 | Settings window | AgentHUDDesktop | 760 × 720 points, minimum 680 × 560, sidebar 212; the initial width grows to fit the widest host page |
+| `SingleInstance.claim(at:)` | AgentHUDDesktop | Takes the shared lock and keeps it for the process lifetime; false after an alert naming the copy that holds it. A lock that cannot be created returns true |
+| `InstanceLock.claim(at:executable:)` → `Claim` | AgentHUDCore | `acquired` (the lock lasts as long as the value), `held(by:)` (the application that runs, its bundle when it has one) or `unavailable`; `InstanceLock.sharedURL` is `~/Library/Caches/app.agenthud/instance.lock` |
 | `SessionObservers.configure(executable:)` | AgentHUDCore | Adapter setup with the executable that handles hook callbacks |
 | `AgentHUDDataDirectory` | Host `Info.plist` | Name of the data directory under `~/Library/Application Support`; default `Agent HUD Open` |
 | Launch switches and probes | Standalone executable | [Command line](command-line.md) |
@@ -107,6 +110,7 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 | Collection pipeline, signals and hooks; change sets | `Sources/AgentHUDCore/Store/UsageCollector.swift`, `FileChangeMonitor.swift`; `Sources/AgentHUDCore/Models/UsageChanges.swift` |
 | Stores and data directory | `Sources/AgentHUDCore/Store/UsageStore.swift`, `SettingsStore.swift`, `QuotaHistoryStore.swift`, `AppSupport.swift` |
 | Application object, launch options, host pages | `Sources/AgentHUDDesktop/App/DesktopApplication.swift`, `LaunchOptions.swift`, `Settings/DesktopSettingsPage.swift` |
+| One copy at a time | `Sources/AgentHUDCore/Store/InstanceLock.swift`, `Sources/AgentHUDDesktop/App/SingleInstance.swift` |
 | Island alerts: decision and presentation | `Sources/AgentHUDCore/Logic/IslandEvents.swift`, `QuotaAlerts.swift`; `Sources/AgentHUDDesktop/Notch/IslandController.swift`, `IslandAlert.swift` |
 | Standalone entry and commands | `Sources/AgentHUDOpenApp/main.swift` |
 | Build, boundary check, CI | `scripts/build-app.sh`, `scripts/check-source-boundaries.py`, `.github/workflows/ci.yml` |

@@ -14,6 +14,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+        // Only one Agent HUD runs at a time, since the one that runs points the clients' hooks at itself: a launch while
+        // another copy runs says where it is and quits before reading or writing anything. A probe reads and quits, and
+        // a demo keeps its own preferences, has no ledger or report cache, installs no hooks and serves no approvals, so
+        // either may run beside the real one, unless it is told to reset the preferences, which that one uses.
+        if options.resetDefaults || (!options.probe && !options.demo), !SingleInstance.claim() {
+            NSApp.terminate(nil)
+            return
+        }
         let demoSuite = "app.agenthud.open.demo"
         if options.resetDefaults {
             // The demo keeps its own suite, so resetting has to clear that too or a stale demo survives it.
