@@ -123,13 +123,10 @@ public enum AttentionHooks {
         }
         let updated = try updating(object, source: source, command: enabled ? command : nil, keeping: others)
         guard updated != object else { return }
-        let url = source.configuration(home: home)
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         // The inbox exists from the moment the hook does, so its changes can be watched before the first request.
         try? FileManager.default.createDirectory(at: directory.appendingPathComponent(source.rawValue),
                                                  withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        try encoder.encode(ProviderJSON.object(updated)).write(to: url, options: .atomic)
+        try HookSettings.write(updated, to: source.configuration(home: home))
     }
 
     /// The configuration with Agent HUD's handlers taken out, except those whose commands are in `keeping`, and

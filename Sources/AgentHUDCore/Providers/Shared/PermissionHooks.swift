@@ -177,13 +177,7 @@ public enum PermissionHooks {
         }
         let updated = try updating(object, source: source, command: enabled ? command : nil, keeping: others)
         guard updated != object else { return }
-        let url = source.configuration(home: home)
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        // A configuration file can hold server credentials; the rewrite keeps whatever access the client gave it.
-        let permissions = try? FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions]
-        let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        try encoder.encode(ProviderJSON.object(updated)).write(to: url, options: .atomic)
-        if let permissions { try FileManager.default.setAttributes([.posixPermissions: permissions], ofItemAtPath: url.path) }
+        try HookSettings.write(updated, to: source.configuration(home: home))
     }
 
     /// The configuration with Agent HUD's handlers taken out, except those whose commands are in `keeping`, and

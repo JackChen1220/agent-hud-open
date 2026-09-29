@@ -46,6 +46,35 @@ final class ClientHooksTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(try commands(qwen), [])
     }
 
+    func testASettingsFileKeptAsALinkIsWrittenWhereItLeadsAndKeepsItsPermissions() throws {
+        let home = try directory(), dotfiles = try directory()
+        let executable = URL(fileURLWithPath: "/Applications/Agent HUD.app/Contents/MacOS/Agent HUD")
+        let claude = dotfiles.appendingPathComponent("claude.json"), cursor = dotfiles.appendingPathComponent("cursor/hooks.json")
+        try FileManager.default.createDirectory(at: cursor.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(#"{"model":"opus"}"#.utf8).write(to: claude)
+        try Data(#"{"version":1}"#.utf8).write(to: cursor)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: claude.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o640], ofItemAtPath: cursor.path)
+        // One link names its file from the directory it sits in, the other by its whole path.
+        let claudeLink = home.appendingPathComponent(".claude/settings.json"), cursorLink = home.appendingPathComponent(".cursor/hooks.json")
+        for link in [claudeLink, cursorLink] {
+            try FileManager.default.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
+        }
+        try FileManager.default.createSymbolicLink(atPath: claudeLink.path, withDestinationPath: "../../\(dotfiles.lastPathComponent)/claude.json")
+        try FileManager.default.createSymbolicLink(atPath: cursorLink.path, withDestinationPath: cursor.path)
+
+        try PermissionHooks.configure(.claude, enabled: true, executable: executable, home: home)
+        try AttentionHooks.configure(.claude, enabled: true, executable: executable, home: home)
+        try CompletionHooks.configure(.cursor, enabled: true, executable: executable, home: home)
+        for (link, file, permissions) in [(claudeLink, claude, 0o600), (cursorLink, cursor, 0o640)] {
+            XCTAssertNoThrow(try FileManager.default.destinationOfSymbolicLink(atPath: link.path), "\(link.lastPathComponent) stays a link")
+            XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int, permissions)
+        }
+        XCTAssertEqual(try commands(claude).count, 2)
+        XCTAssertEqual(try ProviderJSON.read(Data(contentsOf: claude))["model"].stringValue, "opus")
+        XCTAssertTrue(CompletionHooks.isInstalled(.cursor, home: home))
+    }
+
     func testRemovingNeverCreatesAFileTheClientDidNotHave() throws {
         let home = try directory(), executable = URL(fileURLWithPath: "/tmp/hud")
         for source in CompletionHooks.Source.allCases {

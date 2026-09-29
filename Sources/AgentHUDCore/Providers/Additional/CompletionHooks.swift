@@ -124,10 +124,7 @@ public enum CompletionHooks {
         }
         let updated = try source.format.updating(object, command: enabled ? command : nil, keeping: others)
         guard updated != object else { return }
-        let url = source.configuration(home: home)
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        try encoder.encode(ProviderJSON.object(updated)).write(to: url, options: .atomic)
+        try HookSettings.write(updated, to: source.configuration(home: home))
     }
 }
 
