@@ -1,7 +1,8 @@
 import Foundation
 
-/// An append-only log format: what a client supplies to `TailLogStore`.
-protocol TailLog {
+/// An append-only log format: what a client supplies to `TailLogStore`. Sendable, so its decoding can run off the
+/// store's actor.
+protocol TailLog: Sendable {
     /// What the store keeps of one log between reads, such as counters and turn state; never conversation text.
     associatedtype Summary: Codable & Sendable
     /// The ledger source that owns the logs' contributions and stored states.

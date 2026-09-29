@@ -12,6 +12,7 @@ permissions:
 jobs:
   macos:
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Check source boundaries
@@ -23,5 +24,8 @@ jobs:
       - name: Verify local signature and resources
         run: |
           codesign --verify --deep --strict "build/Agent HUD Open.app"
-          test -f "build/Agent HUD Open.app/Contents/Resources/AgentHUDOpen_AgentHUDDesktop.bundle/claude.png"
+          bundle="build/Agent HUD Open.app/Contents/Resources/AgentHUDOpen_AgentHUDDesktop.bundle"
+          test -f "$bundle/claude.png" || test -f "$bundle/Contents/Resources/claude.png"
           test ! -e "build/Agent HUD Open.app/Contents/embedded.provisionprofile"
+          xcrun vtool -show-build "build/Agent HUD Open.app/Contents/MacOS/Agent HUD Open" \
+            | awk '/minos/ { minos = $2 } /sdk/ { sdk = $2 } END { exit sdk == minos }'

@@ -75,7 +75,7 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 
 - A release is a tag `vX.Y.Z` on `main`; the bundle's `CFBundleShortVersionString` equals `X.Y.Z` at that tag, `CFBundleVersion` stays `1`, and the [changelog](../CHANGELOG.md) has a matching entry that lists host-visible API changes. Hosts pin the package by tag or commit.
 - There are no third-party Swift package dependencies; frameworks come from the macOS SDK.
-- Continuous integration runs the boundary check, `swift test`, a release build, `codesign --verify --deep --strict`, a check that the resource bundle contains the logos, and a check that no provisioning profile was embedded. It publishes no binaries.
+- Continuous integration runs the boundary check, `swift test`, a release build, `codesign --verify --deep --strict`, a check that the resource bundle contains the logos, a check that no provisioning profile was embedded and one that the executable names the SDK it was built against, not its deployment target, within 30 minutes. It publishes no binaries.
 
 ## Interfaces and configuration
 
