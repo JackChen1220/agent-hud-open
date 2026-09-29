@@ -339,6 +339,10 @@ public final class UsageStore {
         }
     }
 
+    /// The vendor of each quota row that shows a status level, in row order. An alert's pulse lights the part of the glow
+    /// its vendor's entries take in this list.
+    public var alertPulseVendors: [String] { rows.filter { $0.level != nil }.map { $0.agent.vendor } }
+
     public var isIndexing: Bool { report?.indexing != nil }
 
     /// Includes the brief interval before the first refresh starts; a failed fetch ends loading.
@@ -618,5 +622,13 @@ public final class UsageStore {
             let rows = sections[key] ?? []
             return AccountSection(id: key, account: rows.first?.account, isCurrent: rows.first?.isCurrentAccount ?? true, rows: rows)
         }
+    }
+
+    /// What the header of an account's section says about its readings: the account's own notice, else its client's.
+    /// A billing pool speaks only for itself: its vendor's notices can be about another of its pools.
+    public func accountNotice(for section: AccountSection) -> String? {
+        guard let account = section.account else { return nil }
+        let pooled = section.rows.first?.agent.billingPool != nil
+        return account.quotaNotice ?? (pooled ? nil : report?.sourceNotices[account.account.provider])
     }
 }

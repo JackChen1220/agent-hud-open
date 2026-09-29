@@ -480,7 +480,7 @@ final class ScreenHUD {
             appearance: appearance,
             animated: animated,
             alert: activeAlert,
-            quotaVendors: store.rows.filter { $0.level != nil }.map { $0.agent.vendor },
+            quotaVendors: store.alertPulseVendors,
             pattern: glowSettings.pattern(),
             backdrop: backdrop ? geometry.rect : nil,
             drawsGlow: drawsGlow
