@@ -2,6 +2,27 @@
 
 Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the same number. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
+## 0.4.26 — 2026-09-29
+
+- A Claude Code response is counted once. A forked session's log starts with a copy of its parent's history, and a session resumed after its project folder moved leaves its log in both folders. Both used to be counted again, so a fork's totals included its parent's whole history. A line now counts only in the log named after its own session, and of several copies of a moved session's log only the newest is read. The first launch reads the last month of Claude Code logs again once, which takes under a minute even for a large history.
+- Waiting permission requests stay when a display goes away or is rearranged. A HUD that closes hands its requests to the display under the pointer, oldest first, and picking a request that waits on another display moves it to this one.
+- A client settings file that is a symbolic link, as dotfiles managers make them, is written through the link and keeps its permissions. It used to be replaced by a plain file with mode 0755.
+- Changes you make to Agent HUD's own hook entries stay: an Antigravity hook you disabled, or a Claude Code matcher you edited, is no longer reset at every launch. The command inside an entry is still brought up to date.
+- Hooks, the Claude Code account profile and the Antigravity reader follow `CLAUDE_CONFIG_DIR` and `GEMINI_CLI_HOME` when they are set.
+- A Claude Code session waiting for approval keeps showing it while its sub-agents work.
+- Pi sessions stop showing as running when a run ends, also on Pi versions that report no settled state.
+- A second copy of the app that quits no longer removes the approval socket the first one serves.
+- An OpenCode database of any size is read. The reader used to stop at 10,000 rows or three seconds and keep showing old data.
+- A log or database that fails to parse is retried after a pause that grows from 30 seconds to five minutes, and an unreadable Claude Code log no longer keeps the HUD indexing, or makes every source read in full every two seconds.
+- OpenCode's and Cursor's 30-day totals keep the history their readers can no longer see, and a Hermes session older than the reader's window keeps adding to its total.
+- A Kimi, GLM or OpenCode Go account whose reading fails once stays on screen with a notice, instead of looking signed out. Cursor's usage stays under its account when a quota read fails.
+- Whole-file and DeepSeek Harness sources look only at the paths that changed, and a listing that stops at its limit no longer treats the files it didn't reach as deleted. A DeepSeek Harness log decodes only its new frames: reading one new turn in a 5,000-turn log takes about 60 ms instead of 220 ms.
+- A forecast that a window will run out is announced once per cycle. A reading that wobbles back up to 100% no longer announces a reset: a window counts as reset only after a real rise of at least 5 points.
+- JSON lines from every source are parsed directly into their values, about 14 times faster per line, and the Claude Code plan is worked out once per quota reading instead of decoding the whole `~/.claude.json` each time.
+- The glow stops drawing when its HUD closes. With no agent running, the glow keeps moving at its idle pace, as the Display settings now say; the session page says its list counts sub-agents' tokens too.
+- `--probe` no longer writes the usage ledger.
+- Host API: `FastTranscriptParser.titles(in:session:)`, whose `session` defaults to none, and the Claude Code log reader's stored state moves to version 4, so a host's first launch reads the month's logs again once. `JSONValue.parse(_:)`. `standard(ledger:persistent:)` on the combined, Claude Code and Codex providers, with `persistent` defaulting to true. `DeepSeekTranscriptStore.fileChanges` and `DeepSeekUsageProvider.fileChanges`. `UsageStore.sessionOwnTokens` is removed.
+
 ## 0.4.25 — 2026-09-29
 
 - A Claude Code session stays running while the sub-agents and workflows it started in the background work, where it showed as finished as soon as it had started them. An agent that works again without a prompt, woken by a sub-agent's report, a queued notification or a Stop hook's feedback, resumes its stopped turn, and a turn whose answer Claude Code stamped just before its deferred-tools record no longer keeps the session running for half an hour.
