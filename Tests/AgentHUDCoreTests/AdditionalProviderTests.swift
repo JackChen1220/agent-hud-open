@@ -183,6 +183,29 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(first.notice, second.notice)
     }
 
+    func testCursorUsageKeepsItsAccountThroughAFailedQuotaReading() async throws {
+        final class State: @unchecked Sendable { var reads = 0; var now = Date(timeIntervalSince1970: 1_788_800_000) }
+        let state = State(), ledger = UsageLedger.inMemory(), start = state.now
+        let account = ProviderAccount(provider: "Cursor", user: "user", workspace: "", evidence: .account)
+        let conversation = ProviderSession(id: "cursor-account:a:c", title: "Chat", client: "Cursor",
+            events: [ProviderEvent(id: "e", model: "cursor-test", timestamp: start.addingTimeInterval(-60), input: 10, output: 1)], accountWide: true)
+        let provider = AdditionalUsageProvider(source: .cursor, readQuota: {
+            state.reads += 1
+            guard state.reads == 1 else { throw ProviderHTTPError(status: 503) }
+            return ProviderQuota(windows: [.init(id: "cursor", label: "Plan usage", remaining: 60)], account: account)
+        }, readSessions: { _ in ProviderSessions(sessions: [conversation]) }, history: QuotaHistoryStore(), clock: { state.now }, ledger: ledger)
+        func accounts() async throws -> Set<String> {
+            Set(try await ledger.buckets(since: .distantPast, source: AdditionalSource.cursor.rawValue).compactMap(\.account))
+        }
+        _ = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 168)
+        var recorded = try await accounts()
+        XCTAssertEqual(recorded, [account.id])
+        state.now = start.addingTimeInterval(UsageRefresh.accountRequestSpacing + 1)
+        _ = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 168)
+        recorded = try await accounts()
+        XCTAssertEqual(recorded, [account.id], "a quota request that failed does not move the account's usage")
+    }
+
     func testGrokUnifiedDeduplicatesAndDoesNotAddReasoningTwice() throws {
         let usage = #"{"ts":"2026-09-07T16:53:20Z","sid":"s","pid":1,"event_id":"e","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":100,"completion_tokens":20,"cached_prompt_tokens":60,"reasoning_tokens":10}}"#
         let url = try file("unified.jsonl", #"{"sid":"s","pid":1,"msg":"model changed","ctx":{"model":"grok-test"}}"# + "\n" + usage + "\n" + usage + "\n")

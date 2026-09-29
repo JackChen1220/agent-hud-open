@@ -13,6 +13,9 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
     /// A change of this value (such as a consent toggle) refreshes quota without waiting for the interval.
     private let quotaKey: @Sendable () -> String
     private var lastQuota: (at: Date, key: String, result: Result<ProviderQuota, UsageProviderError>)?
+    /// The account the last reading that succeeded resolved, which a failed reading keeps: usage kept per account must
+    /// not move to another key and back whenever a quota request fails.
+    private var lastAccount: ProviderAccount?
     nonisolated let watchedDirectories: [URL]?
     /// Cursor's usage is the account's, from every device it signs in on, so this Mac going quiet says nothing about it.
     nonisolated var seesLocalWork: Bool { source != .cursor }
@@ -127,9 +130,13 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
         case nil: (quota, quotaNotice) = (ProviderQuota(), nil)
         }
         let account = quota.resolvedAccount(source)
+        if quota.forgetAccounts { lastAccount = nil }
+        if quota.isSignedIn { lastAccount = account }
+        let failed = if case .failure = lastQuota?.result { true } else { false }
         let windows = quota.scopedWindows(source)
         // Account-wide imports are the same on every machine signed into the account, so their totals are kept per account.
-        let usageAccount = local.sessions.contains(where: \.accountWide) ? (quota.isSignedIn ? account.id : "provider:" + source.vendor.lowercased()) : nil
+        let usageAccount = local.sessions.contains(where: \.accountWide)
+            ? (quota.isSignedIn ? account.id : (failed ? lastAccount?.id : nil) ?? "provider:" + source.vendor.lowercased()) : nil
         await record(local, account: usageAccount, since: since, now: now)
         let consumers = Set(local.sessions.flatMap(\.events).map(\.model)).sorted().map {
             AgentDescriptor(id: "\(source.rawValue)-model:\($0)", vendor: source.vendor, model: $0,
