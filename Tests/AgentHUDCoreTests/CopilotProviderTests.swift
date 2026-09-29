@@ -23,15 +23,22 @@ final class CopilotProviderTests: XCTestCase, @unchecked Sendable {
         func record(_ name: String) { lock.withLock { names.append(name) } }
     }
 
-    func testQuotaSettingDefaultsOffAndRoundTrips() throws {
+    @MainActor
+    func testQuotaSettingDefaultsOffAndIsReadThroughTheSettingsStore() async throws {
         XCTAssertFalse(Settings().readCopilotQuota)
         XCTAssertFalse(try JSONDecoder().decode(Settings.self, from: Data(#"{"glowRange":12}"#.utf8)).readCopilotQuota)
         let enabled = Settings().with { $0.readCopilotQuota = true }
         XCTAssertEqual(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(enabled)), enabled)
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: "CopilotProviderTests.\(UUID())"))
-        XCTAssertFalse(CopilotClient.consented(defaults))
+        let suite = "CopilotProviderTests.\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(try JSONEncoder().encode(enabled), forKey: SettingsStore.Keys.settings)
-        XCTAssertTrue(CopilotClient.consented(defaults))
+        let settings = SettingsStore(defaults: defaults)
+        let consented = CopilotClient.consent(in: settings)
+        let saved = await consented()
+        XCTAssertTrue(saved, "consent saved in the settings is kept")
+        settings.update { $0.readCopilotQuota = false }
+        let withdrawn = await consented()
+        XCTAssertFalse(withdrawn, "the switch counts from the moment it moves")
     }
 
     func testQuotaWithoutConsentTouchesNoCredentialOrNetwork() async throws {

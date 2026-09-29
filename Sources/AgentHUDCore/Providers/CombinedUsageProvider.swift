@@ -47,15 +47,17 @@ public struct CombinedUsageProvider: UsageProvider {
         self.ledger = ledger
     }
 
+    /// - settings: the store the app collects with; GitHub Copilot's quota is read only while it holds the user's consent,
+    ///   asked each time a reading is due.
     /// - persistent: false leaves the data directory as it is, for a read-only probe: no earlier version's file is
     ///   removed or imported and no account identity is remembered; pass a ledger in memory as well.
-    public static func standard(ledger: UsageLedger = .open(), persistent: Bool = true) -> CombinedUsageProvider {
+    public static func standard(settings: SettingsStore, ledger: UsageLedger = .open(), persistent: Bool = true) -> CombinedUsageProvider {
         if persistent { removeLegacyCaches(in: AppSupport.directory) }
         return CombinedUsageProvider([
             Source("Claude", ClaudeCodeProvider.standard(ledger: ledger, persistent: persistent)),
             Source("Codex", CodexUsageProvider.standard(ledger: ledger, persistent: persistent)),
             Source("DeepSeek", DeepSeekUsageProvider.standard(ledger: ledger)),
-        ] + AdditionalSource.allCases.map { Source($0.vendor, AdditionalUsageProvider.standard($0, ledger: ledger, persistHistory: persistent)) }
+        ] + AdditionalSource.allCases.map { Source($0.vendor, AdditionalUsageProvider.standard($0, settings: settings, ledger: ledger, persistHistory: persistent)) }
           + [Source("Open agents", OpenAgentUsageProvider.standard(ledger: ledger, persistHistory: persistent))], ledger: ledger)
     }
 

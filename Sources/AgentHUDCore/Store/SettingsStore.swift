@@ -10,7 +10,8 @@ public final class SettingsStore {
     public private(set) var hasCompletedOnboarding: Bool
 
     public enum Change { case settings, agents, discovery }
-    /// Invoked after preferences are persisted and local state is updated.
+    /// Invoked after preferences are persisted and local state is updated. A running `UsageStore` sets it, to wake
+    /// collection when a change needs a read; a host follows settings through Observation instead.
     @ObservationIgnored public var onChange: ((Change) -> Void)?
 
     private let defaults: UserDefaults

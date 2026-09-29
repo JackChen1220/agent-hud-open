@@ -32,7 +32,7 @@ final class UsageCollector {
     private let settings: SettingsStore
     private let hooks: UsageCollectionHooks
     private var pollTask: Task<Void, Never>?
-    /// Wakes the waiting loop: a file change, a timer, a refresh.
+    /// Wakes the waiting loop: a file change, a timer, a refresh, a settings change that needs a read.
     private var wake: AsyncStream<Void>.Continuation?
     /// One pass of the pipeline runs at a time; a request during a pass is served by the next one.
     private var isCollecting = false
@@ -74,6 +74,7 @@ final class UsageCollector {
         stop()
         let (stream, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
         wake = continuation
+        settings.onChange = { [weak self] change in self?.settingsChanged(change) }
         let directories = sources.compactMap(\.directories).flatMap { $0 }
         changes = directories.isEmpty ? nil : FileChangeMonitor(directories: directories, onChange: { continuation.yield() })
         pollTask = Task { [weak self] in
@@ -118,6 +119,15 @@ final class UsageCollector {
     /// A report installed directly is not the provider's; merging must not replace it.
     func forgetLocalReport() {
         local = nil
+    }
+
+    /// A settings change that collection follows wakes the loop at once, where it would wait for the next signal: a
+    /// changed agent list is read from every source, and consent to read GitHub Copilot quota, given or withdrawn, reads
+    /// every account. It wakes the next pass, serial like any other. Rows a pass merged from its own report ask for nothing.
+    private func settingsChanged(_ change: SettingsStore.Change) {
+        guard change != .discovery,
+              settings.agents != fetchedAgents || settings.settings.readCopilotQuota != sweptWithCopilotQuota else { return }
+        wake?.yield()
     }
 
     /// While nothing is signalled and file changes are watched, no change was missed: the data on screen is current.

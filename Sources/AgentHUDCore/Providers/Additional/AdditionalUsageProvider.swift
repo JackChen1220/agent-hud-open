@@ -11,7 +11,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
     private let history: QuotaHistoryStore
     private let clock: @Sendable () -> Date
     /// A change of this value (such as a consent toggle) refreshes quota without waiting for the interval.
-    private let quotaKey: @Sendable () -> String
+    private let quotaKey: @Sendable () async -> String
     private var lastQuota: (at: Date, key: String, result: Result<ProviderQuota, UsageProviderError>)?
     /// The account the last reading that succeeded resolved, which a failed reading keeps: usage kept per account must
     /// not move to another key and back whenever a quota request fails.
@@ -27,7 +27,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
          history: QuotaHistoryStore,
          readCompletions: @escaping @Sendable (Date) throws -> [SessionCompletion] = { _ in [] },
          clock: @escaping @Sendable () -> Date = { Date() },
-         quotaKey: @escaping @Sendable () -> String = { "" },
+         quotaKey: @escaping @Sendable () async -> String = { "" },
          refreshSessions: @escaping @Sendable (Int) async -> Void = { _ in },
          watchedDirectories: [URL]? = nil, fileChanges: @escaping @Sendable (Set<String>?) async -> Void = { _ in },
          ledger: UsageLedger = .inMemory()) {
@@ -41,15 +41,18 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
         sessionLedger = SessionLedger(source: source.rawValue, ledger: ledger)
     }
 
-    static func standard(_ source: AdditionalSource, ledger: UsageLedger, persistHistory: Bool = true) -> AdditionalUsageProvider {
+    /// `settings` holds the consent GitHub Copilot's quota reading waits for.
+    static func standard(_ source: AdditionalSource, settings: SettingsStore, ledger: UsageLedger,
+                         persistHistory: Bool = true) -> AdditionalUsageProvider {
         let local = AdditionalLocalStore(source: source)
         let cursor = CursorClient()
+        let consented = CopilotClient.consent(in: settings)
         return AdditionalUsageProvider(source: source, readQuota: {
             switch source {
             case .antigravity: return try await AntigravityClient().fetch()
             case .cursor: return try await cursor.quota()
             case .grok: return try await GrokClient().fetch()
-            case .copilot: return try await CopilotClient().fetch()
+            case .copilot: return try await CopilotClient(enabled: consented).fetch()
             case .openclaw, .hermes, .zcode, .codebuddy, .workbuddy, .qwen: return ProviderQuota()
             }
         }, readSessions: { since in
@@ -60,7 +63,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
         readCompletions: { since in
             guard let hook = CompletionHooks.Source(rawValue: source.rawValue) else { return [] }
             return try CompletionHooks.read(source: hook, since: since)
-        }, quotaKey: { source == .copilot ? String(CopilotClient.consented()) : "" }, refreshSessions: { hours in
+        }, quotaKey: { source == .copilot ? String(await consented()) : "" }, refreshSessions: { hours in
             if source == .cursor {
                 _ = await cursor.sessions(since: Date().addingTimeInterval(-Double(max(168, hours)) * 3600))
             }
@@ -90,7 +93,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
 
     func refreshAccountUsage(historyHours: Int) async {
         await refreshSessions(historyHours)
-        let now = clock(), key = quotaKey()
+        let now = clock(), key = await quotaKey()
         if lastQuota == nil || lastQuota!.key != key || now.timeIntervalSince(lastQuota!.at) >= UsageRefresh.accountRequestSpacing {
             do {
                 let result = try await readQuota()

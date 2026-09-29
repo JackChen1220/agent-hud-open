@@ -444,10 +444,12 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
     }
 
     /// Explicit local smoke probe. Prints only counts and sanitized provider errors; never credential values or session content.
+    @MainActor
     func testInstalledSourcesReadOnlyProbe() async throws {
         guard ProcessInfo.processInfo.environment["AGENT_HUD_PROBE_ADDITIONAL"] == "1" else { throw XCTSkip("Set AGENT_HUD_PROBE_ADDITIONAL=1 for a read-only local probe") }
+        let settings = SettingsStore()
         for source in AdditionalSource.allCases {
-            let provider = AdditionalUsageProvider.standard(source, ledger: .inMemory(), persistHistory: false)
+            let provider = AdditionalUsageProvider.standard(source, settings: settings, ledger: .inMemory(), persistHistory: false)
             let report = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 168)
             let buckets = await provider.usage(since: .distantPast).count
             print("Probe \(source.vendor): quotas=\(report.snapshots.count), sessions=\(report.sessions.count), buckets=\(buckets), completions=\(report.completions.count), indexing=\(report.indexing != nil), notice=\(report.sourceNotices[source.vendor] ?? "none")")

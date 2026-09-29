@@ -5,14 +5,18 @@ import XCTest
 final class CollectionSignalTests: XCTestCase, @unchecked Sendable {
     private actor Source: UsageProvider {
         nonisolated let watchedDirectories: [URL]?
+        nonisolated let readsAccount: Bool
         private let sessions: [LiveSession]
         private(set) var fetches = 0
+        private(set) var accountReads = 0
         private(set) var changedPaths: [Set<String>?] = []
-        init(directory: URL?, sessions: [LiveSession] = []) {
+        init(directory: URL?, sessions: [LiveSession] = [], readsAccount: Bool = false) {
             watchedDirectories = directory.map { [$0] }
             self.sessions = sessions
+            self.readsAccount = readsAccount
         }
-        nonisolated var accountRefreshSteps: [AccountRefreshStep] { [] }
+        nonisolated var accountRefreshSteps: [AccountRefreshStep] { readsAccount ? [{ _ in await self.readAccount() }] : [] }
+        private func readAccount() { accountReads += 1 }
         func fileChanges(_ paths: Set<String>?) async { changedPaths.append(paths) }
         func fetchUsage(agents: [AgentDescriptor], historyHours: Int) async throws -> UsageReport {
             fetches += 1
@@ -106,6 +110,24 @@ final class CollectionSignalTests: XCTestCase, @unchecked Sendable {
         XCTAssertTrue(polled, "a source that cannot name its directories is read every poll interval")
         let others = await b.fetches
         XCTAssertEqual(others, 1, "polling one source does not read the others")
+    }
+
+    @MainActor
+    func testASettingsChangeThatNeedsAReadWakesTheCollector() async throws {
+        let a = Source(directory: try directory(), readsAccount: true)
+        let store = try await start(CombinedUsageProvider([.init("A", a)]))
+        // The first pass reads A's account, and the finished step signals one more read of A.
+        let settled = try await wait { let x = await a.fetches; let y = await a.accountReads; return x == 2 && y == 1 }
+        XCTAssertTrue(settled)
+        // Without a wake the next pass would be A's account interval away, five minutes.
+        store.settings.update { $0.readCopilotQuota = true }
+        let swept = try await wait { await a.accountReads == 2 }
+        XCTAssertTrue(swept, "consent to read Copilot quota reads every account at once")
+        let signalled = try await wait { await a.fetches == 3 }
+        XCTAssertTrue(signalled)
+        store.settings.updateAgents { $0 + [AgentDescriptor(id: "a-window", vendor: "A", model: "Window", source: "Fixture", enabled: true)] }
+        let reread = try await wait { await a.fetches == 4 }
+        XCTAssertTrue(reread, "a changed agent list is read from every source at once")
     }
 
     func testNamedSourcesAreReadAndTheOthersKeepTheirLastResult() async throws {

@@ -4,18 +4,18 @@ import Security
 // Credential order and request headers follow Tokscale usage/copilot.rs (MIT); quota fields are informed by CodexBar CopilotUsageFetcher (MIT).
 struct CopilotClient: Sendable {
     /// Quota reading needs the user's consent in Settings; without it no credential is touched and nothing is sent.
-    var enabled: @Sendable () -> Bool = { CopilotClient.consented() }
+    var enabled: @Sendable () async -> Bool
     var token: @Sendable () -> String? = { CopilotCredentials().token() }
     var http = ProviderHTTP()
 
-    static func consented(_ defaults: UserDefaults = .standard) -> Bool {
-        guard let data = defaults.data(forKey: SettingsStore.Keys.settings),
-              let settings = try? JSONDecoder().decode(Settings.self, from: data) else { return false }
-        return settings.readCopilotQuota
+    /// The consent as `settings` holds it when asked. The switch in Settings changes it through the same store, which
+    /// wakes collection, so a reading follows the switch at once.
+    static func consent(in settings: SettingsStore) -> @Sendable () async -> Bool {
+        { await settings.settings.readCopilotQuota }
     }
 
     func fetch() async throws -> ProviderQuota {
-        guard enabled() else { return ProviderQuota(forgetAccounts: true) }
+        guard await enabled() else { return ProviderQuota(forgetAccounts: true) }
         guard let token = token() else { return ProviderQuota(notice: ProviderFailure.login("GitHub CLI").message) }
         let headers = ["Authorization": "token \(token)", "Editor-Version": "vscode/1.96.2", "Editor-Plugin-Version": "copilot-chat/0.26.7",
                        "User-Agent": "GitHubCopilotChat/0.26.7", "X-Github-Api-Version": "2025-04-01"]
