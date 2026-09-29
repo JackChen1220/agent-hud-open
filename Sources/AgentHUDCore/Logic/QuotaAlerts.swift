@@ -74,10 +74,9 @@ public struct QuotaAlertTracker: Sendable {
             let old = previous[agent.id]
             let criticalThreshold = 100 - AlertPolicy.criticalUsed
             guard old == nil || snapshot.updatedAt > old!.snapshot.updatedAt else { continue }
-            let forecast = report.insightsByAgent[agent.id]?.timeToExhaust
-            let predictsCap = forecast.map { interval in
-                interval.isFinite && interval > 0 && snapshot.resetAt.map { interval < $0.timeIntervalSince(now) } == true
-            } ?? false
+            let forecast = QuotaMath.exhaustion(insights: report.insightsByAgent[agent.id], resetAt: snapshot.resetAt, now: now)
+            // Running out counts only before a known reset.
+            let predictsCap = snapshot.resetAt != nil && forecast?.beforeReset == true
             let critical = snapshot.remainingPct <= criticalThreshold
             let exhausted = snapshot.remainingPct <= AlertPolicy.exhaustedRemaining
             let atRisk = exhausted || critical || predictsCap
@@ -107,7 +106,7 @@ public struct QuotaAlertTracker: Sendable {
                 result.alerts.append(QuotaAlert(kind: .exhaustion, agent: agent, snapshot: snapshot))
             } else if atRisk && !old.atRisk && (critical || warnedUntil == nil) {
                 result.alerts.append(QuotaAlert(kind: .exhaustion, agent: agent, snapshot: snapshot,
-                                               timeToExhaust: predictsCap ? forecast : nil))
+                                               timeToExhaust: predictsCap ? forecast?.interval : nil))
                 if !critical { previous[agent.id]?.forecastWarnedUntil = snapshot.resetAt }
             }
         }

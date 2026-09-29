@@ -555,9 +555,9 @@ struct QuotaRowMetrics {
 
     /// Time at which this pace consumes the rest, only when that happens before the provider resets the window.
     var exhaustsBeforeReset: Date? {
-        guard let interval = insights?.timeToExhaust, interval > 0, interval.isFinite else { return nil }
-        let date = now.addingTimeInterval(interval)
-        return row.resetAt.map { date < $0 ? date : nil } ?? date
+        guard let exhaustion = QuotaMath.exhaustion(insights: insights, resetAt: row.resetAt, now: now),
+              exhaustion.beforeReset else { return nil }
+        return now.addingTimeInterval(exhaustion.interval)
     }
 
     var exhaustionTimeLabel: String? {
@@ -570,9 +570,7 @@ struct QuotaRowMetrics {
 
     /// Used by the reset at the existing burn rate; the UI does not invent a second forecast.
     var projectedAtReset: Double? {
-        guard let used = row.usedPct, let rate = insights?.burnRatePctPerHour,
-              let reset = row.resetAt, reset > now else { return nil }
-        return min(100, used + rate * reset.timeIntervalSince(now) / 3600)
+        row.usedPct.flatMap { QuotaMath.projectedUsedAtReset(usedPct: $0, insights: insights, resetAt: row.resetAt, now: now) }
     }
 }
 
