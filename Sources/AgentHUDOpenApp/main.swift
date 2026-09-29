@@ -26,8 +26,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settings = SettingsStore(defaults: defaults, defaultAgents: options.demo ? DemoData.everyAgent : [])
         if let language = options.language { settings.update { $0.language = language } }
         L10n.setLanguage(settings.settings.language)
-        let ledger: UsageLedger? = options.demo ? nil : .open()
-        let provider: any UsageProvider = ledger.map { CombinedUsageProvider.standard(ledger: $0) } ?? DemoUsageProvider()
+        // A probe reads the way the application does and keeps nothing: its ledger lives in memory.
+        let ledger: UsageLedger? = options.demo ? nil : options.probe ? .inMemory() : .open()
+        let provider: any UsageProvider = ledger.map { CombinedUsageProvider.standard(ledger: $0, persistent: !options.probe) } ?? DemoUsageProvider()
         if options.probe {
             Task { @MainActor in
                 do {

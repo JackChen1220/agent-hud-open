@@ -23,7 +23,7 @@ Launch options, read-only probes and adapter commands of the standalone applicat
 
 | Command | Output |
 | --- | --- |
-| `--probe` | One real account refresh (48 h of history) followed by one report; prints `Quota windows: n; sessions: n; live: n; billing accounts: n` and exits 0, or prints the error and exits 1. It issues the same provider requests as the running application and nothing else. |
+| `--probe` | One real account refresh (48 h of history) followed by one report; prints `Quota windows: n; sessions: n; live: n; billing accounts: n` and exits 0, or prints the error and exits 1. It issues the same provider requests as the running application and nothing else, and keeps what it reads in memory: it writes nothing to the usage ledger, removes or imports no earlier version's files and remembers no account identity. |
 | `--probe-open-agents` | Indexes the last seven days of local OpenCode, Kimi and Pi sessions and prints, per client, the session count, running count, distinct usage events, In / Out / Cache totals and the read status. No network requests, no transcript text, no credentials in the output. |
 | `AGENT_HUD_PROBE_ADDITIONAL=1 swift test --filter AdditionalProviderTests/testInstalledSourcesReadOnlyProbe` | Read-only probe of the installed Antigravity, Cursor and Grok sources from the test suite; the test is skipped unless the variable is set. |
 

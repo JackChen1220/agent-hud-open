@@ -35,14 +35,16 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
         self.clock = clock
     }
 
-    /// Production wiring: the engine binary if present, plus the usage ledger.
-    public static func standard(ledger: UsageLedger) -> ClaudeCodeProvider {
+    /// Production wiring: the engine binary if present, plus the usage ledger. `persistent` false imports no earlier
+    /// version's quota history.
+    public static func standard(ledger: UsageLedger, persistent: Bool = true) -> ClaudeCodeProvider {
         ClaudeCodeProvider(
             engine: ClaudeEngineLocator.find().map {
                 ClaudeEngineUsageClient(executable: $0, workingDirectory: ClaudeEngineUsageClient.defaultWorkingDirectory)
             },
             transcripts: ClaudeTranscriptStore(ledger: ledger, watchesChanges: true),
-            history: QuotaHistoryStore(ledger: ledger, scope: "claude", importing: AppSupport.directory.appendingPathComponent("quota-history.json")),
+            history: QuotaHistoryStore(ledger: ledger, scope: "claude",
+                                       importing: persistent ? AppSupport.directory.appendingPathComponent("quota-history.json") : nil),
             accountProfileURL: ClaudeSubscription.accountProfileURL,
             home: ClaudeSubscription.home
         )

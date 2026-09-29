@@ -47,14 +47,16 @@ public struct CombinedUsageProvider: UsageProvider {
         self.ledger = ledger
     }
 
-    public static func standard(ledger: UsageLedger = .open()) -> CombinedUsageProvider {
-        removeLegacyCaches(in: AppSupport.directory)
+    /// - persistent: false leaves the data directory as it is, for a read-only probe: no earlier version's file is
+    ///   removed or imported and no account identity is remembered; pass a ledger in memory as well.
+    public static func standard(ledger: UsageLedger = .open(), persistent: Bool = true) -> CombinedUsageProvider {
+        if persistent { removeLegacyCaches(in: AppSupport.directory) }
         return CombinedUsageProvider([
-            Source("Claude", ClaudeCodeProvider.standard(ledger: ledger)),
-            Source("Codex", CodexUsageProvider.standard(ledger: ledger)),
+            Source("Claude", ClaudeCodeProvider.standard(ledger: ledger, persistent: persistent)),
+            Source("Codex", CodexUsageProvider.standard(ledger: ledger, persistent: persistent)),
             Source("DeepSeek", DeepSeekUsageProvider.standard(ledger: ledger)),
-        ] + AdditionalSource.allCases.map { Source($0.vendor, AdditionalUsageProvider.standard($0, ledger: ledger)) }
-          + [Source("Open agents", OpenAgentUsageProvider.standard(ledger: ledger))], ledger: ledger)
+        ] + AdditionalSource.allCases.map { Source($0.vendor, AdditionalUsageProvider.standard($0, ledger: ledger, persistHistory: persistent)) }
+          + [Source("Open agents", OpenAgentUsageProvider.standard(ledger: ledger, persistHistory: persistent))], ledger: ledger)
     }
 
     public func refreshAccountUsage(historyHours: Int) async {

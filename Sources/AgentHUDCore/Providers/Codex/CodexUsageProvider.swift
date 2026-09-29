@@ -36,7 +36,8 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
         }
     }
 
-    public static func standard(ledger: UsageLedger) -> CodexUsageProvider {
+    /// `persistent` false imports no earlier version's quota history and remembers no workspace's email.
+    public static func standard(ledger: UsageLedger, persistent: Bool = true) -> CodexUsageProvider {
         let directory = CodexLocator.dataDirectory
         let pi = PiCodexClient(directory: PiCodexClient.directory)
         return CodexUsageProvider(readLimits: {
@@ -45,11 +46,12 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
             }
             return try await CodexAppServerClient(executable: executable, dataDirectory: directory).fetch()
         }, transcripts: .standard(directory: directory, ledger: ledger),
-           history: QuotaHistoryStore(ledger: ledger, scope: "codex", importing: AppSupport.directory.appendingPathComponent("codex-quota-history.json")),
+           history: QuotaHistoryStore(ledger: ledger, scope: "codex",
+                                      importing: persistent ? AppSupport.directory.appendingPathComponent("codex-quota-history.json") : nil),
            home: ClientHome.key(directory, defaultDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)),
            readPiLimits: { try await pi.fetch() },
            piHome: "pi:" + ClientHome.key(pi.directory, defaultDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".pi/agent")),
-           identityCacheURL: AppSupport.directory.appendingPathComponent("codex-identities.json"))
+           identityCacheURL: persistent ? AppSupport.directory.appendingPathComponent("codex-identities.json") : nil)
     }
 
     public nonisolated var watchedDirectories: [URL]? { transcripts.roots }
