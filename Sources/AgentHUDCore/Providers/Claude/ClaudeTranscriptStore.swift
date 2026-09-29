@@ -16,7 +16,8 @@ public actor ClaudeTranscriptStore {
 
     public struct Result: Sendable {
         public let sessions: [TranscriptSession]
-        /// Files still waiting to be (re)read; zero once the index is complete.
+        /// Files still waiting to be (re)read; zero once the index is complete, including while one that cannot be read
+        /// waits to be tried again.
         public let pending: Int
     }
 
@@ -86,7 +87,8 @@ public actor ClaudeTranscriptStore {
         scan.files = pass.logs.count
         scan.filesRead = pass.filesRead
         scan.bytesRead = pass.bytesRead
-        scan.pending = pass.pending + pass.failures.count
+        // A transcript that cannot be read waits out a pause; it is not work still to do.
+        scan.pending = pass.pending
         scan.elapsed = Date().timeIntervalSince(started)
         lastScan = scan
         return Result(sessions: result, pending: scan.pending)

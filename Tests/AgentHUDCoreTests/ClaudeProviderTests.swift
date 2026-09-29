@@ -1057,6 +1057,27 @@ final class CooperativeIndexingTests: XCTestCase {
     }
 }
 
+extension CooperativeIndexingTests {
+    func testATranscriptThatCannotBeReadIsNotPendingAndWaitsToBeTriedAgain() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("agenthud-index-\(UUID().uuidString)/projects/-p", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent().deletingLastPathComponent()) }
+        let file = root.appendingPathComponent("s-1.jsonl")
+        try (ClaudeTranscriptTests.user + "\n").write(to: file, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path) }
+        let store = ClaudeTranscriptStore(root: root.deletingLastPathComponent())
+        let first = await store.index(modifiedSince: .distantPast)
+        XCTAssertEqual(first.pending, 0, "a transcript that cannot be read leaves nothing indexing")
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
+        let second = await store.index(modifiedSince: .distantPast)
+        let scan = await store.lastScan
+        XCTAssertEqual(scan.filesRead, 0, "it waits out its pause before it is tried again")
+        XCTAssertEqual(second.pending, 0)
+    }
+}
+
 final class AccumulatorCompactionTests: XCTestCase {
     func testCompactionDropsDedupeSetOnlyForIdleFiles() {
         let line = ClaudeTranscriptTests.assistant

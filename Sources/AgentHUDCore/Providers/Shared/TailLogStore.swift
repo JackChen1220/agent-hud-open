@@ -40,7 +40,8 @@ extension TailLog {
 /// ledger write; a partially written final line is read once it is complete. A log that shrank, or changed without
 /// growing, is read again from the start and replaces what it recorded, and so is one whose stored state has another
 /// version, even when it is older than the cutoff, while the ledger still holds its usage. A stored log missing from the
-/// listing leaves the ledger; one that is listed keeps its contribution even when it cannot be read.
+/// listing leaves the ledger; one that is listed keeps its contribution even when it cannot be read, and is tried again
+/// once its pause is over (`FailedReads`).
 final class TailLogStore<Log: TailLog> {
     struct Entry {
         var modified: Date
@@ -60,7 +61,7 @@ final class TailLogStore<Log: TailLog> {
         var changed: [String] = [], removed: [String] = [], reloaded = false
         /// Logs the budget did not reach or finish, and changes the ledger did not take.
         var pending = 0
-        /// Logs that could not be read; they are read again on the next poll.
+        /// Why logs could not be read, at this poll or at their last attempt; each is read again once its pause is over.
         var failures: [any Error] = []
         var gaps = LogFiles.Gaps()
         var filesRead = 0, bytesRead = 0
@@ -79,6 +80,8 @@ final class TailLogStore<Log: TailLog> {
     private var groups: [String: String] = [:]
     private var modified: [String: Date] = [:]
     private var loadedGeneration: Int?
+    private var failed = FailedReads()
+    private var failureReasons: [String: any Error] = [:]
 
     /// - watchesChanges: after the first listing, polls look only at logs a directory watch reports changed.
     init(roots: [URL], ledger: UsageLedger, watchesChanges: Bool, accepts: @escaping (URL) -> Bool) {
@@ -131,18 +134,28 @@ final class TailLogStore<Log: TailLog> {
             if let file = listing[path], file.modified < cutoff, file.modified >= retained { changing.append((path, file)) }
         }
 
+        // A log that could not be read waits out its pause, and is neither read nor waited for meanwhile.
+        failed.keep(Set(listing.keys))
+        failureReasons = failureReasons.filter { listing[$0.key] != nil }
+        let pausing = changing.filter { failed.isPausing($0.path, at: started) }
+        pass.failures = pausing.compactMap { failureReasons[$0.path] }
+        let reading = changing.filter { !failed.isPausing($0.path, at: started) }
         // Always make progress on the newest log, then keep going while the budget lasts.
         var updates: [String: (entry: Entry, events: [UsageLedger.Event], marks: [UsageLedger.Mark], reset: Bool)] = [:]
-        for (index, log) in changing.sorted(by: { $0.file.modified > $1.file.modified }).enumerated() {
+        for (index, log) in reading.sorted(by: { $0.file.modified > $1.file.modified }).enumerated() {
             if index > 0, Date() >= deadline {
-                pass.pending += changing.count - index
+                pass.pending += reading.count - index
                 break
             }
             do {
                 let update = try await read(log.path, file: log.file, deadline: deadline, pass: &pass)
                 updates[log.path] = update
+                failed.succeeded(log.path)
+                failureReasons[log.path] = nil
                 if update.entry.offset < update.entry.committed { pass.pending += 1 }
             } catch {
+                if !Task.isCancelled { failed.failed(log.path, at: Date()) }
+                failureReasons[log.path] = error
                 pass.failures.append(error)
             }
         }
