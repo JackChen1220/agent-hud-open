@@ -626,6 +626,28 @@ final class PermissionHookTests: XCTestCase, @unchecked Sendable {
     }
 
     @MainActor
+    func testAnotherInstanceLeavesTheChannelToTheOneServingIt() async throws {
+        let path = try directory().appendingPathComponent("permission.sock").path
+        let requests = PermissionRequests.shared
+        addTeardownBlock { Task { @MainActor in requests.stop() } }
+        // Another process serves the channel: it holds the lock and its socket is at the path.
+        let other = open(path + ".lock", O_CREAT | O_RDWR, 0o600)
+        XCTAssertEqual(flock(other, LOCK_EX | LOCK_NB), 0)
+        try Data().write(to: URL(fileURLWithPath: path))
+        requests.start(path: path)
+        requests.stop()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path), "a second instance neither replaces nor removes the socket")
+
+        close(other)
+        requests.start(path: path)
+        let client = try await ask(path, payload())
+        try await waitForPending(1, "once the first is gone, the channel is this one's")
+        close(client)
+        requests.stop()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path), "and it removes the socket it made")
+    }
+
+    @MainActor
     func testAClientWaitsOnTheChannelUntilItIsAnsweredOrGivesUp() async throws {
         let path = try directory().appendingPathComponent("permission.sock").path
         let requests = PermissionRequests.shared

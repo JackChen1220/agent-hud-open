@@ -27,6 +27,9 @@ public final class PermissionRequests {
     @ObservationIgnored private var listener: NWListener?
     @ObservationIgnored private var counter: UInt64 = 0
     @ObservationIgnored private var path = PermissionRequests.socketPath
+    /// The lock that makes this process the one serving the channel, and the socket file it made, by device and inode.
+    @ObservationIgnored private var lock: Int32 = -1
+    @ObservationIgnored private var socket: [Int]?
     @ObservationIgnored private let log = Logger(subsystem: "app.agenthud", category: "permission")
 
     private init() {}
@@ -45,6 +48,15 @@ public final class PermissionRequests {
         }
         try? FileManager.default.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
+        // One process serves the channel. Another copy of the app opened beside it, which shares its data directory,
+        // leaves the socket to it rather than replacing it; the lock goes with the process that holds it.
+        let lock = open(path + ".lock", O_CREAT | O_RDWR, 0o600)
+        guard lock >= 0, flock(lock, LOCK_EX | LOCK_NB) == 0 else {
+            if lock >= 0 { close(lock) }
+            log.info("Another instance answers permission requests")
+            return
+        }
+        self.lock = lock
         unlink(path)
         // The socket must never be readable by anyone else, not even for the moment between bind and chmod.
         let previous = umask(0o077)
@@ -63,6 +75,7 @@ public final class PermissionRequests {
                 case .ready:
                     umask(previous)
                     chmod(path, 0o700)
+                    PermissionRequests.shared.socket = Self.identity(path)
                 case .failed:
                     umask(previous)
                 default:
@@ -76,12 +89,22 @@ public final class PermissionRequests {
         listener.start(queue: .main)
     }
 
-    /// Lets every waiting client go back to asking in its own terminal, then closes the channel.
+    /// Lets every waiting client go back to asking in its own terminal, then closes the channel. Only the socket this
+    /// process made is removed.
     public func stop() {
         for id in pending.map(\.id) { withdraw(id) }
         listener?.cancel()
         listener = nil
-        unlink(path)
+        if let socket, Self.identity(path) == socket { unlink(path) }
+        socket = nil
+        if lock >= 0 { close(lock) }
+        lock = -1
+    }
+
+    private static func identity(_ path: String) -> [Int]? {
+        var info = stat()
+        guard stat(path, &info) == 0 else { return nil }
+        return [Int(info.st_dev), Int(truncatingIfNeeded: info.st_ino)]
     }
 
     // MARK: Receiving
