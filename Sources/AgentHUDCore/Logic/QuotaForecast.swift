@@ -21,7 +21,8 @@ public enum QuotaForecast {
     }
 
     private static func duration(_ interval: TimeInterval) -> String {
-        let minutes = Int(ceil(interval / 60))
+        // A pace a hair above zero can put the end further off than a whole number of minutes holds.
+        let minutes = Int(min(ceil(interval / 60), Double(Int32.max)))
         let hours = minutes / 60
         if hours > 0 {
             if minutes % 60 == 0 { return L10n.text("\(hours)小时", "\(hours)h") }

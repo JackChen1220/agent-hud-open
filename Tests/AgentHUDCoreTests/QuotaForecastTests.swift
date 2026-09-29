@@ -80,6 +80,12 @@ final class QuotaForecastTests: XCTestCase {
                        "耗尽 ~1分")
     }
 
+    func testNearlyFlatPaceCapsTheDurationInsteadOfOverflowing() {
+        // Readings a floating-point step apart give a pace whose minutes a whole number cannot hold.
+        let forecast = insights(rate: BurnRate(pctPerHour: 1e-16), remaining: 50)
+        XCTAssertEqual(QuotaForecast.hint(snapshot: snapshot(remaining: 50), insights: forecast, now: now), "耗尽 ~35791394小时7分")
+    }
+
     func testUnknownPeriodDoesNotReuseAnOldForecast() throws {
         let snapshot = UsageSnapshot(agentId: "legacy", remainingPct: 50, resetAt: now.addingTimeInterval(3600), updatedAt: now)
         let hint = try XCTUnwrap(QuotaForecast.hint(snapshot: snapshot, insights: insights(rate: .init(pctPerHour: 100), remaining: 50), now: now))
