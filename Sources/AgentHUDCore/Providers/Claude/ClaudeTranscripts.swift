@@ -128,7 +128,7 @@ public enum ClaudeTranscriptParser {
             requestId: object["requestId"] as? String,
             stopReason: role == .assistant ? message?["stop_reason"] as? String : nil,
             isSidechain: object["isSidechain"] as? Bool ?? false,
-            isPrompt: role == .user && !isMeta && !isToolResult && !isSummary,
+            isPrompt: role == .user && !isMeta && !isToolResult && !isSummary && !isLocalCommand(text),
             isCompaction: object["type"] as? String == "system" && object["subtype"] as? String == "compact_boundary",
             entrypoint: object["entrypoint"] as? String,
             returnsStructuredOutput: calls.contains { $0["type"] as? String == "tool_use" && $0["name"] as? String == "StructuredOutput" }
@@ -137,6 +137,14 @@ public enum ClaudeTranscriptParser {
 
     public static func parse(_ text: String) -> [TranscriptEvent] {
         text.split(separator: "\n", omittingEmptySubsequences: true).compactMap { parseLine(String($0)) }
+    }
+
+    /// A slash command Claude Code runs itself, such as `/exit`, `/clear` or `/model`, is written as a `<command-name>`
+    /// line and its output as `<local-command-…>` lines, without the meta flag; neither reaches the model. A command that
+    /// expands into a prompt writes `<command-message>` first.
+    static func isLocalCommand(_ text: String?) -> Bool {
+        guard let text else { return false }
+        return text.hasPrefix("<command-name>") || text.hasPrefix("<local-command-")
     }
 }
 

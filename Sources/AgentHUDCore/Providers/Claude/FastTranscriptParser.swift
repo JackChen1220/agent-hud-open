@@ -137,8 +137,10 @@ public enum FastTranscriptParser {
         var isPrompt = false
         if role == .user, find(toolResultMarker, in: head) == nil {
             text = value(after: contentStringKey, in: line, keyIn: head) ?? value(after: contentTextKey, in: line, keyIn: head)
-            // Command output, attachments and compaction summaries are user lines flagged after their content.
+            // Command output, attachments and compaction summaries are user lines flagged after their content; a slash
+            // command the client runs itself is known by its tags.
             isPrompt = find(metaMarker, in: line, backwards: true) == nil && find(summaryMarker, in: line, backwards: true) == nil
+                && !ClaudeTranscriptParser.isLocalCommand(text)
         } else if role == .assistant {
             // A visible answer. A thinking or tool-use block is a different type and never matches this key.
             text = value(after: contentTextKey, in: line, keyIn: head, limit: messageLength)
