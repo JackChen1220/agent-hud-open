@@ -2,6 +2,12 @@
 
 Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the same number. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
+## Unreleased
+
+- Only one Agent HUD runs at a time. Agent HUD Open and any app built on it share one lock: a launch while another copy runs says where that copy is and quits before it reads or writes anything. Hook commands, snapshots and probes are not affected, and a demo run, which keeps its own settings, starts beside it.
+- The copy that runs points every Agent HUD hook in the clients' settings at itself, whichever copy wrote it, and keeps whatever else you changed in the entry; turning Client hooks off removes every Agent HUD hook. The hooks of another installation are no longer left to it, and installing no longer fails over them. A copy running from a disk image or a translocated path still adds none.
+- Host API: `InstanceLock.claim(at:executable:)` and `InstanceLock.sharedURL` in Core, and `SingleInstance.claim(at:)` in Desktop, which a host calls at launch; `HookSettings.write(_:to:)` is public, for a host's own hook entries. `AttentionHooks.configure`, `PermissionHooks.configure` and `CompletionHooks.configure` lose `replacingExisting:`, since every call now takes the handlers over.
+
 ## 0.4.26 — 2026-09-29
 
 - A Claude Code response is counted once. A forked session's log starts with a copy of its parent's history, and a session resumed after its project folder moved leaves its log in both folders. Both used to be counted again, so a fork's totals included its parent's whole history. A line now counts only in the log named after its own session, and of several copies of a moved session's log only the newest is read. The first launch reads the last month of Claude Code logs again once, which takes under a minute even for a large history.
