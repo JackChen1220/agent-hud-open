@@ -106,6 +106,8 @@ final class QuotaAlertTests: XCTestCase {
         XCTAssertTrue(feed(&tracker, remaining: 6, elapsed: 120).alerts.isEmpty)
         XCTAssertEqual(feed(&tracker, remaining: 100, elapsed: 240).alerts.map(\.kind), [.reset])
         XCTAssertTrue(feed(&tracker, remaining: 100, elapsed: 360).alerts.isEmpty)
+        _ = feed(&tracker, remaining: 98, elapsed: 480)
+        XCTAssertTrue(feed(&tracker, remaining: 100, elapsed: 600).alerts.isEmpty, "a wobble back up to full is not a reset")
     }
 
     func testNewCycleCanBeRecognizedEvenIfAlreadyHeavilyUsed() {

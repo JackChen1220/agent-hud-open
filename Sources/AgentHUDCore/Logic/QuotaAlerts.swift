@@ -91,8 +91,9 @@ public struct QuotaAlertTracker: Sendable {
             let cycleAdvanced = old.snapshot.resetAt.map { oldReset in
                 snapshot.resetAt.map { $0 > oldReset && snapshot.updatedAt >= oldReset } == true
             } ?? false
-            // An early/manual reset may retain the deadline but restores the full window.
-            let restoredEarly = snapshot.remainingPct == 100 && old.snapshot.remainingPct < 100
+            // An early/manual reset may retain the deadline but restores the full window; a reading that wobbles up to
+            // full by a point or two is not one.
+            let restoredEarly = snapshot.remainingPct == 100 && snapshot.remainingPct - old.snapshot.remainingPct >= UsageAnalytics.resetRise
             if cycleAdvanced || restoredEarly {
                 let otherExhausted = quotaAgents.filter {
                     $0.vendor == agent.vendor && $0.account?.id == agent.account?.id && $0.id != agent.id &&
