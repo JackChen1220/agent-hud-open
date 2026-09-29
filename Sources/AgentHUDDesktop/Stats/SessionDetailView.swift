@@ -332,8 +332,8 @@ struct SessionDetailView: View {
                 .help(TokenKind.allCases.map { "\($0.label) \(model.tokens.kinds[$0].formatted())" }.joined(separator: " · "))
             }
             if let subagents = usage.subagents {
-                Text(L10n.text("其中子 agent \(TokenFormat.short(subagents.kinds.total))，会话列表的合计不含这部分",
-                               "Sub-agents spent \(TokenFormat.short(subagents.kinds.total)) of this; the session list leaves them out"))
+                Text(L10n.text("其中子 agent \(TokenFormat.short(subagents.kinds.total))，会话列表的合计同样包含这部分",
+                               "Sub-agents spent \(TokenFormat.short(subagents.kinds.total)) of this, which the session list counts too"))
                     .font(.ui(10)).foregroundStyle(theme.secondary)
             }
         }

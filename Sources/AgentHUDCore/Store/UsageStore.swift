@@ -485,15 +485,6 @@ public final class UsageStore {
             ?? TokenKinds(tokensIn: session.tokensIn, tokensOut: session.tokensOut, cacheRead: session.cacheReadTokens)
     }
 
-    /// The session's own tokens by kind, as the session list counts them: its breakdown without the sub-agents' part,
-    /// or its log's counts, which do not split cache writes and reasoning apart.
-    public func sessionOwnTokens(_ session: LiveSession) -> TokenKinds {
-        guard let usage = sessionUsage(session) else {
-            return TokenKinds(tokensIn: session.tokensIn, tokensOut: session.tokensOut, cacheRead: session.cacheReadTokens)
-        }
-        return usage.total.kinds - (usage.subagents?.kinds ?? TokenKinds())
-    }
-
     /// Sessions under the local day they started on, in the order given; the newest day first. A session keeps its day
     /// however long it runs, so a day's sessions and their totals do not move as they carry on.
     public func sessionsByDay(_ sessions: [LiveSession], calendar: Calendar = .current) -> [(day: Date, sessions: [LiveSession])] {
