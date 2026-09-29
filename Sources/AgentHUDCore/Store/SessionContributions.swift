@@ -35,9 +35,16 @@ enum SessionContributions {
         return result
     }
 
-    /// Readers return a window of history, so each session is replaced from the start of the UTC day holding `since`;
-    /// events the reader no longer returns before that stay until the ledger's retention.
-    static func windowStart(_ since: Date) -> Date {
-        Date(timeIntervalSince1970: (since.timeIntervalSince1970 / 86400).rounded(.down) * 86400)
+    /// Readers return a window of history, so each session is replaced from the start of the UTC day holding `since`,
+    /// which stays put through the day, or from where the reader's history starts when that is later: what a reader did
+    /// not return is not gone. Events before the window stay until the ledger's retention. `readerStart` must not move
+    /// with every read.
+    static func windowStart(_ since: Date, readerStart: Date? = nil) -> Date {
+        max(Date(timeIntervalSince1970: (since.timeIntervalSince1970 / 86400).rounded(.down) * 86400), readerStart ?? .distantPast)
+    }
+
+    /// The first UTC day boundary at or after `date`, a start that stays put within a reader that keeps a fixed span.
+    static func nextDayStart(_ date: Date) -> Date {
+        Date(timeIntervalSince1970: (date.timeIntervalSince1970 / 86400).rounded(.up) * 86400)
     }
 }

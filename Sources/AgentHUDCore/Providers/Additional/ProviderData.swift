@@ -129,6 +129,8 @@ struct ProviderSessions: Sendable {
     var revision: Int? = nil
     /// The files the sessions come from; nil for a reader of account records.
     var files: ListedFiles? = nil
+    /// Where the reader's history starts, when it starts later than asked.
+    var start: Date? = nil
 }
 
 // The existing JSON value representation keeps parsed data Sendable without passing Foundation Any graphs.

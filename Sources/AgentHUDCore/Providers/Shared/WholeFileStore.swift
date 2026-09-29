@@ -1,3 +1,4 @@
+import AgentHUDSupport
 import Foundation
 
 /// Files parsed whole into sessions, for clients that keep databases or rewrite their logs. A poll lists every listing,
@@ -120,8 +121,8 @@ struct ListedFiles: Sendable {
 final class SessionLedger {
     let source: String
     private let ledger: UsageLedger
-    /// The sessions each stored file held.
-    private var stored: [String: [String]] = [:]
+    /// The sessions each stored file held, and the running totals of their rows.
+    private var stored: [String: FileRecord] = [:]
     private var loadedGeneration: Int?
     private var recorded: (revision: Int, account: String?, window: Date)?
 
@@ -131,11 +132,15 @@ final class SessionLedger {
     }
 
     /// - revision: changes whenever the sessions change; nil when the reader cannot tell, so every call writes.
-    func record(files: ListedFiles?, revision: Int?, account: String? = nil, window: Date,
-                sessions: () -> [(id: String, events: [UsageEvent])], isolation: isolated (any Actor)? = #isolation) async {
+    /// - runningTotals: each event is its row's total so far, which the client adds to in place: the ledger keeps the
+    ///   total the row had when it was first read at the row's own time, and dates what it gains later at the 15-minute
+    ///   period `now` falls in. Only sessions the listed files hold can count this way.
+    func record(files: ListedFiles?, revision: Int?, account: String? = nil, window: Date, runningTotals: Bool = false,
+                now: Date = Date(), sessions: () -> [(id: String, events: [UsageEvent])],
+                isolation: isolated (any Actor)? = #isolation) async {
         let generation = await ledger.generation
         if loadedGeneration != generation {
-            stored = ((try? await ledger.fileStates(source: source)) ?? [:]).compactMapValues(Self.sessions)
+            stored = ((try? await ledger.fileStates(source: source)) ?? [:]).compactMapValues(Self.record)
             recorded = nil
             loadedGeneration = generation
         }
@@ -143,49 +148,132 @@ final class SessionLedger {
         let missing = files.map { files in stored.keys.filter { !files.paths.contains($0) } } ?? []
         if unchanged && missing.isEmpty { return }
 
-        let current = sessions()
-        let contributions = unchanged ? [:] : SessionContributions.canonical(current)
-        var next = stored, changed: [String: [String]] = [:]
+        var current = sessions()
+        var next = stored, changed: Set<String> = [], firstRead: [String: [UsageLedger.Event]] = [:]
         if !unchanged {
             for (path, ids) in files?.sessions ?? [:] {
                 let held = Array(Set(ids)).sorted()
-                if held != stored[path] ?? [] { changed[path] = held; next[path] = held.isEmpty ? nil : held }
+                if held != stored[path]?.sessions ?? [] { changed.insert(path); next[path, default: FileRecord()].sessions = held }
+            }
+            if runningTotals, let files {
+                let totalled = Self.totals(current, files: files, stored: next, window: window, now: now)
+                current = totalled.sessions
+                firstRead = totalled.firstRead
+                for (path, totals) in totalled.totals where totals != next[path]?.totals ?? [:] {
+                    changed.insert(path)
+                    next[path, default: FileRecord()].totals = totals
+                }
             }
         }
+        let contributions = unchanged ? [:] : SessionContributions.canonical(current)
         for path in missing { next[path] = nil }
-        let kept = Set(next.values.joined()).union(current.map(\.id))
-        let leaving = Set(missing.flatMap { stored[$0] ?? [] }).subtracting(kept)
-        let source = source, changedFiles = changed
+        let kept = Set(next.values.flatMap(\.sessions)).union(current.map(\.id))
+        let leaving = Set(missing.flatMap { stored[$0]?.sessions ?? [] }).subtracting(kept)
+        let source = source, writes = changed.map { ($0, next[$0]) }, firstReads = firstRead
         do {
             try await ledger.write { writer in
                 for (session, events) in contributions {
                     try writer.replace(source: source, contribution: session, account: account, events: events, since: window)
                 }
-                for (path, held) in changedFiles {
-                    if held.isEmpty { try writer.removeFile(source: source, path: path) }
-                    else { try writer.setFile(source: source, path: path, state: Self.state(held)) }
+                // A row first read with a time before the window is not replaced, so it is written once here.
+                for (session, events) in firstReads {
+                    try writer.upsert(source: source, contribution: session, account: account, events: events)
+                }
+                for (path, record) in writes {
+                    if let record, !record.isEmpty { try writer.setFile(source: source, path: path, state: Self.state(record)) }
+                    else { try writer.removeFile(source: source, path: path) }
                 }
                 for path in missing { try writer.removeFile(source: source, path: path) }
                 for session in leaving { try writer.remove(source: source, contribution: session) }
             }
-            stored = next
+            stored = next.filter { !$0.value.isEmpty }
             if !unchanged { recorded = revision.map { ($0, account, window) } }
         } catch { /* The next poll writes the same sessions again. */ }
+    }
+
+    /// One row of a reader that counts in running totals, as far as the ledger holds it.
+    struct RunningTotal: Codable, Equatable {
+        /// The row's counts when it was first read, kept at the row's own time.
+        var first: [Int]
+        var firstAt: Date
+        /// Everything the ledger holds for the row, its first counts and its growth together.
+        var total: [Int]
+        /// Growth by the start of the 15-minute period it was read in, in milliseconds, while the period is inside the
+        /// window; growth before the window stays in the ledger as it was written.
+        var growth: [String: [Int]] = [:]
+        /// When the row was first read or last grew; a row that has not for longer than the ledger keeps usage is forgotten.
+        var changedAt: Date
+    }
+
+    /// Running totals turned into what the ledger keeps: each session's rows as their first counts and their growth, the
+    /// totals of each file's sessions, and the first counts of rows first read now whose time is before the window.
+    static func totals(_ sessions: [(id: String, events: [UsageEvent])], files: ListedFiles, stored: [String: FileRecord],
+                       window: Date, now: Date) -> (sessions: [(id: String, events: [UsageEvent])], totals: [String: [String: [String: RunningTotal]]],
+                                                    firstRead: [String: [UsageLedger.Event]]) {
+        var file: [String: String] = [:]
+        for (path, ids) in files.sessions { for id in ids { file[id] = path } }
+        // Rows of sessions no longer read keep their totals while the ledger can still hold what they grew by.
+        var totals = stored.mapValues { $0.totals.compactMapValues { rows in
+            let kept = rows.filter { now.timeIntervalSince($0.value.changedAt) < UsageLedger.retention }
+            return kept.isEmpty ? nil : kept
+        } }
+        var firstRead: [String: [UsageLedger.Event]] = [:]
+        let period = String(RecordCoding.milliseconds(now) / UsageLedger.bucketMilliseconds * UsageLedger.bucketMilliseconds)
+        let result = sessions.map { session -> (id: String, events: [UsageEvent]) in
+            guard let path = file[session.id] else { return session }
+            var rows = totals[path]?[session.id] ?? [:]
+            let events = session.events.flatMap { event -> [UsageEvent] in
+                guard let id = event.eventID else { return [event] }
+                let counts = [event.tokensIn, event.tokensOut, event.cacheReadTokens, event.cacheWriteTokens, event.reasoningTokens]
+                var row = rows[id] ?? RunningTotal(first: counts, firstAt: event.timestamp, total: counts, changedAt: now)
+                if rows[id] == nil, event.timestamp < window {
+                    firstRead[session.id, default: []].append(UsageLedger.Event(key: id, timestamp: event.timestamp, agentId: event.agentId,
+                        tokensIn: counts[0], tokensOut: counts[1], cacheReadTokens: counts[2], cacheWriteTokens: counts[3], reasoningTokens: counts[4]))
+                }
+                let gained = zip(counts, row.total).map { max(0, $0 - $1) }
+                if gained.contains(where: { $0 > 0 }) {
+                    row.growth[period] = zip(row.growth[period] ?? [0, 0, 0, 0, 0], gained).map { $0 + $1 }
+                    row.total = zip(row.total, counts).map { max($0, $1) }
+                    row.changedAt = now
+                }
+                row.growth = row.growth.filter { (Int64($0.key) ?? 0) >= RecordCoding.milliseconds(window) }
+                rows[id] = row
+                func part(_ counts: [Int], at date: Date, id: String) -> UsageEvent {
+                    UsageEvent(timestamp: date, agentId: event.agentId, tokensIn: counts[0], tokensOut: counts[1], cacheReadTokens: counts[2],
+                               cacheWriteTokens: counts[3], reasoningTokens: counts[4], eventID: id, origin: event.origin, attribution: event.attribution)
+                }
+                return [part(row.first, at: row.firstAt, id: id)] + row.growth.keys.sorted().map { start in
+                    part(row.growth[start]!, at: RecordCoding.date(Int64(start) ?? 0), id: id + "@" + start)
+                }
+            }
+            totals[path, default: [:]][session.id] = rows
+            return (session.id, events)
+        }
+        return (result, totals, firstRead)
+    }
+
+    /// What the ledger keeps of one file: the sessions it held, and the running totals of their rows by session and event.
+    struct FileRecord: Codable, Equatable {
+        var sessions: [String] = []
+        var totals: [String: [String: RunningTotal]] = [:]
+        var isEmpty: Bool { sessions.isEmpty && totals.isEmpty }
     }
 
     private struct StoredState: Codable {
         static let version = 1
         let version: Int
         let sessions: [String]
+        var totals: [String: [String: RunningTotal]]?
     }
 
-    private static func state(_ sessions: [String]) -> UsageLedger.FileState {
-        UsageLedger.FileState(signature: "", state: try? JSONEncoder().encode(StoredState(version: StoredState.version, sessions: sessions)))
+    private static func state(_ record: FileRecord) -> UsageLedger.FileState {
+        UsageLedger.FileState(signature: "", state: try? JSONEncoder().encode(StoredState(version: StoredState.version, sessions: record.sessions,
+                                                                                       totals: record.totals.isEmpty ? nil : record.totals)))
     }
 
-    private static func sessions(_ file: UsageLedger.FileState) -> [String]? {
+    private static func record(_ file: UsageLedger.FileState) -> FileRecord? {
         guard let data = file.state, let state = try? JSONDecoder().decode(StoredState.self, from: data),
               state.version == StoredState.version else { return nil }
-        return state.sessions
+        return FileRecord(sessions: state.sessions, totals: state.totals ?? [:])
     }
 }

@@ -158,7 +158,10 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
     }
     func fetchUsage(agents: [AgentDescriptor], historyHours: Int) async throws -> UsageReport {
         let now = clock(), since = clock().addingTimeInterval(-Double(max(168, historyHours)) * 3600)
-        var local = await sessions(since)
+        // Read from the start of the day, where the ledger replaces the sessions from: OpenCode's database returns only
+        // replies from the time it is given.
+        let readFrom = SessionContributions.windowStart(since)
+        var local = await sessions(readFrom)
         // Pi's observer keeps active runs fresh. An expired heartbeat ends activity without claiming success.
         for index in local.sessions.indices where local.sessions[index].client == .pi {
             local.sessions[index].turns = local.sessions[index].turns.map { turn in
@@ -171,7 +174,7 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
         // Empty sets explicitly retire expired, removed, rejected, or superseded pools.
         var activePools: [String: Set<String>] = ["Kimi": [], "GLM": [], "OpenCode Go": []]
         for result in quotas where result.isActive { activePools[result.credential.pool.provider, default: []].insert(result.credential.pool.id) }
-        await record(local, since: since)
+        await record(local, since: readFrom)
         let events = local.sessions.flatMap(\.events)
         var consumers: [String: AgentDescriptor] = [:]
         for item in local.sessions {

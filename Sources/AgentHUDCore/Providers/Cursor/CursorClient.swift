@@ -14,6 +14,8 @@ actor CursorClient {
     var savedSessions: ProviderSessions {
         var result = cached?.result ?? ProviderSessions()
         result.revision = fetches
+        // The dashboard is asked from local midnight.
+        result.start = cached?.since
         return result
     }
 

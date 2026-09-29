@@ -126,6 +126,53 @@ final class LedgerFileStoreTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(total, 10, "an unchanged log is read again once the ledger lost its position")
     }
 
+    func testASessionIsNotReplacedBeforeWhereItsReaderStarts() async throws {
+        let ledger = UsageLedger.inMemory(), recorder = SessionLedger(source: "fixture", ledger: ledger)
+        let day = SessionContributions.windowStart(Self.base)
+        XCTAssertEqual(SessionContributions.nextDayStart(day.addingTimeInterval(1)), day.addingTimeInterval(86400))
+        XCTAssertEqual(SessionContributions.nextDayStart(day), day)
+        func event(_ id: String, at hours: Double) -> UsageEvent {
+            UsageEvent(timestamp: day.addingTimeInterval(hours * 3600), agentId: "fixture-model:m", tokensIn: 10, tokensOut: 0, eventID: id)
+        }
+        await recorder.record(files: nil, revision: 1, window: SessionContributions.windowStart(day.addingTimeInterval(-86400))) {
+            [("s", [event("a", at: 1), event("b", at: 9)])]
+        }
+        // A reader whose history starts eight hours into the day, as Cursor's does from local midnight west of UTC.
+        await recorder.record(files: nil, revision: 2, window: SessionContributions.windowStart(day.addingTimeInterval(3600),
+                                                                                                 readerStart: day.addingTimeInterval(8 * 3600))) {
+            [("s", [event("b", at: 9)])]
+        }
+        let total = try await tokens(ledger)
+        XCTAssertEqual(total, 20, "what the reader did not return is not gone")
+    }
+
+    func testRunningTotalsKeepTheirFirstCountsAtTheRowsTimeAndDateTheirGrowthWhenRead() async throws {
+        let ledger = UsageLedger.inMemory(), files = ListedFiles(paths: ["/state.db"], sessions: ["/state.db": ["h"]])
+        // The row began a day before the window, and grows while it is read.
+        let window = Self.base.addingTimeInterval(86400), first = Self.base
+        func row(_ input: Int) -> [(id: String, events: [UsageEvent])] {
+            [("h", [UsageEvent(timestamp: first, agentId: "fixture-model:m", tokensIn: input, tokensOut: 0, eventID: "fixture:r")])]
+        }
+        func buckets() async throws -> [Date: Int] {
+            Dictionary(try await ledger.buckets(since: .distantPast, source: "fixture").map { ($0.start, $0.tokensIn) }, uniquingKeysWith: +)
+        }
+        let read = window.addingTimeInterval(3 * 3600), period = Date(timeIntervalSince1970: (read.timeIntervalSince1970 / 900).rounded(.down) * 900)
+        let firstPeriod = Date(timeIntervalSince1970: (first.timeIntervalSince1970 / 900).rounded(.down) * 900)
+        await SessionLedger(source: "fixture", ledger: ledger).record(files: files, revision: 1, window: window, runningTotals: true,
+                                                                      now: window.addingTimeInterval(3600)) { row(100) }
+        var recorded = try await buckets()
+        XCTAssertEqual(recorded, [firstPeriod: 100], "a row first read before the window counts at its own time")
+        let recorder = SessionLedger(source: "fixture", ledger: ledger)
+        await recorder.record(files: files, revision: 2, window: window, runningTotals: true, now: read) { row(140) }
+        recorded = try await buckets()
+        XCTAssertEqual(recorded, [firstPeriod: 100, period: 40], "what it gained counts when it was read")
+        await recorder.record(files: files, revision: 3, window: window, runningTotals: true, now: read.addingTimeInterval(60)) { row(140) }
+        await SessionLedger(source: "fixture", ledger: ledger).record(files: files, revision: 1, window: window, runningTotals: true,
+                                                                      now: read.addingTimeInterval(120)) { row(150) }
+        recorded = try await buckets()
+        XCTAssertEqual(recorded, [firstPeriod: 100, period: 50], "a restart reads on from the totals the ledger kept")
+    }
+
     func testSessionsOfAMissingFileLeaveUnlessAListedFileHoldsThemAndRollbacksAreWrittenAgain() async throws {
         let ledger = UsageLedger.inMemory(), recorder = SessionLedger(source: "fixture", ledger: ledger), window = Date(timeIntervalSince1970: 0)
         func session(_ id: String, _ tokens: Int) -> (id: String, events: [UsageEvent]) {

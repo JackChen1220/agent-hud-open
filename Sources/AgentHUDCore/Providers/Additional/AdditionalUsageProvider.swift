@@ -76,8 +76,11 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
     /// Writes each session's usage once the index is complete and something changed.
     private func record(_ local: ProviderSessions, account: String?, since: Date, now: Date) async {
         guard local.indexing == nil else { return }
-        let window = SessionContributions.windowStart(max(since, source.readerWindow.map { now.addingTimeInterval(-$0) } ?? since))
-        await sessionLedger.record(files: local.files, revision: local.revision, account: account, window: window) {
+        // A database reader returns its own last days, and Cursor's dashboard its days from local midnight.
+        let readerStart = local.start ?? source.readerWindow.map { SessionContributions.nextDayStart(now.addingTimeInterval(-$0)) }
+        let window = SessionContributions.windowStart(since, readerStart: readerStart)
+        await sessionLedger.record(files: local.files, revision: local.revision, account: account, window: window,
+                                   runningTotals: source == .hermes, now: now) {
             local.sessions.map { session in (session.id, session.events.map { $0.usage(source: source) }) }
         }
     }
