@@ -44,6 +44,7 @@ Which clients expose running and terminal turns, which of them say they are wait
 - A Claude Code session also runs while the sub-agents and workflow agents it started work, after its own agent ended its turn or went quiet waiting for them. Their logs sit in a directory named after the session's log (`<session>/subagents/`, workflow agents under `workflows/<run>/`), and their latest activity is the session's latest event.
 - Each of those logs follows its own turn: its prompt starts it; `end_turn`, a `StructuredOutput` call (a workflow agent handing back its result) or a `[Request interrupted` line ends it; 30 quiet minutes abandon it, as for any running turn. An agent stopped without any of these, such as one closed with its session, keeps the session running until then.
 - The session's turn keeps its id and start while its agents work. Sub-agent logs report no completions and mark no prompts, so the agent's own answer is still announced when it ends its turn.
+- A session waiting for approval keeps waiting while its agents work: a request is answered by a line of the session's own log after it, never by a sub-agent's.
 
 ### Pi observer
 

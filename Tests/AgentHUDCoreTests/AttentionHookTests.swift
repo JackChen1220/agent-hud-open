@@ -55,6 +55,12 @@ final class AttentionHookTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(answered.map(\.state), [.running], "a transcript line after the request means it was answered")
         let finished = ClaudeCodeProvider.awaiting([turn(.completed, observedAt: now.addingTimeInterval(-5))], requests: requests)
         XCTAssertEqual(finished.map(\.state), [.completed], "an idle prompt is waiting for a reply, not for approval")
+
+        // A sub-agent that keeps working after the request does not answer it.
+        let working = ClaudeCodeProvider.turn(waiting[0], agentsWorkingAt: now.addingTimeInterval(20))
+        XCTAssertEqual(working.state, .waitingForApproval)
+        XCTAssertEqual(working.observedAtMs, RecordCoding.milliseconds(now.addingTimeInterval(20)))
+        XCTAssertEqual(ClaudeCodeProvider.turn(finished[0], agentsWorkingAt: now.addingTimeInterval(20)).state, .running)
     }
 
     func testTheHookIsInstalledBesideWhateverElseTheSettingsHold() throws {

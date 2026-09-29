@@ -218,7 +218,7 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
             sourceNotices: notice.map { ["Claude": $0] } ?? [:],
             consumerIdsByQuota: consumerIdsByQuota,
             completions: sessions.flatMap(\.completions),
-            turns: Self.awaiting(candidates.compactMap { Self.turn(of: $0, agentsWorkingAt: agents[$0.path]) }, now: now),
+            turns: Self.turns(candidates, agentsWorkingAt: agents, requests: AttentionHooks.read(source: AttentionHooks.Source.claude, now: now)),
             // A login without plan limits has no current subscription account; earlier accounts keep their last readings.
             accounts: reading.map { reading in
                 ["Claude": usage == nil ? [] : [AccountObservation(account: self.account(for: reading), home: home,
@@ -289,21 +289,27 @@ extension ClaudeCodeProvider {
         return latest
     }
 
+    /// Each session's turn. A request is compared with the session's own log, which is what answering it writes to; what
+    /// its sub-agents write afterwards does not answer it, so their work is added only once that is decided.
+    static func turns(_ sessions: [TranscriptSession], agentsWorkingAt: [String: Date],
+                      requests: [String: AttentionHooks.Event]) -> [SessionTurn] {
+        sessions.compactMap { session in
+            session.turn.map { turn(awaiting([$0], requests: requests)[0], agentsWorkingAt: agentsWorkingAt[session.path]) }
+        }
+    }
+
     /// The session's turn, running while its agents work: the agent that stopped, or went quiet waiting for them, has not
-    /// finished what it was asked.
-    static func turn(of session: TranscriptSession, agentsWorkingAt: Date?) -> SessionTurn? {
-        guard let turn = session.turn, let agentsWorkingAt else { return session.turn }
-        return SessionTurn(provider: turn.provider, sessionID: turn.sessionID, turnID: turn.turnID, state: .running,
-                           startedAtMs: turn.startedAtMs,
+    /// finished what it was asked. A turn waiting for approval keeps waiting.
+    static func turn(_ turn: SessionTurn, agentsWorkingAt: Date?) -> SessionTurn {
+        guard let agentsWorkingAt else { return turn }
+        return SessionTurn(provider: turn.provider, sessionID: turn.sessionID, turnID: turn.turnID,
+                           state: turn.state == .waitingForApproval ? .waitingForApproval : .running, startedAtMs: turn.startedAtMs,
                            observedAtMs: max(turn.observedAtMs, RecordCoding.milliseconds(agentsWorkingAt)), message: turn.message)
     }
 
     /// A turn Claude Code said it is blocked on. The hook only says it needs the user; a turn that is still running is
     /// waiting for approval, and one that already finished is simply waiting for the next prompt. A request older than
     /// the transcript has been answered.
-    static func awaiting(_ turns: [SessionTurn], now: Date) -> [SessionTurn] {
-        awaiting(turns, requests: AttentionHooks.read(source: AttentionHooks.Source.claude, now: now))
-    }
 
     static func awaiting(_ turns: [SessionTurn], requests: [String: AttentionHooks.Event]) -> [SessionTurn] {
         guard !requests.isEmpty else { return turns }
