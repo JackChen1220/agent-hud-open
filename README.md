@@ -98,7 +98,6 @@ The libraries can also be consumed through Swift Package Manager. `DesktopApplic
 - [Session lifecycle](docs/session-lifecycle.md) — running and terminal turn evidence, live status, the Pi observer, and completion hooks.
 - [Command line](docs/command-line.md) — launch options, read-only probes, adapter commands, and environment variables.
 - [Brand assets](docs/brand-assets.md) — bundled client logos, their sources, rendering, and licenses.
-- [Roadmap](docs/roadmap.md) — what is in progress, next, and later.
 - [Changelog](CHANGELOG.md) — released versions and host-visible API changes.
 
 ## License
