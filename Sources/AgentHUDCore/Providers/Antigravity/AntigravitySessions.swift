@@ -5,8 +5,15 @@ import SQLite3
 enum AntigravitySessions: LocalSessionLayout {
     static let installPaths = [".gemini/antigravity", ".gemini/antigravity-cli", "Applications/Antigravity.app"]
 
+    /// The Gemini home agy keeps its conversations and hooks in: `GEMINI_CLI_HOME`, else `~/.gemini`. Its reader and the
+    /// completion hook written into it both follow it.
+    static func home(_ home: URL, environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
+        environment["GEMINI_CLI_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? home.appendingPathComponent(".gemini", isDirectory: true)
+    }
+
     static func roots(home: URL, environment: [String: String]) -> [URL] {
-        let base = environment["GEMINI_CLI_HOME"].map { URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".gemini")
+        let base = self.home(home, environment: environment)
         return ["antigravity-cli/conversations", "antigravity", "antigravity/conversations"].map { base.appendingPathComponent($0) }
     }
 

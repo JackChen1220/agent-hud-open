@@ -11,14 +11,15 @@ public enum AttentionHooks {
         /// The notification types worth waking for. Claude Code filters on the type itself, so nothing here depends on
         /// the wording of a message, and a sign-in or quota notice never looks like a request for the user.
         var matcher: String { "permission_prompt|agent_needs_input" }
-        func configuration(home: URL) -> URL { home.appendingPathComponent(".claude/settings.json") }
+        /// Claude Code's settings, in the directory `CLAUDE_CONFIG_DIR` moves.
+        func configuration(home: URL) -> URL { ClaudeSubscription.directory(home: home).appendingPathComponent("settings.json") }
 
         /// Whether the client is here at all. A machine without it keeps its home untouched.
         func isInstalled(home: URL = FileManager.default.homeDirectoryForCurrentUser, fileManager: FileManager = .default) -> Bool {
             switch self {
             case .claude:
                 return ClaudeEngineLocator.find(home: home, fileManager: fileManager) != nil
-                    || fileManager.fileExists(atPath: home.appendingPathComponent(".claude/projects").path)
+                    || fileManager.fileExists(atPath: ClaudeSubscription.directory(home: home).appendingPathComponent("projects").path)
             }
         }
     }

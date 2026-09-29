@@ -206,6 +206,24 @@ final class PermissionHookTests: XCTestCase, @unchecked Sendable {
                        CodexLocator.dataDirectory(home: home).appendingPathComponent("hooks.json"))
     }
 
+    func testClaudeAndAntigravityHooksFollowTheDirectoriesTheirReadersFollow() throws {
+        let home = try directory()
+        let claude = home.appendingPathComponent("claude-config", isDirectory: true), gemini = home.appendingPathComponent("gemini", isDirectory: true)
+        XCTAssertEqual(ClaudeSubscription.directory(home: home, environment: ["CLAUDE_CONFIG_DIR": claude.path]), claude)
+        XCTAssertEqual(AntigravitySessions.home(home, environment: ["GEMINI_CLI_HOME": gemini.path]), gemini)
+        XCTAssertEqual(AntigravitySessions.roots(home: home, environment: ["GEMINI_CLI_HOME": gemini.path]).first,
+                       gemini.appendingPathComponent("antigravity-cli/conversations"))
+        for environment in [[:], ["CLAUDE_CONFIG_DIR": "", "GEMINI_CLI_HOME": ""]] {
+            XCTAssertEqual(ClaudeSubscription.directory(home: home, environment: environment), home.appendingPathComponent(".claude", isDirectory: true))
+            XCTAssertEqual(AntigravitySessions.home(home, environment: environment), home.appendingPathComponent(".gemini", isDirectory: true))
+        }
+        let settings = ClaudeSubscription.directory(home: home).appendingPathComponent("settings.json")
+        XCTAssertEqual(AttentionHooks.Source.claude.configuration(home: home), settings)
+        XCTAssertEqual(PermissionHooks.Source.claude.configuration(home: home), settings)
+        XCTAssertEqual(CompletionHooks.Source.antigravity.configuration(home: home),
+                       AntigravitySessions.home(home).appendingPathComponent("config/hooks.json"))
+    }
+
     func testCodexPatchAndShellRequestsShowTheOperationAndOnlySupportedAnswers() throws {
         let patch = "*** Begin Patch\n*** Update File: README.md\n@@\n-old\n+new\n*** End Patch"
         var body = payload(tool: "apply_patch", input: ["command": patch])

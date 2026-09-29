@@ -2,18 +2,27 @@ import Foundation
 
 /// The engine reports only "max" through get_usage; its account profile supplies the specific tier and the account.
 enum ClaudeSubscription {
-    static var configDirectory: URL? {
-        ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
+    /// `CLAUDE_CONFIG_DIR`, when it is set.
+    static func configDirectory(_ environment: [String: String] = ProcessInfo.processInfo.environment) -> URL? {
+        environment["CLAUDE_CONFIG_DIR"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
     }
 
+    /// Claude Code's configuration directory: `CLAUDE_CONFIG_DIR`, else `~/.claude`. The account profile and the hooks
+    /// written into its settings both follow it.
+    static func directory(home: URL = FileManager.default.homeDirectoryForCurrentUser,
+                          environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
+        configDirectory(environment) ?? home.appendingPathComponent(".claude", isDirectory: true)
+    }
+
+    /// Inside a configured directory, beside the default one.
     static var accountProfileURL: URL {
-        (configDirectory ?? FileManager.default.homeDirectoryForCurrentUser).appendingPathComponent(".claude.json")
+        (configDirectory() ?? FileManager.default.homeDirectoryForCurrentUser).appendingPathComponent(".claude.json")
     }
 
     /// `ClientHome.key` of the Claude Code configuration directory this app reads.
     static var home: String {
-        let defaultDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude", isDirectory: true)
-        return ClientHome.key(configDirectory ?? defaultDirectory, defaultDirectory: defaultDirectory)
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return ClientHome.key(directory(home: home), defaultDirectory: home.appendingPathComponent(".claude", isDirectory: true))
     }
 
     static func plan(type: String?, profileData: Data?) -> String? {

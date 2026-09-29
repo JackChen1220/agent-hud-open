@@ -101,7 +101,7 @@ public enum PermissionHooks {
             if case .codebuddy = self { return CodeBuddySessions.home(base) }
             if case .qwen = self { return QwenSessions.home(base) }
             // Claude Code's configuration directory moves with CLAUDE_CONFIG_DIR; the forks have no such variable.
-            if case .claude = self, let configured = ClaudeSubscription.configDirectory { return configured }
+            if case .claude = self { return ClaudeSubscription.directory(home: base) }
             return base.appendingPathComponent(directory, isDirectory: true)
         }
 
@@ -121,7 +121,7 @@ public enum PermissionHooks {
             switch self {
             case .claude:
                 return ClaudeEngineLocator.find(home: home, fileManager: fileManager) != nil
-                    || fileManager.fileExists(atPath: home.appendingPathComponent(".claude/projects").path)
+                    || fileManager.fileExists(atPath: self.home(home).appendingPathComponent("projects").path)
             case .codex, .qoder, .qoderCN, .qoderWork, .zcode, .qwen:
                 return fileManager.fileExists(atPath: self.home(home).path)
             // The session folder is what the usage provider reads; a settings folder alone can be the IDE extension's.

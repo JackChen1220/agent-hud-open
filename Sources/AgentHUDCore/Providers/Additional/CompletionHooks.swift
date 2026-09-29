@@ -128,9 +128,9 @@ public enum CompletionHooks {
     }
 }
 
-/// `agent-hud` entry of `~/.gemini/config/hooks.json`.
+/// `agent-hud` entry of `config/hooks.json` in the Gemini home (`GEMINI_CLI_HOME`, default `~/.gemini`).
 enum AntigravityHookFormat: CompletionHookFormat {
-    static func configuration(home: URL) -> URL { home.appendingPathComponent(".gemini/config/hooks.json") }
+    static func configuration(home: URL) -> URL { AntigravitySessions.home(home).appendingPathComponent("config/hooks.json") }
 
     /// A turn finishes when the model answers without calling a tool. `executionNum` is 0 on every turn, so the callback
     /// time identifies it.

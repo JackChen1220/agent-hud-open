@@ -57,7 +57,7 @@ A transcript shows that a tool call is pending but not whether the client is run
 
 | Source | Configuration | Reported |
 | --- | --- | --- |
-| Claude Code | Group appended to `hooks.Notification` of `~/.claude/settings.json`; only commands ending in ` --attention-hook claude` are Agent HUD's | `session_id` and the client's `message`, at the callback time |
+| Claude Code | Group appended to `hooks.Notification` of `settings.json` in `$CLAUDE_CONFIG_DIR` (default `~/.claude`); only commands ending in ` --attention-hook claude` are Agent HUD's | `session_id` and the client's `message`, at the callback time |
 
 - The callback only says that the client needs the user; which kind of attention it is comes from the transcript, never from the wording of the message. A turn that is still running is waiting for approval and shows the message; a turn that already finished is waiting for the next prompt, which the transcript already said.
 - A request is answered as soon as the transcript carries a line newer than it. One unanswered request is kept per session, in `attention/<source>/<hashed session id>.json` in the data directory: session id, the client's message up to 2 KB, and the time. Requests are forgotten a day after they were made; a file's own timestamps are never used for that.
