@@ -117,9 +117,11 @@ struct GlowPane: View {
     private func caption(grid: Bool, effect: GlowEffect) -> String {
         let density = grid ? L10n.text("密度决定点和字符占满格子的程度，调高后空隙更小，超过 100% 会互相重叠。实心是满强度的排数，渐隐是它之后淡出的排数。", "Density sets how much of each cell a mark fills; raise it for smaller gaps, and past 100% marks overlap. Solid is how many rows keep full strength; fade is how many it dies away over. ") : ""
         if !grid && effect == .breathe {
-            return L10n.text("Agent 运行时自动呼吸，空闲时保持静态光晕。", "The glow breathes while an agent is running, and rests when it is idle.")
+            return L10n.text("Agent 运行时按工作周期呼吸，空闲时按空闲周期放慢；只有暂停检测或还没有可显示的读数时才静止。",
+                             "The glow breathes at the working period while an agent runs and slows to the idle period otherwise; it rests only while detection is paused or no agent has a reading to show.")
         }
-        return density + L10n.text("上方预览会一直播放所选动效；灵动岛上只在 Agent 运行时播放。", "The preview always plays the selected effect; the notch plays it only while an agent is running.")
+        return density + L10n.text("上方预览会一直播放所选动效；灵动岛上 Agent 运行时按工作周期播放，空闲时按空闲周期放慢。",
+                                   "The preview always plays the selected effect; the notch plays it at the working period while an agent runs and at the idle period otherwise.")
     }
 
     private func percentBinding(_ keyPath: WritableKeyPath<AgentHUDCore.Settings, Double>) -> Binding<Double> {
