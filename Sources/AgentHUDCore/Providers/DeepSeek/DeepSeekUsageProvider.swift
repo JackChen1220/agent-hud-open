@@ -28,6 +28,7 @@ public actor DeepSeekUsageProvider: UsageProvider, LedgerRecording {
     }
 
     public nonisolated var watchedDirectories: [URL]? { [transcripts.root] }
+    public func fileChanges(_ paths: Set<String>?) async { await transcripts.fileChanges(paths) }
 
     public func refreshAccountUsage(historyHours: Int) async {
         guard DeepSeekLocator.isInstalled(directory: directory) else { return }

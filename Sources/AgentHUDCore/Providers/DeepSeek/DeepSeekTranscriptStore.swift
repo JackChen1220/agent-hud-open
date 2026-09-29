@@ -28,6 +28,9 @@ public actor DeepSeekTranscriptStore {
         }
     }
 
+    /// Paths from the collector's watch: after the first listing, a poll looks only at the logs they name.
+    public func fileChanges(_ paths: Set<String>?) { logs.noteChanges(paths) }
+
     /// DeepSeek's 15-minute token totals from the period holding `since`.
     public func usage(since: Date) async -> [UsageBucket] {
         (try? await ledger.buckets(since: since, source: HarnessLogs.source)) ?? []

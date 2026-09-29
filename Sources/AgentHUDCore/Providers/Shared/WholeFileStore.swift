@@ -43,6 +43,12 @@ struct WholeFileStore<Parsed: Sendable> {
         self.listings = listings
     }
 
+    /// Paths from the collector's watch, as `LogFiles.noteChanges` takes them: after the first listing, a poll looks
+    /// only at them.
+    func noteChanges(_ paths: Set<String>?) {
+        for listing in listings { listing.files.noteChanges(paths) }
+    }
+
     mutating func index(since: Date) -> Pass {
         let started = Date()
         var pass = Pass(), seen = Set<String>()

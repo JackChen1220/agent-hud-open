@@ -5,6 +5,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
     let source: AdditionalSource
     private let readQuota: @Sendable () async throws -> ProviderQuota
     private let readSessions: @Sendable (Date) async -> ProviderSessions
+    private let noteChanges: @Sendable (Set<String>?) async -> Void
     private let refreshSessions: @Sendable (Int) async -> Void
     private let readCompletions: @Sendable (Date) throws -> [SessionCompletion]
     private let history: QuotaHistoryStore
@@ -25,8 +26,10 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
          clock: @escaping @Sendable () -> Date = { Date() },
          quotaKey: @escaping @Sendable () -> String = { "" },
          refreshSessions: @escaping @Sendable (Int) async -> Void = { _ in },
-         watchedDirectories: [URL]? = nil, ledger: UsageLedger = .inMemory()) {
+         watchedDirectories: [URL]? = nil, fileChanges: @escaping @Sendable (Set<String>?) async -> Void = { _ in },
+         ledger: UsageLedger = .inMemory()) {
         self.source = source; self.readQuota = readQuota; self.readSessions = readSessions
+        noteChanges = fileChanges
         self.readCompletions = readCompletions
         self.refreshSessions = refreshSessions
         self.history = history; self.clock = clock; self.quotaKey = quotaKey
@@ -60,8 +63,10 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
             }
         }, watchedDirectories: local.roots + (CompletionHooks.Source(rawValue: source.rawValue).map {
             [CompletionHooks.directory.appendingPathComponent($0.rawValue)]
-        } ?? []), ledger: ledger)
+        } ?? []), fileChanges: { await local.fileChanges($0) }, ledger: ledger)
     }
+
+    func fileChanges(_ paths: Set<String>?) async { await noteChanges(paths) }
 
     /// This source's 15-minute token totals from the period holding `since`.
     func usage(since: Date) async -> [UsageBucket] {

@@ -27,6 +27,7 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
     /// Nil until the first account scan completes; an empty result is an observed empty inventory.
     private var cached: [String: QuotaResult]?
     nonisolated let watchedDirectories: [URL]?
+    private let noteChanges: @Sendable (Set<String>?) async -> Void
     private let ledger: UsageLedger
     private let sessionLedger: SessionLedger
     static let source = "open-agents"
@@ -36,8 +37,10 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
          history: QuotaHistoryStore, identify: @escaping @Sendable (OpenAgentCredential) async throws -> OpenAgentCredential = { $0 }, clock: @escaping @Sendable () -> Date = { Date() },
          identityCacheURL: URL? = nil,
          apiServices: @escaping @Sendable () -> [AgentService] = { [] },
-         watchedDirectories: [URL]? = nil, ledger: UsageLedger = .inMemory()) {
+         watchedDirectories: [URL]? = nil, fileChanges: @escaping @Sendable (Set<String>?) async -> Void = { _ in },
+         ledger: UsageLedger = .inMemory()) {
         self.credentials = credentials; self.sessions = sessions; self.fetchQuota = fetchQuota
+        noteChanges = fileChanges
         self.history = history; self.identify = identify; self.clock = clock
         self.apiServices = apiServices
         self.identityCacheURL = identityCacheURL
@@ -59,8 +62,11 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
             identify: { try await OpenAgentQuotaClient().identify($0) },
             identityCacheURL: persistHistory ? AppSupport.directory.appendingPathComponent("open-agent-identities.json") : nil,
             apiServices: { AgentAPIServiceDiscovery.discover() },
-            watchedDirectories: [paths.openCode, paths.piTurns] + paths.roots(for: .kimi) + paths.roots(for: .pi), ledger: ledger)
+            watchedDirectories: [paths.openCode, paths.piTurns] + paths.roots(for: .kimi) + paths.roots(for: .pi),
+            fileChanges: { await local.fileChanges($0) }, ledger: ledger)
     }
+
+    func fileChanges(_ paths: Set<String>?) async { await noteChanges(paths) }
 
     /// Token totals of every open agent client from the period holding `since`.
     func usage(since: Date) async -> [UsageBucket] {

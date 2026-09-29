@@ -46,6 +46,8 @@ actor OpenAgentLocalStore {
         ])
     }
 
+    func fileChanges(_ paths: Set<String>?) { files.noteChanges(paths) }
+
     func index(since: Date) -> Result {
         let pass = files.index(since: since)
         var result = Result(notices: pass.notices)

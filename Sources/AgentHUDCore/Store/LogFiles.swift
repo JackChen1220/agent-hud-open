@@ -2,7 +2,7 @@ import Foundation
 
 /// The log files under a set of roots with their modification times and sizes. With a directory watch, a poll looks
 /// only at the files reported changed; without one, or every five minutes and whenever events were dropped, it lists
-/// every file again.
+/// every file again. A listing that stops at its limit keeps the files it did not reach that are still there.
 final class LogFiles {
     struct File: Equatable {
         let modified: Date
@@ -114,6 +114,10 @@ final class LogFiles {
                 if skips(url) { enumerator.skipDescendants(); continue }
                 if accepts(url) { list(url) }
             }
+        }
+        // Files past the limit were not seen, which does not mean they are gone.
+        if gaps.truncated {
+            for (path, file) in files where listed[path] == nil && FileManager.default.fileExists(atPath: path) { listed[path] = file }
         }
         files = listed
         scannedAt = now

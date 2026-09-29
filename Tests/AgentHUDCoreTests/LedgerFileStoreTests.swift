@@ -83,6 +83,19 @@ final class LedgerFileStoreTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(again.filesRead, 0)
     }
 
+    func testAListingStoppedByItsLimitKeepsTheFilesItDidNotReach() throws {
+        let root = try directory()
+        for name in ["a", "b", "c"] { try "a 1\n".write(to: root.appendingPathComponent("\(name).log"), atomically: true, encoding: .utf8) }
+        let files = LogFiles(roots: [root], watchesChanges: false, limit: 3) { _ in true }
+        XCTAssertFalse(files.refresh(now: Date()).truncated)
+        for name in ["d", "e"] { try "a 1\n".write(to: root.appendingPathComponent("\(name).log"), atomically: true, encoding: .utf8) }
+        try FileManager.default.removeItem(at: root.appendingPathComponent("a.log"))
+        XCTAssertTrue(files.refresh(now: Date()).truncated)
+        let names = Set(files.files.keys.map { URL(fileURLWithPath: $0).lastPathComponent })
+        XCTAssertTrue(names.isSuperset(of: ["b.log", "c.log"]), "a file past the limit is not gone")
+        XCTAssertFalse(names.contains("a.log"), "a file that is gone leaves")
+    }
+
     func testRolledBackPassIsReadAndWrittenAgain() async throws {
         let root = try directory(), ledger = UsageLedger.inMemory()
         try "a 10\n".write(to: root.appendingPathComponent("s.log"), atomically: true, encoding: .utf8)

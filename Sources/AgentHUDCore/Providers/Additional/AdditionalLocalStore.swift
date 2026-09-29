@@ -16,6 +16,8 @@ actor AdditionalLocalStore {
         } ?? [])
     }
 
+    func fileChanges(_ paths: Set<String>?) { files.noteChanges(paths) }
+
     func index(since: Date) -> ProviderSessions {
         let pass = files.index(since: since)
         var failed = !pass.notices.isEmpty

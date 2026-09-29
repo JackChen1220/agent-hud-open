@@ -62,6 +62,30 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(AntigravityClient.ports("n127.0.0.1:42111\nn*:42111\nn[::1]:42112\n"), [42111, 42112])
     }
 
+    func testAWholeFileStoreLooksOnlyAtThePathsTheWatchReports() async throws {
+        let root = try directory()
+        func session(_ id: String) throws -> URL {
+            let folder = root.appendingPathComponent("%2Ffixture/\(id)")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let file = folder.appendingPathComponent("updates.jsonl")
+            try (#"{"method":"_x.ai/session/update","params":{"sessionId":"\#(id)","_meta":{"eventId":"done","agentTimestampMs":1788800002000},"update":{"sessionUpdate":"turn_completed","prompt_id":"p","stop_reason":"end_turn","usage":{"inputTokens":100,"outputTokens":20,"modelUsage":{"grok-test":{}}}}}}"#
+                + "\n").write(to: file, atomically: true, encoding: .utf8)
+            return file
+        }
+        _ = try session("a")
+        let store = AdditionalLocalStore(source: .grok, roots: [root])
+        var sessions = await store.index(since: .distantPast).sessions
+        XCTAssertEqual(sessions.count, 1)
+        // The collector's watch runs and saw nothing here.
+        await store.fileChanges([])
+        let added = try session("b")
+        sessions = await store.index(since: .distantPast).sessions
+        XCTAssertEqual(sessions.count, 1, "a read the watch did not ask for does not list the tree again")
+        await store.fileChanges([added.path])
+        sessions = await store.index(since: .distantPast).sessions
+        XCTAssertEqual(sessions.count, 2)
+    }
+
     func testGrokQuotaDistinguishesSubscriptionAndExtraBudget() throws {
         let quota = try GrokClient.parse(json(#"{"config":{"creditUsagePercent":12.5,"currentPeriod":{"start":"2026-09-01T00:00:00Z","end":"2026-09-08T00:00:00Z","type":"USAGE_PERIOD_TYPE_WEEKLY"},"onDemandCap":{"val":20},"onDemandUsed":{"val":3}}}"#))
         XCTAssertEqual(quota.windows.map(\.remaining), [87.5, 85])
