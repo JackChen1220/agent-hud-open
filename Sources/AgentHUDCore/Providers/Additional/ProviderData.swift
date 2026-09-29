@@ -161,7 +161,7 @@ extension JSONValue {
         guard let count = countValue else { throw ProviderFailure.format }
         return count
     }
-    static func read(_ data: Data) throws -> Self { try JSONDecoder().decode(Self.self, from: data) }
+    static func read(_ data: Data) throws -> Self { try parse(data) }
 }
 
 enum ProviderDate {
