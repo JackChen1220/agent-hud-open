@@ -69,6 +69,30 @@ final class PermissionAlertTests: XCTestCase {
         XCTAssertEqual(answered.next?.id, "a", "answering hands over to the oldest one still waiting")
     }
 
+    func testARequestOutlivesItsDisplayAndMovesToTheScreenItIsPickedOn() throws {
+        _ = NSApplication.shared
+        let domain = "app.agenthud.tests.permission.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let settings = SettingsStore(defaults: defaults, defaultAgents: DemoData.agents)
+        let controller = IslandController(store: UsageStore(provider: DemoUsageProvider(), settings: settings), settings: settings)
+        defer { controller.rebuild(keys: [], screens: []) }
+        controller.rebuild(keys: ["screen:a", "screen:b"], screens: [])
+        let a = try XCTUnwrap(controller.huds["screen:a"]), b = try XCTUnwrap(controller.huds["screen:b"])
+        a.present(.permission(request("first")))
+        a.present(.permission(request("second")))
+        b.present(.permission(request("third")))
+
+        b.selectRequest("second")
+        XCTAssertFalse(a.holds("second"), "a request picked on another screen leaves the one it arrived on")
+        XCTAssertEqual(b.questions.map(\.id), ["second", "third"], "and is the card being decided")
+
+        controller.rebuild(keys: ["screen:b"], screens: [])
+        XCTAssertEqual(Set(b.questions.map(\.id)), ["first", "second", "third"], "a display that goes away hands on its requests")
+        controller.present(.permission(request("first")))
+        XCTAssertEqual(b.questions.filter { $0.id == "first" }.count, 1, "a request is shown once")
+    }
+
     func testNewsStillExpiresOnItsOwn() async throws {
         let queue = IslandAlertQueue()
         var expired = 0

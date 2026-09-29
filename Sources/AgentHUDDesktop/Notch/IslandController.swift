@@ -17,7 +17,7 @@ final class IslandController {
 
     private let store: UsageStore
     private let settings: SettingsStore
-    private var huds: [String: ScreenHUD] = [:]
+    private(set) var huds: [String: ScreenHUD] = [:]
     /// Display order, so the primary HUD is stable rather than whatever the dictionary yields.
     private var order: [String] = []
     private var systemIsLight = SystemAppearance.isLight
@@ -78,9 +78,17 @@ final class IslandController {
     private func rebuild() {
         ScreenIdentity.forgetKeys()
         let screens = NSScreen.screens
-        let keys = screens.isEmpty ? ["screen:none"] : screens.map { ScreenIdentity.key(for: $0) }
+        rebuild(keys: screens.isEmpty ? ["screen:none"] : screens.map { ScreenIdentity.key(for: $0) }, screens: screens)
+    }
+
+    /// One HUD per key, in display order; `screens` holds the display behind each key that has one. The requests a
+    /// dropped HUD held are shown again: their clients are still waiting, whatever happened to the display.
+    func rebuild(keys: [String], screens: [NSScreen]) {
+        var questions: [IslandAlert] = []
         for key in huds.keys where !keys.contains(key) {
-            huds.removeValue(forKey: key)?.close()
+            guard let hud = huds.removeValue(forKey: key) else { continue }
+            questions += hud.questions
+            hud.close()
         }
         for (index, key) in keys.enumerated() where huds[key] == nil {
             let hud = ScreenHUD(key: key, screen: screens.indices.contains(index) ? screens[index] : nil,
@@ -88,12 +96,29 @@ final class IslandController {
             hud.systemIsLight = systemIsLight
             hud.onOpenStats = { [weak self] in self?.onOpenStats?() }
             hud.onOpenSettings = { [weak self] in self?.onOpenSettings?() }
+            hud.onClaimRequest = { [weak self, weak hud] id in
+                guard let self, let hud else { return }
+                self.move(requestID: id, to: hud)
+            }
             huds[key] = hud
         }
         order = keys
         // Every glow shares one budget, so attaching a display costs frames rather than CPU.
         GlowAnimator.activeGlows = huds.count
         apply(animated: false)
+        for question in questions.sorted(by: { ($0.waitingSince ?? .distantFuture) < ($1.waitingSince ?? .distantFuture) }) {
+            present(question)
+        }
+    }
+
+    /// A request picked from the waiting list on another screen than the one it arrived on moves to the screen where
+    /// it was picked, to be answered there.
+    private func move(requestID id: String, to target: ScreenHUD) {
+        for hud in huds.values where hud !== target {
+            guard let request = hud.take(requestID: id) else { continue }
+            target.present(request)
+            return
+        }
     }
 
     /// The HUD the tests and the menu act on when no screen is named: the main display's.
@@ -144,8 +169,12 @@ final class IslandController {
     func present(_ alert: QuotaAlert) { present(.quota(alert)) }
 
     /// An event is shown once, on the screen being looked at. Repeating it on every display would mean
-    /// dismissing the same thing several times, and a screen nobody is facing is not where news belongs.
-    func present(_ alert: IslandAlert) { underPointer?.present(alert) }
+    /// dismissing the same thing several times, and a screen nobody is facing is not where news belongs. A request
+    /// one screen already holds stays there.
+    func present(_ alert: IslandAlert) {
+        guard !alert.isPersistent || !huds.values.contains(where: { $0.holds(alert.id) }) else { return }
+        underPointer?.present(alert)
+    }
 
     /// A withdrawn request is taken off whichever screen ended up showing it.
     func withdraw(requestID: String) { huds.values.forEach { $0.withdraw(requestID: requestID) } }

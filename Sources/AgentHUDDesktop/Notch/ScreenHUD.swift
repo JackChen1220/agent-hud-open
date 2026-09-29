@@ -43,6 +43,8 @@ final class ScreenHUD {
 
     var onOpenStats: (() -> Void)?
     var onOpenSettings: (() -> Void)?
+    /// Asks for a request another screen holds: the waiting list names every request, wherever it arrived.
+    var onClaimRequest: ((String) -> Void)?
 
     init(key: String, screen: NSScreen?, store: UsageStore, settings: SettingsStore) {
         self.key = key
@@ -176,10 +178,24 @@ final class ScreenHUD {
         }
     }
 
-    /// Brings a stacked request to the front, so the buttons act on the card the user is looking at.
-    private func selectRequest(_ id: String) {
+    /// Brings a stacked request to the front, so the buttons act on the card the user is looking at. One that arrived
+    /// on another screen moves to this one first.
+    func selectRequest(_ id: String) {
+        if !alerts.contains(id: id) { onClaimRequest?(id) }
         guard alerts.promote(id: id) else { return }
         apply(animated: true)
+    }
+
+    /// The requests this screen holds, which outlive it when its display goes away.
+    var questions: [IslandAlert] { alerts.questions }
+
+    func holds(_ id: String) -> Bool { alerts.contains(id: id) }
+
+    /// Hands a request over to another screen: it leaves this one as a withdrawn one does, still unanswered.
+    func take(requestID: String) -> IslandAlert? {
+        guard let alert = alerts.questions.first(where: { $0.id == requestID }) else { return nil }
+        withdraw(requestID: requestID)
+        return alert
     }
 
     /// Hands the user's answer to the client that is waiting for it, and takes the card off the island.

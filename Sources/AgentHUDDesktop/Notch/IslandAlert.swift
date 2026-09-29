@@ -120,6 +120,16 @@ final class IslandAlertQueue {
         return (true, nil)
     }
 
+    /// Whether the alert is on screen or waiting here.
+    func contains(id: String) -> Bool {
+        current?.alert.id == id || pending.contains { $0.id == id }
+    }
+
+    /// The requests held here, the one on screen first: questions stay until their clients have an answer.
+    var questions: [IslandAlert] {
+        ((current.map { [$0.alert] } ?? []) + pending).filter(\.isPersistent)
+    }
+
     /// Brings a waiting alert to the front and puts the one on screen back in its place. Which request is being
     /// answered has to be the user's choice, so the card they picked becomes the card the island is showing.
     @discardableResult
