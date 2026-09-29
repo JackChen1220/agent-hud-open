@@ -257,9 +257,13 @@ enum OpenAgentParser {
         return session
     }
 
+    /// Replies read from OpenCode's database per statement.
+    static let openCodePage = 5000
+
     /// Replies are in `message`, and in `session_message` for sessions of OpenCode's newer kind, whose table also holds
     /// agent and model switches before it holds any reply. The two name one reply by different ids, so a session is read
-    /// from `session_message` once that table has its replies, and from `message` until then.
+    /// from `session_message` once that table has its replies, and from `message` until then. A reply's record can hold
+    /// far more than what it is counted by, so SQLite hands over only those fields, a page of replies at a time.
     static func openCodeSQLite(_ url: URL, since: Date = .distantPast) throws -> [OpenAgentSession] {
         let db = try ReadOnlySQLite(url)
         var tables = Set<String>()
@@ -271,16 +275,25 @@ enum OpenAgentParser {
         guard newer || tables.contains("message") else { throw ProviderFailure.format }
         var sessions: [OpenAgentSession] = []
         // Prefer SQLite records. Stable message IDs deduplicate JSON records.
+        let fields = ["role", "time", "tokens", "modelID", "providerID", "model", "path"]
+            .map { "'\($0)', json_extract(m.data, '$.\($0)')" }.joined(separator: ", ")
         func read(_ messages: String, titles table: String?, where filter: String) throws {
             let metadata = table == nil ? "NULL, NULL" : "s.title, s.directory"
             let join = table.map { "LEFT JOIN \($0) s ON s.id = m.session_id" } ?? ""
-            try db.rows("SELECT m.id, m.session_id, m.data, \(metadata) FROM \(messages) m \(join) WHERE \(filter) AND json_extract(m.data, '$.time.created') >= CAST(? AS REAL) ORDER BY m.id DESC", strings: [String(since.timeIntervalSince1970 * 1000)]) { row in
-                guard let id = ReadOnlySQLite.text(row, 0), let sid = ReadOnlySQLite.text(row, 1), let raw = ReadOnlySQLite.text(row, 2) else { throw ProviderFailure.format }
-                if let item = try openCodeMessage(ProviderJSON.read(Data(raw.utf8)), id: id, sessionID: sid, path: url.path,
-                    title: ReadOnlySQLite.text(row, 3), workspace: ReadOnlySQLite.text(row, 4), assistant: messages == "session_message") {
-                    sessions.append(item)
+            var last: String?, count = 0
+            repeat {
+                count = 0
+                try db.rows("SELECT m.id, m.session_id, json_object(\(fields)), \(metadata) FROM \(messages) m \(join) WHERE \(filter) AND json_extract(m.data, '$.time.created') >= CAST(? AS REAL)\(last == nil ? "" : " AND m.id < ?") ORDER BY m.id DESC LIMIT \(openCodePage)",
+                            strings: [String(since.timeIntervalSince1970 * 1000)] + (last.map { [$0] } ?? [])) { row in
+                    guard let id = ReadOnlySQLite.text(row, 0), let sid = ReadOnlySQLite.text(row, 1), let raw = ReadOnlySQLite.text(row, 2) else { throw ProviderFailure.format }
+                    count += 1
+                    last = id
+                    if let item = try openCodeMessage(ProviderJSON.read(Data(raw.utf8)), id: id, sessionID: sid, path: url.path,
+                        title: ReadOnlySQLite.text(row, 3), workspace: ReadOnlySQLite.text(row, 4), assistant: messages == "session_message") {
+                        sessions.append(item)
+                    }
                 }
-            }
+            } while count == openCodePage
         }
         if newer {
             try read("session_message", titles: ["session_v2", "session"].first(where: tables.contains), where: "m.type = 'assistant'")

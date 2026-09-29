@@ -2,7 +2,8 @@ import Foundation
 
 /// Files parsed whole into sessions, for clients that keep databases or rewrite their logs. A poll lists every listing,
 /// parses newest first each file whose modification time or size changed, or a related file's, while its time budget
-/// lasts, and keeps each parse until the file changes or leaves the reading window. The client merges the parses into
+/// lasts, and keeps each parse until the file changes or leaves the reading window. A file whose parse failed keeps its
+/// last parse and is parsed again only once its pause is over (`FailedReads`). The client merges the parses into
 /// sessions, which reach the ledger through `SessionLedger`.
 struct WholeFileStore<Parsed: Sendable> {
     struct Listing {
@@ -37,6 +38,7 @@ struct WholeFileStore<Parsed: Sendable> {
 
     private let listings: [Listing]
     private var cache: [String: (signature: String, parsed: Parsed)] = [:]
+    private var failures = FailedReads()
     private var revision = 0
 
     init(listings: [Listing]) {
@@ -76,15 +78,24 @@ struct WholeFileStore<Parsed: Sendable> {
         var pending = 0, loaded = 0
         for candidate in candidates {
             if cache[candidate.path]?.signature == candidate.signature { continue }
+            let listing = listings[candidate.listing]
+            if failures.isPausing(candidate.path, at: started) {
+                pass.notices[listing.name] = ProviderFailure.local.message
+                continue
+            }
             if loaded > 0 && Date().timeIntervalSince(started) >= Self.timeBudget { pending += 1; continue }
             loaded += 1
-            let listing = listings[candidate.listing]
             do {
                 try Task.checkCancellation()
                 cache[candidate.path] = (candidate.signature, try listing.parse(URL(fileURLWithPath: candidate.path), since))
+                failures.succeeded(candidate.path)
                 revision += 1
-            } catch { pass.notices[listing.name] = ProviderFailure.local.message }
+            } catch {
+                if !Task.isCancelled { failures.failed(candidate.path, at: Date()) }
+                pass.notices[listing.name] = ProviderFailure.local.message
+            }
         }
+        failures.keep(seen)
         if cache.keys.contains(where: { !seen.contains($0) }) {
             cache = cache.filter { seen.contains($0.key) }
             revision += 1

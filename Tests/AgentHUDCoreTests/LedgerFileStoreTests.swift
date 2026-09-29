@@ -96,6 +96,21 @@ final class LedgerFileStoreTests: XCTestCase, @unchecked Sendable {
         XCTAssertFalse(names.contains("a.log"), "a file that is gone leaves")
     }
 
+    func testAFileWhoseParseFailedWaitsBeforeItIsParsedAgain() throws {
+        let root = try directory(), file = root.appendingPathComponent("s.db")
+        try "a".write(to: file, atomically: true, encoding: .utf8)
+        final class Calls { var count = 0 }
+        let calls = Calls()
+        var store = WholeFileStore<Int>(listings: [.init(name: "fixture", files: LogFiles(roots: [root], watchesChanges: false) { _ in true },
+                                                         parse: { _, _ in calls.count += 1; throw ProviderFailure.limit })])
+        XCTAssertNotNil(store.index(since: .distantPast).notices["fixture"])
+        try "ab".write(to: file, atomically: true, encoding: .utf8)
+        let pass = store.index(since: .distantPast)
+        XCTAssertEqual(calls.count, 1, "a file that failed waits out its pause, changed or not")
+        XCTAssertNotNil(pass.notices["fixture"], "and says so meanwhile")
+        XCTAssertNil(pass.indexing, "without counting as still to read")
+    }
+
     func testRolledBackPassIsReadAndWrittenAgain() async throws {
         let root = try directory(), ledger = UsageLedger.inMemory()
         try "a 10\n".write(to: root.appendingPathComponent("s.log"), atomically: true, encoding: .utf8)

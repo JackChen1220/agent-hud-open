@@ -270,6 +270,27 @@ final class OpenAgentProviderTests: XCTestCase {
         XCTAssertNil(sqlite.events[0].attribution?.pool)
     }
 
+    func testOpenCodeReadsMoreRepliesThanOneStatementMayReturn() throws {
+        let url = try temp().appendingPathComponent("opencode.db")
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(url.path, &db), SQLITE_OK)
+        defer { sqlite3_close(db) }
+        func sql(_ text: String) { XCTAssertEqual(sqlite3_exec(db, text, nil, nil, nil), SQLITE_OK) }
+        sql("CREATE TABLE session(id TEXT PRIMARY KEY, title TEXT, directory TEXT)")
+        sql("CREATE TABLE message(id TEXT PRIMARY KEY, session_id TEXT, data TEXT)")
+        sql("INSERT INTO session VALUES ('s', 'Long run', '/workspace')")
+        // A reply's record can carry the whole system prompt, which is never read.
+        let prompt = String(repeating: "x", count: 200)
+        sql("BEGIN")
+        for index in 0..<10_500 {
+            sql(#"INSERT INTO message VALUES ('\#(String(format: "msg_%06d", index))', 's', '{"role":"assistant","system":["\#(prompt)"],"modelID":"model","providerID":"p","time":{"created":\#(1_788_800_000_000 + index)},"tokens":{"input":1,"output":1}}')"#)
+        }
+        sql("COMMIT")
+        let sessions = try OpenAgentParser.openCodeSQLite(url)
+        XCTAssertEqual(Set(sessions.flatMap(\.events).compactMap(\.eventID)).count, 10_500, "every reply once, across pages")
+        XCTAssertEqual(try OpenAgentParser.openCodeSQLite(url, since: Date(timeIntervalSince1970: 1_788_800_010_000.0 / 1000)).count, 500)
+    }
+
     func testTitlesComeFromWhatEachClientKeeps() throws {
         // OpenCode keeps its placeholder name when the title call fails.
         let reply = #"{"role":"assistant","modelID":"m","providerID":"p","time":{"created":1788800000000},"tokens":{"input":1,"output":1},"path":{"root":"/work/app"}}"#
