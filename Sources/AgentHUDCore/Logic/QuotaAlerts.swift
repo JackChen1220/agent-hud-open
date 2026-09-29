@@ -48,6 +48,9 @@ public struct QuotaAlertTracker: Sendable {
         let atRisk: Bool
         let critical: Bool
         let exhausted: Bool
+        /// The reset of the cycle a forecast already warned in. The estimate moves with every reading, so it warns once
+        /// per cycle, not whenever it dips below the reset and back.
+        var forecastWarnedUntil: Date? = nil
     }
     private var previous: [String: Observation] = [:]
 
@@ -78,7 +81,9 @@ public struct QuotaAlertTracker: Sendable {
             let critical = snapshot.remainingPct <= criticalThreshold
             let exhausted = snapshot.remainingPct <= 0
             let atRisk = exhausted || critical || predictsCap
-            previous[agent.id] = Observation(snapshot: snapshot, atRisk: atRisk, critical: critical, exhausted: exhausted)
+            let warnedUntil = old?.forecastWarnedUntil.flatMap { $0 > snapshot.updatedAt ? $0 : nil }
+            previous[agent.id] = Observation(snapshot: snapshot, atRisk: atRisk, critical: critical, exhausted: exhausted,
+                                             forecastWarnedUntil: warnedUntil)
             guard let old else { continue } // First observation establishes a baseline without notifying.
 
             if critical && !old.critical { result.criticalAgentIDs.insert(agent.id) }
@@ -97,9 +102,10 @@ public struct QuotaAlertTracker: Sendable {
             } else if exhausted && !old.exhausted {
                 // Running out is its own event even after the earlier at-risk warning.
                 result.alerts.append(QuotaAlert(kind: .exhaustion, agent: agent, snapshot: snapshot))
-            } else if atRisk && !old.atRisk {
+            } else if atRisk && !old.atRisk && (critical || warnedUntil == nil) {
                 result.alerts.append(QuotaAlert(kind: .exhaustion, agent: agent, snapshot: snapshot,
                                                timeToExhaust: predictsCap ? forecast : nil))
+                if !critical { previous[agent.id]?.forecastWarnedUntil = snapshot.resetAt }
             }
         }
         return result

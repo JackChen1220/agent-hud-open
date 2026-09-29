@@ -16,6 +16,20 @@ final class QuotaAlertTests: XCTestCase {
         XCTAssertTrue(feed(&tracker, remaining: 40, elapsed: 240, exhaustIn: 2200).alerts.isEmpty)
     }
 
+    func testAForecastWarnsOncePerCycle() {
+        var tracker = QuotaAlertTracker()
+        _ = feed(&tracker, remaining: 50, elapsed: 0, exhaustIn: 30_000)
+        XCTAssertEqual(feed(&tracker, remaining: 45, elapsed: 120, exhaustIn: 2400).alerts.map(\.kind), [.exhaustion])
+        XCTAssertTrue(feed(&tracker, remaining: 44, elapsed: 240, exhaustIn: 30_000).alerts.isEmpty)
+        XCTAssertTrue(feed(&tracker, remaining: 40, elapsed: 360, exhaustIn: 2000).alerts.isEmpty, "the estimate dipping back warns no more")
+        XCTAssertTrue(feed(&tracker, remaining: 39, elapsed: 480, exhaustIn: 30_000).alerts.isEmpty)
+        XCTAssertEqual(feed(&tracker, remaining: 9, elapsed: 600, exhaustIn: 30_000).alerts.map(\.kind), [.exhaustion],
+                       "crossing the critical level is its own event")
+        _ = feed(&tracker, remaining: 100, elapsed: 18_100, exhaustIn: 30_000, deadline: 36_000)
+        XCTAssertEqual(feed(&tracker, remaining: 95, elapsed: 18_220, exhaustIn: 2400, deadline: 36_000).alerts.map(\.kind), [.exhaustion],
+                       "the next cycle can warn again")
+    }
+
     func testCriticalFallbackSharesBaselineWithSystemNotification() {
         var tracker = QuotaAlertTracker()
         _ = feed(&tracker, remaining: 20, elapsed: 0)
