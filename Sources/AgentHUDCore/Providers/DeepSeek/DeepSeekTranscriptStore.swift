@@ -68,8 +68,10 @@ enum HarnessLogs: TailLog {
 
     static func summary(for url: URL) -> DeepSeekTranscript { DeepSeekTranscript() }
 
-    /// Compressed streams replay on change; the summary resumes at its decoded byte offset.
-    static func contents(of url: URL) async throws -> Data? { try await DeepSeekLogReader.read(url) }
+    /// A compressed log is decoded from the last frame read before; a plain one is read from its offset.
+    static func contents(of url: URL, from start: DecodedPosition) async throws -> DecodedLog? {
+        try await DeepSeekLogReader.read(url, from: start)
+    }
 
     static func ingest(_ lines: Data, into transcript: inout DeepSeekTranscript) throws -> [UsageLedger.Event] {
         for line in lines.split(separator: 0x0A) { try transcript.ingest(line) }

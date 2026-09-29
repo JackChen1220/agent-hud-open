@@ -14,8 +14,9 @@ protocol TailLog {
     /// The name that copies of one log share in several places, of which only the most recently modified is read and
     /// the others are treated as missing from the listing; nil for a log that is never copied whole.
     static func copyName(_ path: String) -> String?
-    /// The decoded log, for a format that cannot be read from an offset; nil reads the file from where the last read stopped.
-    static func contents(of url: URL) async throws -> Data?
+    /// The decoded log from `start`, for a format that cannot be read from an offset, with the places a later read can
+    /// start from; nil reads the file itself from where the last read stopped.
+    static func contents(of url: URL, from start: DecodedPosition) async throws -> DecodedLog?
     /// Reads one or more complete lines, each ending in a newline, and returns the usage they added.
     static func ingest(_ lines: Data, into summary: inout Summary) throws -> [UsageLedger.Event]
     /// The prompts and compactions read since the last call.
@@ -29,10 +30,24 @@ protocol TailLog {
 
 extension TailLog {
     static func copyName(_ path: String) -> String? { nil }
-    static func contents(of url: URL) async throws -> Data? { nil }
+    static func contents(of url: URL, from start: DecodedPosition) async throws -> DecodedLog? { nil }
     static func drainMarks(_ summary: inout Summary) -> [UsageLedger.Mark] { [] }
     static func finishRead(_ summary: inout Summary, now: Date) {}
     static func group(_ summary: Summary) -> String? { nil }
+}
+
+/// A place a log that has to be decoded can be read from: the byte of the file and the byte of the decoded text it
+/// starts at, such as the start of a compressed frame.
+struct DecodedPosition: Codable, Hashable, Sendable {
+    var stored = 0
+    var decoded = 0
+}
+
+/// Part of a decoded log: its text from `start` on, and the places inside it a later read can start from, in order.
+struct DecodedLog: Sendable {
+    let start: DecodedPosition
+    let data: Data
+    let restarts: [DecodedPosition]
 }
 
 /// Reads append-only logs into the usage ledger, one contribution per log. A poll lists the logs, reads what changed
@@ -51,6 +66,8 @@ final class TailLogStore<Log: TailLog> {
         /// Just past the last complete line the last read saw; beyond `offset` while complete lines wait.
         var committed = 0
         var summary: Log.Summary
+        /// Where decoding can start again without losing the line at `offset`, for a log that has to be decoded.
+        var restart: DecodedPosition?
     }
 
     /// One poll's work.
@@ -209,30 +226,37 @@ final class TailLogStore<Log: TailLog> {
                       isolation: isolated (any Actor)? = #isolation) async throws
         -> (entry: Entry, events: [UsageLedger.Event], marks: [UsageLedger.Mark], reset: Bool) {
         let url = URL(fileURLWithPath: path), previous = entry(path)
-        let contents = try await Log.contents(of: url)
         var entry = Entry(modified: file.modified, size: file.size, summary: Log.summary(for: url))
-        var events: [UsageLedger.Event] = [], marks: [UsageLedger.Mark] = [], reset = outdated.contains(path)
-        if let previous {
-            if file.size < previous.size || (file.size == previous.size && !LedgerCopies.same(previous.modified, file.modified))
-                || (contents?.count ?? file.size) < previous.offset {
-                reset = true
-            } else {
-                entry.offset = previous.offset
-                entry.summary = previous.summary
-            }
+        var events: [UsageLedger.Event] = [], marks: [UsageLedger.Mark] = []
+        var reset = outdated.contains(path) || previous.map { file.size < $0.size
+            || (file.size == $0.size && !LedgerCopies.same($0.modified, file.modified)) } == true
+        // A log that has to be decoded is decoded from the last place before the first line not read yet.
+        var contents = try await Log.contents(of: url, from: reset ? DecodedPosition() : previous?.restart ?? DecodedPosition())
+        if let previous, !reset, (contents.map { $0.start.decoded + $0.data.count } ?? file.size) < previous.offset {
+            // What was read before is no longer there: the log was rewritten.
+            reset = true
+            if contents != nil { contents = try await Log.contents(of: url, from: DecodedPosition()) }
+        }
+        if let previous, !reset {
+            entry.offset = previous.offset
+            entry.summary = previous.summary
+            entry.restart = previous.restart
         }
         pass.filesRead += 1
         if let contents {
-            pass.bytesRead += contents.count - entry.offset
-            entry.committed = contents.lastIndex(of: 0x0A).map { $0 + 1 } ?? 0
+            // Offsets in the decoded text; the data holds it from its start's decoded byte.
+            let base = contents.start.decoded, data = contents.data
+            pass.bytesRead += base + data.count - entry.offset
+            entry.committed = max(entry.offset, base + (data.lastIndex(of: 0x0A).map { $0 - data.startIndex + 1 } ?? 0))
             repeat {
                 guard entry.offset < entry.committed else { break }
                 let limit = min(entry.committed, entry.offset + Self.chunkSize)
-                let end = contents[(limit - 1)..<entry.committed].firstIndex(of: 0x0A)! + 1
-                events += try Log.ingest(contents[entry.offset..<end], into: &entry.summary)
+                let end = data[(data.startIndex + limit - base - 1)..<(data.startIndex + entry.committed - base)].firstIndex(of: 0x0A)! + 1
+                events += try Log.ingest(data[(data.startIndex + entry.offset - base)..<end], into: &entry.summary)
                 marks += Log.drainMarks(&entry.summary)
-                entry.offset = end
+                entry.offset = base + end - data.startIndex
             } while Date() < deadline
+            entry.restart = contents.restarts.last { $0.decoded <= entry.offset } ?? contents.start
         } else {
             let handle = try FileHandle(forReadingFrom: url)
             defer { try? handle.close() }
@@ -278,7 +302,8 @@ final class TailLogStore<Log: TailLog> {
     }
 
     private static func state(_ entry: Entry) -> UsageLedger.FileState {
-        let data = try? JSONEncoder().encode(StoredState(offset: entry.offset, committed: entry.committed, summary: entry.summary))
+        let data = try? JSONEncoder().encode(StoredState(offset: entry.offset, committed: entry.committed, summary: entry.summary,
+                                                         restart: entry.restart))
         return UsageLedger.FileState(signature: LedgerCopies.signature(modified: entry.modified, size: entry.size), state: data,
                                      group: Log.group(entry.summary))
     }
@@ -286,15 +311,17 @@ final class TailLogStore<Log: TailLog> {
     private static func entry(_ file: UsageLedger.FileState) -> Entry? {
         guard let parts = LedgerCopies.signature(file.signature), let data = file.state,
               let state = try? JSONDecoder().decode(StoredState.self, from: data) else { return nil }
-        return Entry(modified: parts.modified, size: parts.size, offset: state.offset, committed: state.committed ?? parts.size, summary: state.summary)
+        return Entry(modified: parts.modified, size: parts.size, offset: state.offset, committed: state.committed ?? parts.size, summary: state.summary,
+                     restart: state.restart)
     }
 
-    /// `{"version", "offset", "committedSize", <summaryKey>}`. A state without `committedSize` has complete lines waiting
-    /// unless its log was read to the end.
+    /// `{"version", "offset", "committedSize", <summaryKey>, "restart"}`. A state without `committedSize` has complete lines
+    /// waiting unless its log was read to the end; one without `restart` decodes its log from the start.
     private struct StoredState: Codable {
         let offset: Int
         let committed: Int?
         let summary: Log.Summary
+        let restart: DecodedPosition?
 
         private struct Key: CodingKey {
             let stringValue: String
@@ -304,8 +331,8 @@ final class TailLogStore<Log: TailLog> {
             init?(intValue: Int) { nil }
         }
 
-        init(offset: Int, committed: Int?, summary: Log.Summary) {
-            self.offset = offset; self.committed = committed; self.summary = summary
+        init(offset: Int, committed: Int?, summary: Log.Summary, restart: DecodedPosition?) {
+            self.offset = offset; self.committed = committed; self.summary = summary; self.restart = restart
         }
 
         init(from decoder: any Decoder) throws {
@@ -316,6 +343,7 @@ final class TailLogStore<Log: TailLog> {
             offset = try container.decode(Int.self, forKey: Key("offset"))
             committed = try container.decodeIfPresent(Int.self, forKey: Key("committedSize"))
             summary = try container.decode(Log.Summary.self, forKey: Key(Log.summaryKey))
+            restart = try container.decodeIfPresent(DecodedPosition.self, forKey: Key("restart"))
         }
 
         func encode(to encoder: any Encoder) throws {
@@ -324,6 +352,7 @@ final class TailLogStore<Log: TailLog> {
             try container.encode(offset, forKey: Key("offset"))
             try container.encodeIfPresent(committed, forKey: Key("committedSize"))
             try container.encode(summary, forKey: Key(Log.summaryKey))
+            try container.encodeIfPresent(restart, forKey: Key("restart"))
         }
     }
 }

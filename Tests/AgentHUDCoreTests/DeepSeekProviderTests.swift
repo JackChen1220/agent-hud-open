@@ -354,6 +354,35 @@ final class DeepSeekProviderTests: XCTestCase {
         XCTAssertFalse(complete.sessions[0].transcript.isLive(processStarts: nil))
     }
 
+    func testAGrownCompressedLogIsDecodedFromItsLastCompleteFrame() async throws {
+        guard DeepSeekLocator.nodeExecutable() != nil else { throw XCTSkip("Harness requires Node.js with Zstandard support") }
+        let dir = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("session.jsonl.zstd")
+        func frames(_ lines: [String]) async throws -> Data {
+            try await DeepSeekNode.run(script: """
+            const z = require('node:zlib');
+            for (const line of process.argv.slice(1)) process.stdout.write(z.zstdCompressSync(Buffer.from(line + '\\n')));
+            """, arguments: lines)
+        }
+        var log = try await frames(["one", "two"])
+        try log.write(to: file)
+        let read = try await DeepSeekLogReader.read(file, from: DecodedPosition()), first = try XCTUnwrap(read)
+        XCTAssertEqual(String(decoding: first.data, as: UTF8.self), "one\ntwo\n")
+        XCTAssertEqual(first.restarts.map(\.decoded), [4, 8])
+        XCTAssertEqual(first.restarts.last?.stored, log.count)
+
+        let third = try await frames(["three"])
+        log += third
+        try (log + third.prefix(third.count - 4)).write(to: file)
+        let resumed = try await DeepSeekLogReader.read(file, from: try XCTUnwrap(first.restarts.last)), grown = try XCTUnwrap(resumed)
+        XCTAssertTrue(String(decoding: grown.data, as: UTF8.self).hasPrefix("three\n"), "only what was appended is decoded")
+        XCTAssertEqual(grown.start.decoded, 8)
+        XCTAssertEqual(grown.restarts, [DecodedPosition(stored: log.count, decoded: 14)], "a frame still being written is no place to start")
+        let plain = try await DeepSeekLogReader.read(dir.appendingPathComponent("session.jsonl"), from: DecodedPosition())
+        XCTAssertNil(plain, "a plain log is read from its offset")
+    }
+
     func testLargeCompressedLogDrainsPipeAndSkipsPackedConversationContent() async throws {
         guard DeepSeekLocator.nodeExecutable() != nil else { throw XCTSkip("Harness requires Node.js") }
         let dir = try temporaryDirectory()
