@@ -26,8 +26,10 @@ enum CopilotHookFormat: CompletionHookFormat {
               object["hooks"] == nil || object["hooks"]?.objectValue != nil else { throw ProviderFailure.format }
         var hooks = object["hooks"]?.objectValue ?? [:]
         guard hooks["agentStop"] == nil || hooks["agentStop"]?.arrayValue != nil else { throw ProviderFailure.format }
-        var handlers = (hooks["agentStop"]?.arrayValue ?? []).filter { !owns($0) || keeping.contains($0["bash"].stringValue ?? "") }
-        if let command { handlers.append(.object(["type": .string("command"), "bash": .string(command), "timeoutSec": .integer(5)])) }
+        var placed = false
+        var handlers = ClaudeStyleHooks.setting(command, in: hooks["agentStop"]?.arrayValue ?? [], key: "bash", keeping: keeping,
+                                                owns: { CompletionHooks.ownsCommand($0, source: .copilot) }, placed: &placed)
+        if let command, !placed { handlers.append(.object(["type": .string("command"), "bash": .string(command), "timeoutSec": .integer(5)])) }
         hooks["agentStop"] = handlers.isEmpty ? nil : .array(handlers)
         object["hooks"] = .object(hooks); object["version"] = .integer(1)
         return object

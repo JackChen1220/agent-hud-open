@@ -150,15 +150,28 @@ enum AntigravityHookFormat: CompletionHookFormat {
         !commands(in: configuration).isEmpty && configuration["agent-hud"]?["enabled"].boolValue != false
     }
 
-    /// The entry holds one installation's handler: adding replaces it, and removing leaves one another installation
-    /// still answers as it is.
+    /// The entry holds one installation's handler: adding sets its command, keeping `enabled` and whatever else the
+    /// user changed in the entry and its handler, and removing leaves one another installation still answers as it is.
     static func updating(_ configuration: [String: ProviderJSON], command: String?,
                          keeping: Set<String>) throws -> [String: ProviderJSON] {
         if command == nil, commands(in: configuration).contains(where: keeping.contains) { return configuration }
         var object = configuration
-        object["agent-hud"] = command.map { .object(["Stop": .array([.object([
-            "type": .string("command"), "command": .string($0), "timeout": .integer(5)
-        ])])]) }
+        guard let command else {
+            object["agent-hud"] = nil
+            return object
+        }
+        guard object["agent-hud"] == nil || object["agent-hud"]?.objectValue != nil else { throw ProviderFailure.format }
+        var entry = object["agent-hud"]?.objectValue ?? [:]
+        guard entry["Stop"] == nil || entry["Stop"]?.arrayValue != nil else { throw ProviderFailure.format }
+        var handlers = entry["Stop"]?.arrayValue ?? []
+        if let index = handlers.firstIndex(where: { $0.objectValue != nil }), var handler = handlers[index].objectValue {
+            handler["command"] = .string(command)
+            handlers[index] = .object(handler)
+        } else {
+            handlers = [.object(["type": .string("command"), "command": .string(command), "timeout": .integer(5)])]
+        }
+        entry["Stop"] = .array(handlers)
+        object["agent-hud"] = .object(entry)
         return object
     }
 }
@@ -187,8 +200,10 @@ enum CursorHookFormat: CompletionHookFormat {
               object["hooks"] == nil || object["hooks"]?.objectValue != nil else { throw ProviderFailure.format }
         var hooks = object["hooks"]?.objectValue ?? [:]
         guard hooks["stop"] == nil || hooks["stop"]?.arrayValue != nil else { throw ProviderFailure.format }
-        var handlers = (hooks["stop"]?.arrayValue ?? []).filter { !owns($0) || keeping.contains($0["command"].stringValue ?? "") }
-        if let command { handlers.append(.object(["command": .string(command), "timeout": .integer(5)])) }
+        var placed = false
+        var handlers = ClaudeStyleHooks.setting(command, in: hooks["stop"]?.arrayValue ?? [], keeping: keeping,
+                                                owns: { CompletionHooks.ownsCommand($0, source: .cursor) }, placed: &placed)
+        if let command, !placed { handlers.append(.object(["command": .string(command), "timeout": .integer(5)])) }
         hooks["stop"] = handlers.isEmpty ? nil : .array(handlers)
         object["hooks"] = .object(hooks); object["version"] = .integer(1)
         return object

@@ -157,6 +157,30 @@ final class CompletionHooksTests: XCTestCase, @unchecked Sendable {
         }
     }
 
+    func testAntigravityKeepsTheEntryAsTheUserLeftItAndOnlyMovesTheCommand() throws {
+        let home = try directory(), file = CompletionHooks.Source.antigravity.configuration(home: home)
+        let first = try app("Agent HUD", in: home.appendingPathComponent("Applications"))
+        try CompletionHooks.configure(.antigravity, enabled: true, executable: first, home: home)
+        // Switched off in agy's own hooks file, with a longer wait.
+        var object = try XCTUnwrap(ProviderFiles.json(file).objectValue)
+        var entry = try XCTUnwrap(object["agent-hud"]?.objectValue)
+        entry["enabled"] = .bool(false)
+        entry["Stop"] = .array([.object(["type": .string("command"), "command": .string(HookCommand.make(executable: first,
+            arguments: "--completion-hook antigravity")), "timeout": .integer(30)])])
+        object["agent-hud"] = .object(entry)
+        try JSONEncoder().encode(ProviderJSON.object(object)).write(to: file)
+
+        try FileManager.default.removeItem(at: home.appendingPathComponent("Applications"))
+        let moved = try app("Agent HUD", in: home.appendingPathComponent("Moved"))
+        try CompletionHooks.configure(.antigravity, enabled: true, executable: moved, home: home)
+        let kept = try ProviderFiles.json(file)["agent-hud"]
+        XCTAssertEqual(kept["enabled"].boolValue, false, "a hook the user switched off stays off")
+        XCTAssertFalse(CompletionHooks.isInstalled(.antigravity, home: home))
+        XCTAssertEqual(kept["Stop"].arrayValue?.first?["command"].stringValue,
+                       HookCommand.make(executable: moved, arguments: "--completion-hook antigravity"))
+        XCTAssertEqual(kept["Stop"].arrayValue?.first?["timeout"].numberValue, 30)
+    }
+
     func testInstallationPreservesOtherHooksAndCanBeRemoved() throws {
         let home = try directory(), executable = home.appendingPathComponent("Agent's HUD.app/Contents/MacOS/Agent HUD")
         for source in CompletionHooks.Source.allCases {

@@ -129,28 +129,19 @@ public enum AttentionHooks {
         try HookSettings.write(updated, to: source.configuration(home: home))
     }
 
-    /// The configuration with Agent HUD's handlers taken out, except those whose commands are in `keeping`, and
-    /// `command` added when it is given.
+    /// The configuration with Agent HUD's handlers taken out, except those whose commands are in `keeping`, or with
+    /// `command` when it is given: in the handler already there, or in a group of its own.
     static func updating(_ configuration: [String: ProviderJSON], source: Source, command: String?,
                          keeping: Set<String> = []) throws -> [String: ProviderJSON] {
         var object = configuration
         guard object["hooks"] == nil || object["hooks"]?.objectValue != nil else { throw ProviderFailure.format }
         var hooks = object["hooks"]?.objectValue ?? [:]
         guard hooks[source.event] == nil || hooks[source.event]?.arrayValue != nil else { throw ProviderFailure.format }
-        var groups = (hooks[source.event]?.arrayValue ?? []).compactMap { group -> ProviderJSON? in
-            guard var fields = group.objectValue, let handlers = fields["hooks"]?.arrayValue else { return group }
-            let kept = handlers.filter {
-                let handler = $0["command"].stringValue
-                return !ownsCommand(handler, source: source) || keeping.contains(handler ?? "")
-            }
-            if kept.count == handlers.count { return group }
-            if kept.isEmpty { return nil }
-            fields["hooks"] = .array(kept)
-            return .object(fields)
-        }
-        if let command {
-            groups.append(.object(["matcher": .string(source.matcher),
-                                   "hooks": .array([.object(["type": .string("command"), "command": .string(command), "timeout": .integer(5)])])]))
+        // A handler already there takes the new command and keeps the matcher, timeout and anything else the user set.
+        let groups = ClaudeStyleHooks.setting(command, in: hooks[source.event]?.arrayValue ?? [], keeping: keeping,
+                                              owns: { ownsCommand($0, source: source) }) { command in
+            .object(["matcher": .string(source.matcher),
+                     "hooks": .array([.object(["type": .string("command"), "command": .string(command), "timeout": .integer(5)])])])
         }
         hooks[source.event] = groups.isEmpty ? nil : .array(groups)
         object["hooks"] = hooks.isEmpty && configuration["hooks"] == nil ? nil : .object(hooks)

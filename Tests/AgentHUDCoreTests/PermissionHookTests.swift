@@ -62,6 +62,33 @@ final class PermissionHookTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual((removed["hooks"]?["PermissionRequest"].arrayValue ?? []).count, 1, "the other handler stays")
     }
 
+    func testAHandlerTheUserChangedKeepsTheirChangesAndOnlyItsCommandMoves() throws {
+        let home = try directory(), apps = try directory()
+        let settings = home.appendingPathComponent(".claude/settings.json")
+        try FileManager.default.createDirectory(at: settings.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let current = try app("Agent HUD", in: apps.appendingPathComponent("Applications"))
+        // The user narrowed the handler to shell commands and gave it a shorter wait; the app has moved since.
+        let moved = apps.appendingPathComponent("Downloads/Agent HUD.app/Contents/MacOS/Agent HUD").path
+        try JSONSerialization.data(withJSONObject: ["hooks": ["PermissionRequest": [
+            ["matcher": "Bash", "hooks": [["type": "command", "command": "'\(moved)' --permission-hook claude", "timeout": 600,
+                                           "statusMessage": "Asking the HUD"]]],
+            ["hooks": [["type": "command", "command": "say hi"]]]]]]).write(to: settings)
+
+        try PermissionHooks.configure(.claude, enabled: true, executable: current, home: home)
+        let groups = try ProviderJSON.read(Data(contentsOf: settings))["hooks"]["PermissionRequest"].arrayValue ?? []
+        XCTAssertEqual(groups.count, 2, "the handler stays where it was")
+        XCTAssertEqual(groups.first?["matcher"].stringValue, "Bash")
+        let handler = groups.first?["hooks"].arrayValue?.first
+        XCTAssertEqual(handler?["command"].stringValue, "'\(current.path)' --permission-hook claude")
+        XCTAssertEqual(handler?["timeout"].numberValue, 600)
+        XCTAssertEqual(handler?["statusMessage"].stringValue, "Asking the HUD")
+
+        let file = try FileManager.default.attributesOfItem(atPath: settings.path)[.systemFileNumber] as? Int
+        try PermissionHooks.configure(.claude, enabled: true, executable: current, home: home)
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: settings.path)[.systemFileNumber] as? Int, file,
+                       "a start that changes nothing writes nothing")
+    }
+
     func testEachForkIsFoundInItsOwnHome() throws {
         let home = try directory()
         for source in PermissionHooks.Source.allCases {

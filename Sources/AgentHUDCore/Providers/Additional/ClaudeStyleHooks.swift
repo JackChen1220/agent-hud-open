@@ -1,7 +1,8 @@
 import Foundation
 
 /// Hook files that follow Claude Code's settings layout: `hooks.<Event>` is a list of matcher groups, each with a
-/// `hooks` list of command handlers. Agent HUD owns one group whose only handler runs its completion command.
+/// `hooks` list of command handlers. Agent HUD adds a group whose only handler runs its command, and afterwards changes
+/// nothing in it but the command.
 enum ClaudeStyleHooks {
     static func commands(in configuration: [String: ProviderJSON], event: String, source: CompletionHooks.Source) -> [String] {
         (configuration["hooks"]?[event].arrayValue ?? []).flatMap { $0["hooks"].arrayValue ?? [] }
@@ -16,22 +17,44 @@ enum ClaudeStyleHooks {
         guard object["hooks"] == nil || object["hooks"]?.objectValue != nil else { throw ProviderFailure.format }
         var hooks = object["hooks"]?.objectValue ?? [:]
         guard hooks[event] == nil || hooks[event]?.arrayValue != nil else { throw ProviderFailure.format }
-        var groups = (hooks[event]?.arrayValue ?? []).compactMap { group -> ProviderJSON? in
-            guard var fields = group.objectValue, let handlers = fields["hooks"]?.arrayValue else { return group }
-            let kept = handlers.filter {
-                let handler = $0["command"].stringValue
-                return !CompletionHooks.ownsCommand(handler, source: source) || keeping.contains(handler ?? "")
-            }
-            if kept.count == handlers.count { return group }
-            if kept.isEmpty { return nil }
-            fields["hooks"] = .array(kept)
-            return .object(fields)
-        }
-        if let command {
-            groups.append(.object(["hooks": .array([.object(["type": .string("command"), "command": .string(command), "timeout": .integer(Int64(timeout))])])]))
+        let groups = setting(command, in: hooks[event]?.arrayValue ?? [], keeping: keeping,
+                             owns: { CompletionHooks.ownsCommand($0, source: source) }) { command in
+            .object(["hooks": .array([.object(["type": .string("command"), "command": .string(command), "timeout": .integer(Int64(timeout))])])])
         }
         hooks[event] = groups.isEmpty ? nil : .array(groups)
         object["hooks"] = hooks.isEmpty && configuration["hooks"] == nil ? nil : .object(hooks)
         return object
+    }
+
+    /// Agent HUD's handlers among `handlers`, set to `command`: the first one `owns` names, unless another installation
+    /// keeps it (`keeping`), takes the command under `key` and keeps everything else in it, such as a timeout the user
+    /// changed; the others Agent HUD owns go. `placed` turns true once a handler has taken the command.
+    static func setting(_ command: String?, in handlers: [ProviderJSON], key: String = "command", keeping: Set<String>,
+                        owns: (String?) -> Bool, placed: inout Bool) -> [ProviderJSON] {
+        handlers.compactMap { handler in
+            let existing = handler[key].stringValue
+            guard owns(existing), !keeping.contains(existing ?? "") else { return handler }
+            guard let command, !placed, var fields = handler.objectValue else { return nil }
+            placed = true
+            fields[key] = .string(command)
+            return .object(fields)
+        }
+    }
+
+    /// The same across matcher groups: the group holding the handler keeps its matcher and every other key, a group
+    /// Agent HUD's handlers leave empty goes, and `group` makes a new one when no handler took the command.
+    static func setting(_ command: String?, in groups: [ProviderJSON], keeping: Set<String>, owns: (String?) -> Bool,
+                        group: (String) -> ProviderJSON) -> [ProviderJSON] {
+        var placed = false
+        var result = groups.compactMap { group -> ProviderJSON? in
+            guard var fields = group.objectValue, let handlers = fields["hooks"]?.arrayValue else { return group }
+            let kept = setting(command, in: handlers, keeping: keeping, owns: owns, placed: &placed)
+            if kept == handlers { return group }
+            if kept.isEmpty { return nil }
+            fields["hooks"] = .array(kept)
+            return .object(fields)
+        }
+        if let command, !placed { result.append(group(command)) }
+        return result
     }
 }
