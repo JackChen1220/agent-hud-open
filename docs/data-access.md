@@ -10,13 +10,14 @@ Agent HUD Open reads agent activity and usage metadata on your Mac. It has no Ag
 | --- | --- | --- |
 | Claude Code | Session records and account profile | Installed Claude engine usage interface |
 | Codex Desktop / CLI | Session records, including `CODEX_HOME` | Installed Codex app-server account rate limits |
-| DeepSeek Harness | Session records and profile-owning Node process metadata, including `DSH_HOME` | Official DeepSeek balance endpoint with the configured Harness API key |
-| Antigravity | Local application process and conversation metadata | Running application's local language server |
+| DeepSeek Harness | Session records and profile-owning Node process metadata, including `DSH_HOME` | Official DeepSeek balance endpoint with the configured Harness API key, which Harness's own credentials package resolves inside a short-lived Node helper |
+| Antigravity | The process list (`ps`) and the listening port of the running language server (`lsof`), whose command line holds its local token; conversation metadata | A local `POST` to that language server on 127.0.0.1 |
 | Cursor | Local application database and session metadata | Official Cursor usage endpoints with the installed client's session token |
 | Grok CLI | Local session records and credential file | Official Grok CLI billing endpoint |
-| OpenCode, Kimi, GLM, Pi | Local JSON/SQLite session records and supported provider configuration; automatically prepared Pi lifecycle observer | Official Kimi, GLM, OpenCode Go, and Pi ChatGPT quota endpoints where configured |
+| OpenCode, Kimi, GLM, Pi | Local JSON/SQLite session records and supported provider configuration, including an `ANTHROPIC_BASE_URL` and its token from the environment or Claude Code's `settings.json` `env` that point at a Kimi or GLM plan; automatically prepared Pi lifecycle observer | Official Kimi, GLM, OpenCode Go, and Pi ChatGPT quota endpoints where configured |
 | GitHub Copilot CLI | Local session events and OpenTelemetry export files | GitHub Copilot quota endpoint with the GitHub CLI sign-in, only after consent in Settings |
 | OpenClaw, Hermes Agent, ZCode, CodeBuddy, WorkBuddy, Qwen Code | Local session databases and transcripts | None |
+| Qoder, Qoder CN, QoderWork | Nothing read; the approval hook is added to each build's settings | None |
 
 Per-client fields, endpoints and stored data: [providers](providers.md). Token counts, percentages, alert levels, request intervals and reading retention: [usage semantics](usage-semantics.md).
 
@@ -33,8 +34,8 @@ Per-client fields, endpoints and stored data: [providers](providers.md). Token c
 
 ## Local storage
 
-- Preferences use the application's UserDefaults domain; the usage ledger, the restart copy of the report and completion records live in `~/Library/Application Support/Agent HUD Open`. Local metadata can include session titles and workspace paths; raw conversation bodies and authentication secrets are never stored.
-- Quota, balance and account-wide usage requests run every 5 minutes between local polls, one provider at a time; a missing or signed-out client does not prevent other sources from reporting.
+- Preferences use the application's UserDefaults domain; the usage ledger, the restart copy of the report and completion records live in `~/Library/Application Support/Agent HUD Open`. Local metadata can include workspace paths and session titles, and a title can be the first line of a prompt, cut to 60 characters; raw conversation bodies and authentication secrets are never stored.
+- Quota, balance and account-wide usage requests run between local polls, one provider at a time and at most once a minute each: more often while that client works, every 5 minutes for a client nobody is using ([cadence](usage-semantics.md#collection-cadence)); a missing or signed-out client does not prevent other sources from reporting.
 - Saved readings appear immediately after a restart with their original observation times; a failed refresh keeps them and reports the failure. Unavailable quotas are never inferred from token counts.
 - Readings of an account a client is no longer signed in to stay until the account has not been seen for 30 days.
 - A completed credential scan retires expired, removed or rejected OpenCode Go, Kimi and GLM quota rows, including cached rows and saved display settings.

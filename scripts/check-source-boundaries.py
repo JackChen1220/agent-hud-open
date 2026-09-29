@@ -44,6 +44,11 @@ for name in sorted(set(filter(None, paths))):
         if re.search(pattern, content):
             failures.append(f"{name}: prohibited source content ({pattern})")
 
+# The notices the application carries are the ones the repository publishes.
+bundled = "Sources/AgentHUDDesktop/Resources/THIRD_PARTY_NOTICES.txt"
+if (ROOT / "THIRD_PARTY_NOTICES.txt").read_bytes() != (ROOT / bundled).read_bytes():
+    failures.append(f"{bundled}: differs from THIRD_PARTY_NOTICES.txt; copy the root file over it")
+
 manifest = (ROOT / "Package.swift").read_text()
 if re.search(r"\.package\s*\(", manifest):
     failures.append("Package.swift: review external package dependencies before including them")

@@ -71,7 +71,7 @@ Reads never run in parallel: the usage store runs one pass of source reads or on
 
 | Work | Cadence |
 | --- | --- |
-| One client's local logs | When a file under its data directories changes, when one of its live sessions reaches 120 s or a running turn 120 s or 5 minutes without an observation, and after its account step; passes start at most every 2 s |
+| One client's local logs | When a file under its data directories changes, when one of its live sessions reaches 120 s or a running turn 120 s, 5 minutes or 30 minutes without an observation, and after its account step; passes start at most every 2 s |
 | Local logs of a source that cannot name its directories | Every 5 s |
 | Every client's local logs while the first index is being built | Every 2 s |
 | Account readings: Claude Code engine `get_usage`, Codex `account/rateLimits/read`, DeepSeek balance, Antigravity, Cursor, Grok and GitHub Copilot quota, Cursor account usage events, and Kimi, GLM and OpenCode Go quota per billing pool | Per client: every minute while one of its turns runs, every 3 minutes while a session of its is live between turns, once more for work that finished since its last reading, and when one of its windows resets. Also when the panel, the menu bar menu or the statistics window opens, and at once when GitHub Copilot quota reading is switched on or off |
@@ -90,7 +90,7 @@ Reads never run in parallel: the usage store runs one pass of source reads or on
 - Kimi, GLM and OpenCode Go rows are retired — readings, cached rows and display settings — once a completed credential scan finds their credentials expired, removed or rejected; a temporary network failure retires nothing.
 - A row no provider has reported for 30 days retires with its reading, whatever stopped it: a client uninstalled, a window the service dropped, a vendor no longer read. Until a provider reports a row it is not shown anywhere, and its stored display switch and position wait for it.
 - Quota histories keep 30 days.
-- A running session leaves the running indicator 120 s after its last source observation and stays in history without an invented end time.
+- A session whose source never says what its turn is doing leaves the running indicator 120 s after its last observation; one whose source reports a running turn keeps it until the turn ends, or until 30 minutes without an observation say its client is gone. Either way it stays in history without an invented end time.
 
 ## Code map
 

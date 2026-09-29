@@ -55,7 +55,7 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 ### Storage
 
 - The standalone bundle identifier is `app.agenthud.open`; preferences live in its UserDefaults domain, with separate domains for demo and snapshot runs.
-- The usage ledger, the restart copy of the report (including account labels), hashed Kimi identities and completion records live in the data directory ([storage](providers.md#storage)); token events keep 31 days and quota readings 30 days. No file contains conversation text or credentials.
+- The usage ledger, the restart copy of the report (including account labels), hashed Kimi identities and completion records live in the data directory ([storage](providers.md#storage)); token events keep 31 days and quota readings 30 days. No file contains credentials, and the only conversation text in them is a session's title, which can be the first line of its first prompt, 60 characters at most.
 - SwiftPM resources are located through `AppResources`; the app bundle carries `AgentHUDOpen_AgentHUDDesktop.bundle` under `Contents/Resources`.
 
 ### Design invariants
@@ -69,7 +69,7 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 - Observed rows only: rows, groups and first-launch entries come from what providers report or find on the Mac, never from a built-in list of placeholders.
 - Names apart from ids: vendor ids key settings, the ledger, accounts and sync records and never change; `VendorCatalog` holds the names shown, and a value it does not name is shown as written, never filed under another.
 - Resources and notices: the root `THIRD_PARTY_NOTICES.txt` and the bundled copy stay byte-identical, and source comments cite the file.
-- Source boundaries: `make check` rejects signing material, private service directories and imports, secret-shaped strings, external package dependencies and missing ignore rules.
+- Source boundaries: `make check` rejects signing material, private service directories and imports, secret-shaped strings, external package dependencies, missing ignore rules and a bundled notices file that differs from the root one.
 
 ### Versioning
 
