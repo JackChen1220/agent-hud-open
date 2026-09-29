@@ -129,13 +129,18 @@ public enum PiSessionObserver {
       });
       pi.on("agent_start", (_event, ctx) => {
         // Retries, auto-compaction and queued follow-ups belong to one unsettled run.
-        if (!active) {
-          active = { id: randomUUID(), startedAtMs: Date.now() };
+        if (!active) active = { id: randomUUID(), startedAtMs: Date.now() };
+        if (!heartbeat) {
           heartbeat = setInterval(() => publish(ctx), 15000);
           heartbeat.unref();
         }
         lastStopReason = undefined;
         publish(ctx);
+      });
+      // A build without agent_settled never settles the run: its heartbeat stops here, and the run goes quiet.
+      pi.on("agent_end", () => {
+        clearInterval(heartbeat);
+        heartbeat = undefined;
       });
       pi.on("message_end", (event, ctx) => {
         if (event.message.role === "assistant") lastStopReason = event.message.stopReason;

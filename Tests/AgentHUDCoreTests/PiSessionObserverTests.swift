@@ -156,7 +156,9 @@ final class PiSessionObserverTests: XCTestCase, @unchecked Sendable {
         assert.equal(first.state, 'running');
         assert.equal(first.sessionFile, undefined);
         emit('message_end', { message: { role: 'assistant', stopReason: 'error', content: 'private prompt', usage: { input: 99 } } });
+        const beating = cleared;
         emit('agent_end');
+        assert.equal(cleared, beating + 1, 'a run that ends stops its heartbeat, since older Pi never settles it');
         emit('agent_start'); // retry, still the same logical turn
         assert.equal(rows()[0].turnID, first.turnID);
         assert.equal(rows()[0].state, 'running');
