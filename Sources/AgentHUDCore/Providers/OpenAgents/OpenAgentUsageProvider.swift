@@ -255,13 +255,9 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
                     account: ProviderAccount(pool: pool)))
                 // Historical records lacking a pool must not inherit the current credential's quota.
                 links[window.id] = Set(events.filter { $0.attribution?.pool == pool }.map(\.agentId))
+                // Readings and cap hits over the statistics range, a week at the least.
                 let readings = await history.samples(agentId: window.id, since: since)
-                let snapshot = snapshots.last!
-                let burn = UsageAnalytics.burnRate(samples: readings, cycle: snapshot.cycle, now: now)
-                let caps = UsageAnalytics.capStats(samples: readings, now: now)
-                insights[window.id] = UsageInsights(burnRatePctPerHour: burn?.pctPerHour,
-                    timeToExhaust: burn?.timeToExhaust(remainingPct: window.remaining), weeklyCapHits: caps.hits,
-                    weeklyWaitTotal: caps.totalWait, weeklyWaitLongest: caps.longestWait, weeklyWaitLongestAt: caps.longestAt)
+                insights[window.id] = QuotaMath.insights(snapshot: snapshots.last, samples: readings, capsSince: since, now: now)
             }
         }
         return UsageReport(generatedAt: now, snapshots: snapshots, sessions: live,

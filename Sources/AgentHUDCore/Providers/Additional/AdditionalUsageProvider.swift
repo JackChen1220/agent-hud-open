@@ -168,12 +168,8 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
         }
         var insights: [String: UsageInsights] = [:]
         for snapshot in snapshots {
-            let readings = await history.samples(agentId: snapshot.agentId, since: min(weekAgo, snapshot.cycle?.start ?? weekAgo))
-            let burn = UsageAnalytics.burnRate(samples: readings, cycle: snapshot.cycle, now: now)
-            let caps = UsageAnalytics.capStats(samples: readings.filter { $0.timestamp >= weekAgo }, now: now)
-            insights[snapshot.agentId] = UsageInsights(burnRatePctPerHour: burn?.pctPerHour,
-                timeToExhaust: burn?.timeToExhaust(remainingPct: snapshot.remainingPct), weeklyCapHits: caps.hits,
-                weeklyWaitTotal: caps.totalWait, weeklyWaitLongest: caps.longestWait, weeklyWaitLongestAt: caps.longestAt)
+            let readings = await history.samples(agentId: snapshot.agentId, since: QuotaMath.historyStart(for: snapshot, now: now))
+            insights[snapshot.agentId] = QuotaMath.insights(snapshot: snapshot, samples: readings, capsSince: weekAgo, now: now)
         }
         // Every notice is shown; only the quota reading's holds back the vendor's alerts, levels and retained sessions.
         let notice = [quotaNotice, local.notice, hookNotice].compactMap { $0 }.joined(separator: " · ")

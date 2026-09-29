@@ -167,32 +167,14 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
             )
         }
 
-        // 3. Insights from the session window's samples.
-        let weekSamples = await history.samples(agentId: sessionRowId, since: weekAgo)
-        let sessionCycle = snapshots.first { $0.agentId == sessionRowId }?.cycle
-        let burn = UsageAnalytics.burnRate(samples: weekSamples, cycle: sessionCycle, now: now)
-        let cap = UsageAnalytics.capStats(samples: weekSamples, now: now)
-        let insights = UsageInsights(
-            burnRatePctPerHour: burn?.pctPerHour,
-            timeToExhaust: burn.flatMap { $0.timeToExhaust(remainingPct: usage?.fiveHour?.remainingPct ?? 0) },
-            weeklyCapHits: cap.hits,
-            weeklyWaitTotal: cap.totalWait,
-            weeklyWaitLongest: cap.longestWait,
-            weeklyWaitLongestAt: cap.longestAt
-        )
-
-        var insightsByAgent: [String: UsageInsights] = account == nil ? [:] : [sessionRowId: insights]
+        // 3. Insights from each window's readings of the last week; the session window gets them even without a reading.
+        let sessionSamples = await history.samples(agentId: sessionRowId, since: weekAgo)
+        var insightsByAgent: [String: UsageInsights] = account == nil ? [:] : [sessionRowId: QuotaMath.insights(
+            snapshot: snapshots.first { $0.agentId == sessionRowId }, samples: sessionSamples, capsSince: weekAgo, now: now)]
         for row in windowRows where row.id != sessionRowId {
             let samples = await history.samples(agentId: row.id, since: weekAgo)
-            let cycle = snapshots.first { $0.agentId == row.id }?.cycle
-            let rowBurn = UsageAnalytics.burnRate(samples: samples, cycle: cycle, now: now)
-            let rowCap = UsageAnalytics.capStats(samples: samples, now: now)
-            insightsByAgent[row.id] = UsageInsights(
-                burnRatePctPerHour: rowBurn?.pctPerHour,
-                timeToExhaust: rowBurn?.timeToExhaust(remainingPct: row.window.remainingPct),
-                weeklyCapHits: rowCap.hits, weeklyWaitTotal: rowCap.totalWait,
-                weeklyWaitLongest: rowCap.longestWait, weeklyWaitLongestAt: rowCap.longestAt
-            )
+            insightsByAgent[row.id] = QuotaMath.insights(snapshot: snapshots.first { $0.agentId == row.id }, samples: samples,
+                                                         capsSince: weekAgo, now: now)
         }
         let consumerIds = Set(consumers.map(\.id) + listed.map(\.agentId))
         var consumerIdsByQuota: [String: Set<String>] = [:]

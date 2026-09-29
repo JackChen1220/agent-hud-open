@@ -151,15 +151,9 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
                           weeklyResetAt: row.weekly?.resetAt, updatedAt: reading.at)
         }
         var byAgent: [String: UsageInsights] = [:]
-        for (entry, snapshot) in zip(windows, snapshots) {
-            let row = entry.row
-            let samples = await history.samples(agentId: row.id, since: min(weekAgo, snapshot.cycle?.start ?? weekAgo))
-            let burn = UsageAnalytics.burnRate(samples: samples, cycle: snapshot.cycle, now: now)
-            let caps = UsageAnalytics.capStats(samples: samples.filter { $0.timestamp >= weekAgo }, now: now)
-            byAgent[row.id] = UsageInsights(burnRatePctPerHour: burn?.pctPerHour,
-                                            timeToExhaust: burn?.timeToExhaust(remainingPct: row.window.remainingPct),
-                                            weeklyCapHits: caps.hits, weeklyWaitTotal: caps.totalWait,
-                                            weeklyWaitLongest: caps.longestWait, weeklyWaitLongestAt: caps.longestAt)
+        for snapshot in snapshots {
+            let samples = await history.samples(agentId: snapshot.agentId, since: QuotaMath.historyStart(for: snapshot, now: now))
+            byAgent[snapshot.agentId] = QuotaMath.insights(snapshot: snapshot, samples: samples, capsSince: weekAgo, now: now)
         }
         // Spawned agents and guardians keep rollouts of their own that name the thread that started them; a session's
         // breakdown takes every rollout below it.
