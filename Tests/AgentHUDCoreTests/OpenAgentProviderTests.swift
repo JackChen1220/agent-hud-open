@@ -396,7 +396,28 @@ final class OpenAgentProviderTests: XCTestCase {
         XCTAssertEqual(account.observedAt, first, "it keeps the time of the reading that succeeded")
         XCTAssertEqual(account.plan, "Allegretto")
         XCTAssertNotNil(account.quotaNotice)
-        XCTAssertNotNil(report.quotaNotice(vendor: "Kimi"))
+    }
+
+    func testAPoolWhoseReadingFailsHoldsBackOnlyItsOwnRows() async throws {
+        final class Clock: @unchecked Sendable { var now = Date(timeIntervalSince1970: 1_788_800_000) }
+        let clock = Clock(), first = clock.now
+        let failing = credential(key: "failing"), working = credential(key: "working", client: "Pi")
+        let provider = RetainedUsageProvider(provider: OpenAgentUsageProvider(credentials: { [failing, working] }, sessions: { _ in .init() },
+            fetchQuota: { c, now in
+                if c.token == failing.token, now > first { throw ProviderHTTPError(status: 503) }
+                return .init(windows: [.init(id: c.pool.windowID("weekly"), label: "Weekly", remaining: now > first ? 40 : 70)])
+            }, history: QuotaHistoryStore(), clock: { clock.now }))
+        _ = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 168)
+        clock.now = first.addingTimeInterval(UsageRefresh.accountRequestSpacing + 1)
+        let report = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 168)
+        let failed = try XCTUnwrap(report.discoveredAgents.first { $0.billingPool == failing.pool })
+        let read = try XCTUnwrap(report.discoveredAgents.first { $0.billingPool == working.pool })
+        XCTAssertEqual(report.snapshot(for: failed.id)?.remainingPct, 70, "the failed pool keeps its last reading")
+        XCTAssertNotNil(report.quotaNotice(for: failed))
+        XCTAssertEqual(report.snapshot(for: read.id)?.remainingPct, 40)
+        XCTAssertNil(report.quotaNotice(for: read), "the vendor's other pool is not held back")
+        XCTAssertNil(report.quotaNotice(vendor: "Kimi"))
+        XCTAssertNotNil(report.sourceNotices["Kimi"], "the failure is still shown under its client")
     }
 
     func testProviderResolvesDifferentCredentialsBeforeFetchingTheirSharedQuota() async throws {

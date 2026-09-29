@@ -62,7 +62,8 @@ public struct AccountObservation: Hashable, Codable, Sendable, Identifiable {
     public let observedAt: Date
     /// The client is currently signed in to this account. Other accounts show their last reading only.
     public let isCurrent: Bool
-    /// A failed quota read keeps the last observation, but cannot confirm quota events.
+    /// A failed quota read keeps the last observation, but cannot confirm quota events; neither can a reading whose
+    /// account the provider could not confirm.
     public let quotaNotice: String?
     /// Codex credits belong to this account, even when several clients are signed in.
     public let resetCredits: CodexResetCredits?
@@ -119,10 +120,12 @@ public enum ClientHome {
 }
 
 public extension UsageReport {
-    /// Why an agent's quota reading is not to be trusted: its account's failed read, else its vendor's quota notice.
+    /// Why an agent's quota reading is not to be trusted: its account's failed read, else its vendor's quota notice. A
+    /// billing pool's rows answer to their own pool alone, since a vendor with several pools reads each on its own.
     func quotaNotice(for agent: AgentDescriptor) -> String? {
-        if let id = agent.account?.id, let account = observation(accountID: id) { return account.quotaNotice ?? quotaNotice(vendor: agent.vendor) }
-        return quotaNotice(vendor: agent.vendor)
+        let account = agent.account.flatMap { observation(accountID: $0.id) }
+        if agent.billingPool != nil { return account?.quotaNotice }
+        return account?.quotaNotice ?? quotaNotice(vendor: agent.vendor)
     }
 
     /// A vendor's notice about a quota or balance reading; a notice about its local logs or hooks is not one.

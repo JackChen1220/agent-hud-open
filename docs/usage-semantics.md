@@ -63,7 +63,7 @@ The five kinds (`TokenKind`, selected as `TokenDimensions`) are additive and nev
 - Changing accounts is neither a reset nor an exhaustion: an account that becomes current again starts a new alert baseline.
 - The first identified account takes over an unidentified row's position and display switch; a window that appears on a further account inherits the switch of the same window on another account. Quota history recorded before accounts were identified belongs to no account and feeds no burn rate.
 - A login the provider does not identify is one account per client home directory, never merged with another home. A provider that must forget its accounts, for example after reading consent is withdrawn, retires their readings, rows and display settings at once.
-- Codex reset credits belong to the account that reported them; native and Pi logins can make several accounts current at once. Billing-pool rows (Kimi, GLM, OpenCode Go) keep their pool ids as account ids.
+- Codex reset credits belong to the account that reported them; native and Pi logins can make several accounts current at once. Billing-pool rows (Kimi, GLM, OpenCode Go) keep their pool ids as account ids, and a pool whose reading failed or whose account could not be confirmed holds back its own rows only, never another pool of the same vendor.
 
 ### Collection cadence
 
@@ -85,7 +85,7 @@ Reads never run in parallel: the usage store runs one pass of source reads or on
 ### Reading retention
 
 - The last successful reading is kept with its observation time; a failed refresh keeps it and exposes the failure, and a restart restores it before the first poll.
-- A client whose read, or whose quota or balance reading, failed keeps the sessions it last reported beside those it still reports; a notice about its local logs or hooks keeps none.
+- A client whose read, or whose quota or balance reading, failed keeps the sessions it last reported beside those it still reports; a notice about its local logs or hooks keeps none, and neither does a billing pool's failed reading, which is no one client's.
 - When a window's reset time has passed, the row keeps the last reading and its time. A reset is confirmed only by a new reading whose reset time moved forward or that shows the window full again after rising at least 5 points; until then alert evaluation treats the deadline as pending and the row displays “Pending update”. Historical accounts show no live countdown. A successful Codex response replaces that account's complete window inventory, removing omitted windows; failures retain the old inventory.
 - Kimi, GLM and OpenCode Go rows are retired — readings, cached rows and display settings — once a completed credential scan finds their credentials expired, removed or rejected; a temporary network failure retires nothing.
 - A row no provider has reported for 30 days retires with its reading, whatever stopped it: a client uninstalled, a window the service dropped, a vendor no longer read. Until a provider reports a row it is not shown anywhere, and its stored display switch and position wait for it.

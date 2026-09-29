@@ -214,16 +214,16 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
         }
         var snapshots: [UsageSnapshot] = [], descriptors: [AgentDescriptor] = []
         var insights: [String: UsageInsights] = [:]
-        var notices = local.notices, quotaNotices: [String: String] = [:], plans: [String: String] = [:], links: [String: Set<String>] = [:]
+        var notices = local.notices, plans: [String: String] = [:], links: [String: Set<String>] = [:]
         var accounts: [String: [AccountObservation]] = ["Kimi": [], "GLM": [], "OpenCode Go": []]
         var services = apiServices()
         for result in quotas {
             let pool = result.credential.pool
             if let error = result.notice {
-                let key = pool.provider == "OpenCode Go" ? "OpenCode" : pool.provider, notice = "\(pool.label): \(error)"
-                notices[key] = [notices[key], notice].compactMap { $0 }.joined(separator: " · ")
-                // Shown under its client (OpenCode for Go), the notice holds back the pool's own rows.
-                quotaNotices[pool.provider] = [quotaNotices[pool.provider], notice].compactMap { $0 }.joined(separator: " · ")
+                // Shown under its client (OpenCode for Go). The pool's account holds back the pool's rows; the vendor's other
+                // pools were read on their own.
+                let key = pool.provider == "OpenCode Go" ? "OpenCode" : pool.provider
+                notices[key] = [notices[key], "\(pool.label): \(error)"].compactMap { $0 }.joined(separator: " · ")
             }
             if result.isActive {
                 services += result.credential.clients.sorted().map {
@@ -243,7 +243,9 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
                 plans[pool.id] = plan
             }
             if result.isActive {
-                accounts[pool.provider, default: []].append(AccountObservation(account: ProviderAccount(pool: pool), plan: quota.plan, observedAt: result.at))
+                // A reading whose account the service could not confirm is not verified either.
+                accounts[pool.provider, default: []].append(AccountObservation(account: ProviderAccount(pool: pool), plan: quota.plan,
+                    observedAt: result.at, quotaNotice: result.notice))
             }
             for window in quota.windows {
                 snapshots.append(.init(agentId: window.id, remainingPct: window.remaining, resetAt: window.reset,
@@ -265,8 +267,9 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
         return UsageReport(generatedAt: now, snapshots: snapshots, sessions: live,
             notice: notices.isEmpty ? nil : notices.keys.sorted().map { "\($0): \(notices[$0]!)" }.joined(separator: " · "),
             discoveredAgents: descriptors, consumers: consumers.values.sorted { $0.id < $1.id },
-            indexing: local.indexing, insightsByAgent: insights, subscriptions: plans, sourceNotices: notices, quotaNotices: quotaNotices,
-            consumerIdsByQuota: links,
+            indexing: local.indexing, insightsByAgent: insights, subscriptions: plans, sourceNotices: notices,
+            // Every reading belongs to one pool, whose account carries its notice: none is the whole vendor's.
+            quotaNotices: [:], consumerIdsByQuota: links,
             completions: local.sessions.flatMap(\.completions), turns: local.sessions.flatMap(\.turns), services: services,
             activeQuotaPoolIDs: cached == nil ? nil : activePools, accounts: cached == nil ? nil : accounts)
     }

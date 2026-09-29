@@ -75,8 +75,9 @@ public struct UsageReport: Hashable, Codable, Sendable {
     public let forgottenAccountProviders: Set<String>?
     public let sourceNotices: [String: String]
     /// The part of `sourceNotices` about readings, by vendor: a quota or balance read that failed or could not be verified,
-    /// which holds back that vendor's alerts, status levels and retained sessions. Notices about local logs and hooks are
-    /// only in `sourceNotices`. Nil when a report does not tell them apart, so that all of its source notices count.
+    /// which holds back that vendor's alerts, status levels and retained sessions. A billing pool's rows answer to their own
+    /// account's notice instead. Notices about local logs and hooks are only in `sourceNotices`. Nil when a report does not
+    /// tell them apart, so that all of its source notices count.
     public let quotaNotices: [String: String]?
     /// Consumer ids covered by each quota row. Providers own the relationship between model and quota ids.
     public let consumerIdsByQuota: [String: Set<String>]

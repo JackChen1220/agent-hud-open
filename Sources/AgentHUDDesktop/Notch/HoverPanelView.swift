@@ -283,8 +283,10 @@ private struct ProviderQuotaBlock: View {
             let sections = store.accountSections(rows)
             ForEach(sections) { section in
                 if let account = section.account {
+                    // A billing pool speaks only for itself: its vendor's notices can be about another of its pools.
+                    let pooled = section.rows.first?.agent.billingPool != nil
                     AccountSectionHeader(account: account, now: store.now,
-                                         notice: account.quotaNotice ?? store.report?.sourceNotices[account.account.provider])
+                                         notice: account.quotaNotice ?? (pooled ? nil : store.report?.sourceNotices[account.account.provider]))
                 }
                 ForEach(section.rows) { row in
                     ModelUsageRow(row: row, now: store.now, metric: metric,
