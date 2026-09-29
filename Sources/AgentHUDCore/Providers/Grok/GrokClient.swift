@@ -60,7 +60,7 @@ struct GrokClient: Sendable {
             case "USAGE_PERIOD_TYPE_MONTHLY": label = L10n.text("每月额度", "Monthly credits")
             default: label = L10n.text("订阅额度", "Subscription credits")
             }
-            quota.windows.append(.init(id: "grok", label: label, remaining: max(0, 100 - used), reset: end, duration: duration))
+            quota.windows.append(.init(id: "grok", label: label, remaining: QuotaMath.remaining(usedPercent: used), reset: end, duration: duration))
         } else {
             quota.notice = L10n.text("Grok 已连接，但服务未返回已用额度", "Grok is connected, but used credits were not reported")
         }
@@ -68,7 +68,7 @@ struct GrokClient: Sendable {
         if let cap = config["onDemandCap"]["val"].numberValue, cap > 0,
            let used = config["onDemandUsed"]["val"].numberValue, used >= 0 {
             quota.windows.append(.init(id: "grok:extra", label: L10n.text("额外用量预算", "Extra usage budget"),
-                remaining: max(0, 100 - used / cap * 100), reset: end, duration: duration))
+                remaining: QuotaMath.remaining(usedPercent: used / cap * 100), reset: end, duration: duration))
         }
         return quota
     }

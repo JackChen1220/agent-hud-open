@@ -11,7 +11,7 @@ public struct ClaudeUsageWindow: Hashable, Sendable {
         self.resetsAt = resetsAt
     }
 
-    public var remainingPct: Double { max(0, min(100, 100 - utilizationPct)) }
+    public var remainingPct: Double { QuotaMath.remaining(usedPercent: utilizationPct) }
 }
 
 /// One quota window as a row: "当前会话 · 5h", "本周 · 全部模型", "本周 · Fable". Each has its own reset cadence.

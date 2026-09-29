@@ -21,6 +21,11 @@ public enum QuotaOutlook: Hashable, Sendable {
 /// Quota calculations shared by the providers, the store, the alerts and the desktop, as pure functions of readings
 /// and time.
 public enum QuotaMath {
+    /// The share of a window left when its service reports the share used, kept within 0...100.
+    public static func remaining(usedPercent: Double) -> Double {
+        max(0, min(100, 100 - usedPercent))
+    }
+
     /// Where a window's insights start reading its stored readings: a week back, or the start of its current cycle
     /// when that is earlier, so the burn rate of a longer window sees its whole cycle.
     public static func historyStart(for snapshot: UsageSnapshot, now: Date) -> Date {

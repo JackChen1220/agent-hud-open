@@ -8,7 +8,7 @@ public struct CodexRateLimits: Decodable, Sendable {
         public let windowDurationMins: Int?
         public let resetsAt: TimeInterval?
 
-        public var remainingPct: Double { max(0, min(100, 100 - usedPercent)) }
+        public var remainingPct: Double { QuotaMath.remaining(usedPercent: usedPercent) }
         public var resetAt: Date? { resetsAt.map(Date.init(timeIntervalSince1970:)) }
         public var duration: TimeInterval? { windowDurationMins.map { Double($0) * 60 } }
     }

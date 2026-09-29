@@ -41,7 +41,7 @@ struct OpenAgentQuotaClient: Sendable {
         func add(_ key: String, _ title: String, _ used: Double, reset: Date?, duration: Double?) throws {
             guard used.isFinite, used >= 0 else { throw ProviderFailure.format }
             quota.windows.append(.init(id: credential.pool.windowID(key), label: title + " · " + credential.pool.label,
-                remaining: max(0, 100 - used), reset: reset, duration: duration))
+                remaining: QuotaMath.remaining(usedPercent: used), reset: reset, duration: duration))
         }
         switch credential.service {
         case .kimi, .kimiGlobal:

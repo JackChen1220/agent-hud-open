@@ -91,7 +91,7 @@ actor CursorClient {
         ]
         for (id, label, used) in rows {
             guard let used, used.isFinite, used >= 0 else { continue }
-            result.windows.append(.init(id: id, label: label, remaining: max(0, 100 - used), reset: end, duration: duration))
+            result.windows.append(.init(id: id, label: label, remaining: QuotaMath.remaining(usedPercent: used), reset: end, duration: duration))
         }
         if result.windows.isEmpty {
             result.notice = L10n.text("Cursor 已连接，当前计划未提供额度比例", "Cursor is connected; this plan reports no quota percentage")
