@@ -97,19 +97,27 @@ public actor ClaudeTranscriptStore {
     }
 }
 
-/// Claude Code transcripts; each counts on its own.
+/// Claude Code transcripts; each counts on its own, and only the lines of the session it is named after.
 enum ClaudeTranscripts: TailLog {
     static let source = "claude"
     static let summaryKey = "accumulator"
-    /// 2: cache writes, thinking, prompts and compactions. 3: the session's given and generated titles.
-    static let version = 3
+    /// 2: cache writes, thinking, prompts and compactions. 3: the session's given and generated titles. 4: the lines a
+    /// fork copied from its parent, and the older copies of a session's log, no longer count.
+    static let version = 4
 
     static func summary(for url: URL) -> TranscriptAccumulator {
         TranscriptAccumulator(path: url.path, isSubagent: ClaudeTranscriptStore.isSubagent(url))
     }
 
+    /// Resuming a session in another directory can leave its log in the first project's folder and continue a copy of
+    /// it, under the same name, in the other's. A sub-agent's log is named after the agent and never copied.
+    static func copyName(_ path: String) -> String? {
+        let url = URL(fileURLWithPath: path, isDirectory: false)
+        return ClaudeTranscriptStore.isSubagent(url) ? nil : url.lastPathComponent
+    }
+
     static func ingest(_ lines: Data, into accumulator: inout TranscriptAccumulator) -> [UsageLedger.Event] {
-        let titles = FastTranscriptParser.titles(in: lines)
+        let titles = FastTranscriptParser.titles(in: lines, session: accumulator.ownSession)
         accumulator.noteTitles(custom: titles.custom, generated: titles.generated)
         return accumulator.ingest(FastTranscriptParser.parse(lines))
     }

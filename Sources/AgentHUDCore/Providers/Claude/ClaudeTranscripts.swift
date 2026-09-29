@@ -265,11 +265,20 @@ public struct TranscriptAccumulator: Hashable, Sendable, Codable {
     /// Claude Code's own order: the name given to the session, then the generated title, then the first prompt.
     private var title: String? { customTitle ?? generatedTitle ?? task }
 
+    /// The session a main log is named after; a sub-agent's log carries the session that started it. A forked session's
+    /// log begins with a copy of its parent's lines, which keep the parent's session and times: they belong to the
+    /// parent's own log, so this one skips them.
+    var ownSession: String? {
+        isSubagent ? nil : URL(fileURLWithPath: path, isDirectory: false).deletingPathExtension().lastPathComponent
+    }
+
     /// Returns the usage these lines added, keyed by response so a repeated line never counts twice.
     @discardableResult
     public mutating func ingest(_ events: [TranscriptEvent]) -> [UsageLedger.Event] {
         var added: [UsageLedger.Event] = []
+        let own = ownSession
         for event in events {
+            if let own, let session = event.sessionId, session != own { continue }
             if sessionId == nil { sessionId = event.sessionId }
             if cwd == nil { cwd = event.cwd }
             if let entrypoint = event.entrypoint { self.entrypoint = entrypoint }

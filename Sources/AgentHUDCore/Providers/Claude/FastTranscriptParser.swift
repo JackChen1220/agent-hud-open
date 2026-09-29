@@ -46,13 +46,15 @@ public enum FastTranscriptParser {
 
     /// The last `custom-title` and `ai-title` lines in `data`: the name the user or the desktop app gave the session,
     /// and the one Claude Code generated. Claude Code writes them without a timestamp, so `parse` skips them.
-    public static func titles(in data: Data) -> (custom: String?, generated: String?) {
+    /// - session: the log's own session; a title line of another one, which a fork copied from its parent, is skipped.
+    public static func titles(in data: Data, session: String? = nil) -> (custom: String?, generated: String?) {
         data.withUnsafeBytes { buffer in
-            (lastTitle(customTitleLine, key: customTitleKey, in: buffer), lastTitle(aiTitleLine, key: aiTitleKey, in: buffer))
+            (lastTitle(customTitleLine, key: customTitleKey, in: buffer, session: session),
+             lastTitle(aiTitleLine, key: aiTitleKey, in: buffer, session: session))
         }
     }
 
-    private static func lastTitle(_ marker: [UInt8], key: [UInt8], in buffer: UnsafeRawBufferPointer) -> String? {
+    private static func lastTitle(_ marker: [UInt8], key: [UInt8], in buffer: UnsafeRawBufferPointer, session: String?) -> String? {
         var title: String?
         var start = 0
         while start < buffer.count, let offset = find(marker, in: UnsafeRawBufferPointer(rebasing: buffer[start...])) {
@@ -61,7 +63,10 @@ public enum FastTranscriptParser {
             let end = memchr(rest.baseAddress!, 0x0A, rest.count).map { lineStart + rest.baseAddress!.distance(to: $0) } ?? buffer.count
             // A title line starts a line; the same text inside a message is escaped and never matches.
             if lineStart == 0 || buffer[lineStart - 1] == 0x0A {
-                title = value(after: key, in: UnsafeRawBufferPointer(rebasing: buffer[lineStart..<end])) ?? title
+                let line = UnsafeRawBufferPointer(rebasing: buffer[lineStart..<end])
+                if session == nil || value(after: sessionIdKey, in: line).map({ $0 == session }) ?? true {
+                    title = value(after: key, in: line) ?? title
+                }
             }
             start = end + 1
         }
@@ -147,8 +152,11 @@ public enum FastTranscriptParser {
         }
         let tailStart = max(0, line.count - tailLength)
         let tail = UnsafeRawBufferPointer(rebasing: line[tailStart...])
-        let entrypoint = find(entrypointKey, in: tail, backwards: true).flatMap { string(from: tailStart + $0 + entrypointKey.count, in: line) }
-            ?? value(after: entrypointKey, in: line, keyIn: head)
+        // The line's own field is its last occurrence near the end, or, from older builds, the first one near the start.
+        func field(_ key: [UInt8]) -> String? {
+            find(key, in: tail, backwards: true).flatMap { string(from: tailStart + $0 + key.count, in: line) }
+                ?? value(after: key, in: line, keyIn: head)
+        }
         return TranscriptEvent(
             timestamp: timestamp,
             role: role,
@@ -159,7 +167,7 @@ public enum FastTranscriptParser {
             outputTokens: output,
             thinkingTokens: thinking,
             text: text,
-            sessionId: value(after: sessionIdKey, in: head),
+            sessionId: field(sessionIdKey),
             cwd: value(after: cwdKey, in: head),
             messageId: messageId,
             requestId: requestId,
@@ -167,7 +175,7 @@ public enum FastTranscriptParser {
             isSidechain: find(sidechainMarker, in: head) != nil,
             isPrompt: isPrompt,
             isCompaction: role == .other && find(compactionMarker, in: head) != nil,
-            entrypoint: entrypoint,
+            entrypoint: field(entrypointKey),
             returnsStructuredOutput: role == .assistant && find(structuredOutputMarker, in: head) != nil
         )
     }

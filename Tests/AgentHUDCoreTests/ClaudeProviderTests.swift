@@ -145,6 +145,8 @@ final class ClaudeTranscriptTests: XCTestCase {
         XCTAssertEqual(fast.map(\.isPrompt), [false, false, false], "command output is not a prompt even when flagged after its content")
         XCTAssertEqual(fast.map(\.messageId), ["msg_long", nil, "msg_done"])
         XCTAssertEqual(fast.map(\.entrypoint), [nil, nil, "cli"], "entrypoint follows the content, so it is read from the tail")
+        XCTAssertEqual(fast.map(\.sessionId), ["s-long", "s-long", "s-long"], "so is the session")
+        XCTAssertEqual(fast.map(\.sessionId), slow.map(\.sessionId))
         XCTAssertEqual(fast.map(\.entrypoint), slow.map(\.entrypoint))
         XCTAssertEqual(fast.map(\.stopReason), slow.map(\.stopReason))
         XCTAssertEqual(fast.map(\.isPrompt), slow.map(\.isPrompt))
@@ -172,7 +174,7 @@ final class ClaudeTranscriptTests: XCTestCase {
         XCTAssertTrue(live(after: [user("and the tests", at: 400)], at: 401), "the next prompt restarts it")
         XCTAssertFalse(live(after: [assistant("\"tool_use\"", id: "msg_3", at: 405), user("[Request interrupted by user for tool use]", at: 410)], at: 411), "an interruption ends the turn without a completion")
         XCTAssertEqual(accumulator.build()?.completions.map(\.id), [RecordCoding.hash(["Claude", "s-turn", "msg_2"])])
-        var legacy = TranscriptAccumulator(path: "/x/old.jsonl", isSubagent: false)
+        var legacy = TranscriptAccumulator(path: "/old/s-turn.jsonl", isSubagent: false)
         legacy.ingest(FastTranscriptParser.parse(Data((assistant("null", id: "msg_9", at: 0) + "\n").utf8)))
         XCTAssertTrue(legacy.build()!.isLive(now: base.addingTimeInterval(60), threshold: 120), "a build without stop reasons keeps the freshness rule")
         XCTAssertFalse(legacy.build()!.isLive(now: base.addingTimeInterval(600), threshold: 120))
@@ -321,6 +323,72 @@ final class ClaudeTranscriptTests: XCTestCase {
         let second = await store.sessions(modifiedSince: .distantPast)
         XCTAssertEqual(second.map(\.task), ["Auth \"middleware\" fix"], "the name the session was given beats a later generated title")
         XCTAssertEqual(second.map(\.tokensOut), [80])
+    }
+
+    func testAForkCountsOnlyTheLinesOfItsOwnSession() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("agenthud-\(UUID().uuidString)/projects", isDirectory: true)
+        let project = root.appendingPathComponent("-Users-me-proj", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+        func prompt(_ session: String, _ text: String, at: String) -> String {
+            #"{"sessionId":"\#(session)","cwd":"/Users/me/proj","type":"user","message":{"role":"user","content":"\#(text)"},"timestamp":"2026-09-07T\#(at)Z"}"#
+        }
+        // Current builds write the session after the message, beyond the start of a long line.
+        func answer(_ session: String, _ id: String, input: Int, at: String) -> String {
+            #"{"type":"assistant","message":{"id":"\#(id)","role":"assistant","model":"claude-opus-5","content":[{"type":"text","text":"\#(String(repeating: "x", count: 4000))"}],"stop_reason":"end_turn","usage":{"input_tokens":\#(input),"cache_read_input_tokens":100,"output_tokens":5}},"timestamp":"2026-09-07T\#(at)Z","cwd":"/Users/me/proj","sessionId":"\#(session)"}"#
+        }
+        let parent = [#"{"type":"custom-title","customTitle":"Release plan","sessionId":"parent"}"#,
+                      prompt("parent", "Plan the release", at: "06:00:00.000"), answer("parent", "msg_p", input: 10, at: "06:00:10.000")]
+        try (parent.joined(separator: "\n") + "\n").write(to: project.appendingPathComponent("parent.jsonl"), atomically: true, encoding: .utf8)
+        // The fork's log starts with the parent's lines as they were, then continues under its own session.
+        let fork = parent + [prompt("fork", "Try the other way", at: "07:00:00.000"), answer("fork", "msg_f", input: 20, at: "07:00:10.000")]
+        try (fork.joined(separator: "\n") + "\n").write(to: project.appendingPathComponent("fork.jsonl"), atomically: true, encoding: .utf8)
+
+        let ledger = UsageLedger.inMemory(), store = ClaudeTranscriptStore(roots: [root], ledger: ledger)
+        let sessions = Dictionary(uniqueKeysWithValues: await store.sessions(modifiedSince: .distantPast).map { ($0.id, $0) })
+        XCTAssertEqual(sessions["parent"]?.task, "Release plan")
+        XCTAssertEqual(sessions["fork"]?.task, "Try the other way", "the parent's name and first prompt are not the fork's")
+        XCTAssertEqual(sessions["fork"]?.startedAt, DateParsing.iso8601("2026-09-07T07:00:00.000Z"))
+        XCTAssertEqual(sessions["fork"]?.tokensIn, 20)
+        let buckets = try await ledger.buckets(since: .distantPast, source: ClaudeTranscripts.source)
+        XCTAssertEqual(buckets.reduce(0) { $0 + $1.tokensIn }, 30, "the copied response counts once, in the parent's log")
+        XCTAssertEqual(buckets.reduce(0) { $0 + $1.cacheReadTokens }, 200)
+    }
+
+    func testOnlyTheNewestCopyOfAMovedSessionCounts() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("agenthud-\(UUID().uuidString)/projects", isDirectory: true)
+        let before = root.appendingPathComponent("-Users-me-old", isDirectory: true), after = root.appendingPathComponent("-Users-me-new", isDirectory: true)
+        let agents = before.appendingPathComponent("s-m/subagents", isDirectory: true)
+        for directory in [agents, after] { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
+        defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+        func answer(_ id: String, output: Int, sidechain: Bool = false) -> String {
+            #"{"isSidechain":\#(sidechain),"sessionId":"s-m","cwd":"/Users/me/repo","type":"assistant","message":{"id":"\#(id)","role":"assistant","model":"claude-opus-5","usage":{"input_tokens":1,"output_tokens":\#(output)}},"timestamp":"2026-09-07T06:00:00.000Z"}"#
+        }
+        // Resumed after the repository moved: the session's log was copied into the new project's folder and continued there.
+        let old = before.appendingPathComponent("s-m.jsonl"), new = after.appendingPathComponent("s-m.jsonl")
+        try (answer("msg_1", output: 10) + "\n").write(to: old, atomically: true, encoding: .utf8)
+        try ([answer("msg_1", output: 10), answer("msg_2", output: 20)].joined(separator: "\n") + "\n").write(to: new, atomically: true, encoding: .utf8)
+        try (answer("msg_a", output: 4, sidechain: true) + "\n").write(to: agents.appendingPathComponent("agent-a.jsonl"), atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-3600)], ofItemAtPath: old.path)
+
+        // The listing can name the temporary directory by its resolved path; the project folder tells the copies apart.
+        func folders(_ sessions: [TranscriptSession]) -> [String] {
+            sessions.filter { !$0.isSubagent }.map { URL(fileURLWithPath: $0.path).deletingLastPathComponent().lastPathComponent }
+        }
+        let ledger = UsageLedger.inMemory(), store = ClaudeTranscriptStore(roots: [root], ledger: ledger)
+        let sessions = await store.sessions(modifiedSince: .distantPast)
+        XCTAssertEqual(folders(sessions), ["-Users-me-new"], "the older copy is treated as missing")
+        XCTAssertEqual(sessions.filter(\.isSubagent).count, 1, "a sub-agent's log is never a copy")
+        var total = try await ledger.buckets(since: .distantPast, source: ClaudeTranscripts.source).reduce(0) { $0 + $1.tokensOut }
+        XCTAssertEqual(total, 34)
+
+        // Continued in the old folder again, that copy is the newest and the other leaves.
+        try ([answer("msg_1", output: 10), answer("msg_3", output: 30)].joined(separator: "\n") + "\n").write(to: old, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: old.path)
+        let moved = await store.sessions(modifiedSince: .distantPast)
+        XCTAssertEqual(folders(moved), ["-Users-me-old"])
+        total = try await ledger.buckets(since: .distantPast, source: ClaudeTranscripts.source).reduce(0) { $0 + $1.tokensOut }
+        XCTAssertEqual(total, 44)
     }
 
     private func claude(_ type: String, at: Date, message: [String: Any], extra: [String: Any] = [:]) -> String {
@@ -817,7 +885,7 @@ final class ClaudeCodeProviderTests: XCTestCase {
             ]
             var data = try JSONSerialization.data(withJSONObject: line)
             data.append(0x0a)
-            try data.write(to: project.appendingPathComponent("\(index).jsonl"))
+            try data.write(to: project.appendingPathComponent("session-\(index).jsonl"))
         }
         let provider = ClaudeCodeProvider(
             engine: try fakeEngine(rateLimits: #"{"five_hour":{"utilization":10}}"#),
@@ -992,7 +1060,7 @@ final class CooperativeIndexingTests: XCTestCase {
 final class AccumulatorCompactionTests: XCTestCase {
     func testCompactionDropsDedupeSetOnlyForIdleFiles() {
         let line = ClaudeTranscriptTests.assistant
-        var fresh = TranscriptAccumulator(path: "/x/a.jsonl", isSubagent: false)
+        var fresh = TranscriptAccumulator(path: "/a/s-1.jsonl", isSubagent: false)
         var counted = fresh.ingest(ClaudeTranscriptParser.parse(line)).count
         let stamp = DateParsing.iso8601("2026-09-07T05:42:10.000Z")!
         fresh.compactIfFinished(now: stamp.addingTimeInterval(3600))
@@ -1000,7 +1068,7 @@ final class AccumulatorCompactionTests: XCTestCase {
         counted += fresh.ingest(ClaudeTranscriptParser.parse(line)).count
         XCTAssertEqual(counted, 1)
 
-        var old = TranscriptAccumulator(path: "/x/b.jsonl", isSubagent: false)
+        var old = TranscriptAccumulator(path: "/b/s-1.jsonl", isSubagent: false)
         counted = old.ingest(ClaudeTranscriptParser.parse(line)).count
         old.compactIfFinished(now: stamp.addingTimeInterval(3 * 86400))
         counted += old.ingest(ClaudeTranscriptParser.parse(line)).count

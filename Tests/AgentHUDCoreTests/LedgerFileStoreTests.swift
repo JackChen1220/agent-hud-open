@@ -19,6 +19,17 @@ final class LedgerFileStoreTests: XCTestCase, @unchecked Sendable {
         }
     }
 
+    /// The same logs read by a later version that skips `x` lines.
+    private enum RequestsWithoutX: TailLog {
+        static let source = Requests.source
+        static let summaryKey = Requests.summaryKey
+        static let version = 2
+        static func summary(for url: URL) -> [String] { [] }
+        static func ingest(_ lines: Data, into keys: inout [String]) -> [UsageLedger.Event] {
+            Requests.ingest(Data(lines.split(separator: 0x0A).filter { $0.first != UInt8(ascii: "x") }.joined(separator: [0x0A])), into: &keys)
+        }
+    }
+
     private func directory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -49,6 +60,27 @@ final class LedgerFileStoreTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(total, 10, "the deleted log leaves; the unreadable one keeps what it recorded")
         let files = try await ledger.fileStates(source: Requests.source)
         XCTAssertEqual(files.keys.map { URL(fileURLWithPath: $0).lastPathComponent }, ["kept.log"])
+    }
+
+    func testALogOfAnotherStateVersionIsReadAgainAndReplacesItsUsage() async throws {
+        let root = try directory(), ledger = UsageLedger.inMemory(), now = Date()
+        let log = root.appendingPathComponent("s.log"), expired = root.appendingPathComponent("expired.log")
+        try "a 10\nx 5\n".write(to: log, atomically: true, encoding: .utf8)
+        try "b 1\nx 2\n".write(to: expired, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-10 * 86400)], ofItemAtPath: log.path)
+        try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-UsageLedger.retention - 86400)], ofItemAtPath: expired.path)
+        _ = await TailLogStore<Requests>(roots: [root], ledger: ledger, watchesChanges: false) { _ in true }.index(since: .distantPast, timeBudget: 5)
+        var total = try await tokens(ledger)
+        XCTAssertEqual(total, 18)
+
+        let upgraded = TailLogStore<RequestsWithoutX>(roots: [root], ledger: ledger, watchesChanges: false) { _ in true }
+        let pass = await upgraded.index(since: now.addingTimeInterval(-7 * 86400), timeBudget: 5)
+        XCTAssertEqual(pass.logs.count, 0, "both logs are older than the cutoff")
+        XCTAssertEqual(pass.filesRead, 1, "a log the ledger no longer holds usage of is left as it is")
+        total = try await tokens(ledger)
+        XCTAssertEqual(total, 13, "the log was read again from the start and replaced what the other version counted")
+        let again = await upgraded.index(since: now.addingTimeInterval(-7 * 86400), timeBudget: 5)
+        XCTAssertEqual(again.filesRead, 0)
     }
 
     func testRolledBackPassIsReadAndWrittenAgain() async throws {
