@@ -174,7 +174,7 @@ private struct QuotaAlertCopy {
     var reset: String { Countdown.resetLabelCompact(alert.snapshot.resetAt, now: alert.snapshot.updatedAt) }
     var compactTitle: String {
         if alert.kind == .reset { return L10n.text("已重置", "Reset") }
-        if alert.snapshot.remainingPct <= 0 { return L10n.text("已耗尽", "Empty") }
+        if alert.snapshot.remainingPct <= AlertPolicy.exhaustedRemaining { return L10n.text("已耗尽", "Empty") }
         if alert.timeToExhaust != nil { return L10n.text("\(exhaustion) 后耗尽", "\(exhaustion) left") }
         return L10n.text("即将耗尽", "Running low")
     }
@@ -184,7 +184,9 @@ private struct QuotaAlertCopy {
                 ? L10n.text("此窗口额度已重置。", "This quota window has reset.")
                 : L10n.text("此窗口已重置，其他窗口仍有限制。", "This window has reset; other limits still apply.")
         }
-        if alert.snapshot.remainingPct <= 0 { return L10n.text("当前窗口额度已耗尽，等待重置。", "This window is empty. Waiting for reset.") }
+        if alert.snapshot.remainingPct <= AlertPolicy.exhaustedRemaining {
+            return L10n.text("当前窗口额度已耗尽，等待重置。", "This window is empty. Waiting for reset.")
+        }
         if alert.timeToExhaust != nil {
             return L10n.text("按最近的消耗速率，预计将在重置前耗尽。", "At the recent burn rate, this window may run out before it resets.")
         }

@@ -162,7 +162,7 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
         cached = Dictionary(uniqueKeysWithValues: results.map { ($0.credential.pool.id, $0) })
     }
     func fetchUsage(agents: [AgentDescriptor], historyHours: Int) async throws -> UsageReport {
-        let now = clock(), since = clock().addingTimeInterval(-Double(max(168, historyHours)) * 3600)
+        let now = clock(), since = clock().addingTimeInterval(-max(AlertPolicy.insightsLookback, Double(historyHours) * 3600))
         // Read from the start of the day, where the ledger replaces the sessions from: OpenCode's database returns only
         // replies from the time it is given.
         let readFrom = SessionContributions.windowStart(since)

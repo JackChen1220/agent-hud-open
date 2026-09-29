@@ -75,7 +75,7 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
 
     public func fetchUsage(agents: [AgentDescriptor], historyHours: Int) async throws -> UsageReport {
         let now = clock()
-        let weekAgo = now.addingTimeInterval(-7 * 86400)
+        let weekAgo = now.addingTimeInterval(-AlertPolicy.insightsLookback)
         let cutoff = min(weekAgo, now.addingTimeInterval(-TimeInterval(historyHours) * 3600))
 
         // Local data: one cooperative indexing step (newest files first); the rest continues on later polls.

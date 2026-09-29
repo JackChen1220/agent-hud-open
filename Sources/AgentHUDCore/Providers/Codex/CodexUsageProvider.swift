@@ -135,7 +135,7 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
 
     public func fetchUsage(agents: [AgentDescriptor], historyHours: Int) async throws -> UsageReport {
         let now = clock()
-        let weekAgo = now.addingTimeInterval(-7 * 86400)
+        let weekAgo = now.addingTimeInterval(-AlertPolicy.insightsLookback)
         let indexed = await transcripts.index(since: min(weekAgo, now.addingTimeInterval(-Double(historyHours) * 3600)))
         let selected = accountReadings
         let native = readings[home]

@@ -275,7 +275,7 @@ public final class UsageStore {
                 agent: agent,
                 remainingPct: snapshot?.remainingPct,
                 level: isCurrent && report?.quotaNotice(for: agent) == nil ? snapshot.flatMap {
-                    ($0.resetAt ?? .distantFuture) > now && now.timeIntervalSince($0.updatedAt) < QuotaForecast.maximumReadingAge
+                    ($0.resetAt ?? .distantFuture) > now && now.timeIntervalSince($0.updatedAt) < AlertPolicy.maximumReadingAge
                         ? AlertPolicy.quotaLevel(remaining: $0.remainingPct) : nil
                 } : nil,
                 resetAt: snapshot?.resetAt,
@@ -320,8 +320,7 @@ public final class UsageStore {
 
     public func balanceLevel(_ balance: AccountBalance, billing: APIBilling) -> StatusLevel? {
         guard !balance.total.isNaN else { return nil }
-        if billing.isAvailable == false { return .critical }
-        return AlertPolicy.balanceLevel(remaining: balance.total, currency: balance.currency)
+        return AlertPolicy.balanceLevel([balance], isAvailable: billing.isAvailable)
     }
 
     /// Status per enabled agent that has data, in glow order. Agents without a reading stay out of the glow.
@@ -331,10 +330,8 @@ public final class UsageStore {
         var seenAccounts: Set<String> = []
         return enabledAgents.flatMap { model -> [StatusLevel] in
             if !model.isAPIBilled { return quota[model.id].map { [$0] } ?? [] }
-            return accounts.filter { $0.contains(model) && seenAccounts.insert($0.id).inserted }.compactMap { billing in
-                if billing.isAvailable == false { return .critical }
-                let levels = billing.balances.compactMap { balanceLevel($0, billing: billing) }
-                return levels.contains(.critical) ? .critical : levels.contains(.warning) ? .warning : levels.first
+            return accounts.filter { $0.contains(model) && seenAccounts.insert($0.id).inserted }.compactMap {
+                AlertPolicy.balanceLevel($0.balances, isAvailable: $0.isAvailable)
             }
         }
     }

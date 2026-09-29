@@ -109,7 +109,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
     }
 
     func fetchUsage(agents: [AgentDescriptor], historyHours: Int) async throws -> UsageReport {
-        let now = clock(), weekAgo = now.addingTimeInterval(-7 * 86400)
+        let now = clock(), weekAgo = now.addingTimeInterval(-AlertPolicy.insightsLookback)
         let since = min(weekAgo, now.addingTimeInterval(-Double(historyHours) * 3600))
         var local = await readSessions(since)
         var hookCompletions: [SessionCompletion] = [], hookNotice: String?

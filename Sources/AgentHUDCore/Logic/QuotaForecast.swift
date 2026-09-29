@@ -2,12 +2,12 @@ import Foundation
 
 /// Hover copy for a time-limited quota, using that window's existing burn-rate estimate.
 public enum QuotaForecast {
-    /// Old observations remain visible but must not generate new quota alerts.
-    public static let maximumReadingAge: TimeInterval = 30 * 60
+    /// `AlertPolicy.maximumReadingAge`.
+    public static var maximumReadingAge: TimeInterval { AlertPolicy.maximumReadingAge }
 
     public static func hint(snapshot: UsageSnapshot, insights: UsageInsights?, now: Date) -> String? {
         guard snapshot.resetAt != nil else { return nil }
-        if snapshot.remainingPct <= 0 {
+        if snapshot.remainingPct <= AlertPolicy.exhaustedRemaining {
             return L10n.text("已耗尽", "Exhausted")
         }
         guard snapshot.cycle != nil else {

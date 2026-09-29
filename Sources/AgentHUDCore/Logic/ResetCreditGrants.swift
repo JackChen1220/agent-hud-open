@@ -57,7 +57,7 @@ public struct ResetCreditTracker: Sendable {
             guard let credits = account.resetCredits,
                   account.quotaNotice == nil, report.sourceNotices[account.account.provider] == nil,
                   account.observedAt <= now,
-                  now.timeIntervalSince(account.observedAt) < QuotaForecast.maximumReadingAge else { continue }
+                  now.timeIntervalSince(account.observedAt) < AlertPolicy.maximumReadingAge else { continue }
             let old = previous[id]
             guard old == nil || account.observedAt > old!.observedAt else { continue }
             previous[id] = Observation(observedAt: account.observedAt, count: credits.availableCount,

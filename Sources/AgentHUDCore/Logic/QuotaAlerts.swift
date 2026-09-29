@@ -67,7 +67,7 @@ public struct QuotaAlertTracker: Sendable {
             guard let snapshot = report.snapshot(for: agent.id),
                   report.quotaNotice(for: agent) == nil,
                   snapshot.updatedAt <= now,
-                  now.timeIntervalSince(snapshot.updatedAt) < QuotaForecast.maximumReadingAge else { continue }
+                  now.timeIntervalSince(snapshot.updatedAt) < AlertPolicy.maximumReadingAge else { continue }
             // A passed deadline is pending confirmation. An observed full idle window can have no deadline.
             if let resetAt = snapshot.resetAt, resetAt <= now { continue }
             guard snapshot.resetAt != nil || snapshot.remainingPct == 100 else { continue }
@@ -79,7 +79,7 @@ public struct QuotaAlertTracker: Sendable {
                 interval.isFinite && interval > 0 && snapshot.resetAt.map { interval < $0.timeIntervalSince(now) } == true
             } ?? false
             let critical = snapshot.remainingPct <= criticalThreshold
-            let exhausted = snapshot.remainingPct <= 0
+            let exhausted = snapshot.remainingPct <= AlertPolicy.exhaustedRemaining
             let atRisk = exhausted || critical || predictsCap
             let warnedUntil = old?.forecastWarnedUntil.flatMap { $0 > snapshot.updatedAt ? $0 : nil }
             previous[agent.id] = Observation(snapshot: snapshot, atRisk: atRisk, critical: critical, exhausted: exhausted,
@@ -93,11 +93,13 @@ public struct QuotaAlertTracker: Sendable {
             } ?? false
             // An early/manual reset may retain the deadline but restores the full window; a reading that wobbles up to
             // full by a point or two is not one.
-            let restoredEarly = snapshot.remainingPct == 100 && snapshot.remainingPct - old.snapshot.remainingPct >= UsageAnalytics.resetRise
+            let restoredEarly = snapshot.remainingPct == 100 && snapshot.remainingPct - old.snapshot.remainingPct >= AlertPolicy.resetRise
             if cycleAdvanced || restoredEarly {
                 let otherExhausted = quotaAgents.filter {
                     $0.vendor == agent.vendor && $0.account?.id == agent.account?.id && $0.id != agent.id &&
-                    report.snapshot(for: $0.id).map { $0.remainingPct <= 0 && ($0.resetAt ?? .distantPast) > now } == true
+                    report.snapshot(for: $0.id).map {
+                        $0.remainingPct <= AlertPolicy.exhaustedRemaining && ($0.resetAt ?? .distantPast) > now
+                    } == true
                 }.map(\.model)
                 result.alerts.append(QuotaAlert(kind: .reset, agent: agent, snapshot: snapshot, otherExhaustedWindows: otherExhausted))
             } else if exhausted && !old.exhausted {

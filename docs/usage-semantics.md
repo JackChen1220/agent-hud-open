@@ -99,8 +99,8 @@ Reads never run in parallel: the usage store runs one pass of source reads or on
 | Token kinds and dimensions, bar buckets | `Sources/AgentHUDCore/Models/TokenKinds.swift`, `Sources/AgentHUDCore/Logic/ChartData.swift` |
 | List prices, platforms, context windows | `Sources/AgentHUDCore/Models/ModelCatalog.swift`, `ModelPriceList.swift`, `PriceRegions.swift` |
 | Today, seven and thirty days | `Sources/AgentHUDCore/Models/UsagePeriods.swift`, `Store/UsageLedger.swift` |
-| Alert levels, status colors | `Sources/AgentHUDCore/Models/AgentThresholds.swift`, `Sources/AgentHUDCore/Logic/StatusLevel.swift` |
-| Alert tracker, added usage resets, island events, forecast, reading age | `Sources/AgentHUDCore/Logic/QuotaAlerts.swift`, `ResetCreditGrants.swift`, `IslandEvents.swift`, `QuotaForecast.swift` |
+| Alert levels, thresholds and reading age, status colors | `Sources/AgentHUDCore/Models/AgentThresholds.swift`, `Sources/AgentHUDCore/Logic/StatusLevel.swift` |
+| Alert tracker, added usage resets, island events, forecast | `Sources/AgentHUDCore/Logic/QuotaAlerts.swift`, `ResetCreditGrants.swift`, `IslandEvents.swift`, `QuotaForecast.swift` |
 | Event union, analytics, history retention | `Sources/AgentHUDCore/Store/UsageAggregation.swift`, `QuotaHistoryStore.swift`, `Sources/AgentHUDCore/Logic/UsageAnalytics.swift` |
 | Session liveness, retained readings | `Sources/AgentHUDCore/Models/LiveSession.swift`, `Sources/AgentHUDCore/Providers/RetainedUsageProvider.swift` |
 | Session breakdown | `Sources/AgentHUDCore/Models/SessionUsage.swift`, `Store/UsageLedger.swift`, `Providers/CombinedUsageProvider.swift` |
