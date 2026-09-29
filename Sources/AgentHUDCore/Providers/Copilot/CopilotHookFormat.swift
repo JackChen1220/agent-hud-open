@@ -18,16 +18,15 @@ enum CopilotHookFormat: CompletionHookFormat {
         (configuration["hooks"]?["agentStop"].arrayValue ?? []).filter(owns).compactMap { $0["bash"].stringValue }
     }
 
-    static func updating(_ configuration: [String: ProviderJSON], command: String?,
-                         keeping: Set<String>) throws -> [String: ProviderJSON] {
-        guard command != nil || commands(in: configuration).contains(where: { !keeping.contains($0) }) else { return configuration }
+    static func updating(_ configuration: [String: ProviderJSON], command: String?) throws -> [String: ProviderJSON] {
+        guard command != nil || !commands(in: configuration).isEmpty else { return configuration }
         var object = configuration
         guard object["version"] == nil || object["version"] == .integer(1),
               object["hooks"] == nil || object["hooks"]?.objectValue != nil else { throw ProviderFailure.format }
         var hooks = object["hooks"]?.objectValue ?? [:]
         guard hooks["agentStop"] == nil || hooks["agentStop"]?.arrayValue != nil else { throw ProviderFailure.format }
         var placed = false
-        var handlers = ClaudeStyleHooks.setting(command, in: hooks["agentStop"]?.arrayValue ?? [], key: "bash", keeping: keeping,
+        var handlers = ClaudeStyleHooks.setting(command, in: hooks["agentStop"]?.arrayValue ?? [], key: "bash",
                                                 owns: { CompletionHooks.ownsCommand($0, source: .copilot) }, placed: &placed)
         if let command, !placed { handlers.append(.object(["type": .string("command"), "bash": .string(command), "timeoutSec": .integer(5)])) }
         hooks["agentStop"] = handlers.isEmpty ? nil : .array(handlers)

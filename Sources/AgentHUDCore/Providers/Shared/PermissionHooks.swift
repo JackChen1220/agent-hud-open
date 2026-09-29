@@ -159,31 +159,24 @@ public enum PermissionHooks {
             .compactMap { $0["command"].stringValue }.filter { ownsCommand($0, source: source) }
     }
 
-    /// Adds or removes Agent HUD's handler, leaving every other hook in the file alone. An unrecognized layout throws
-    /// rather than being rewritten. Either way a handler whose installation is gone goes too, and one another
-    /// installation still answers stays with it (`HookCommand`), which makes adding throw unless `replacingExisting`.
+    /// Points every Agent HUD handler of the permission hook at `executable`, whichever copy wrote it
+    /// (`HookCommand`), or with `enabled` false takes them all out, leaving every other hook in the file alone. An
+    /// unrecognized layout throws rather than being rewritten.
     public static func configure(_ source: Source, enabled: Bool, executable: URL,
-                                 home: URL = FileManager.default.homeDirectoryForCurrentUser,
-                                 replacingExisting: Bool = false) throws {
+                                 home: URL = FileManager.default.homeDirectoryForCurrentUser) throws {
         // Taking a handler out never leaves behind a file the client did not have.
         guard enabled || FileManager.default.fileExists(atPath: source.configuration(home: home).path) else { return }
+        if enabled { try HookCommand.checkInstall(executable: executable) }
         let object = try configuration(source, home: home)
         let command = HookCommand.make(executable: executable, arguments: "--permission-hook " + source.rawValue)
-        let others = replacingExisting ? [] : HookCommand.otherInstallations(commands(in: object, source: source), besides: command)
-        if enabled {
-            try HookCommand.checkInstall(executable: executable, others: others,
-                                         conflict: L10n.text("批准回调由另一安装管理，在该安装中关闭客户端回调后即可切换",
-                                                             "The permission hook belongs to another installation; turn Client hooks off there to switch"))
-        }
-        let updated = try updating(object, source: source, command: enabled ? command : nil, keeping: others)
+        let updated = try updating(object, source: source, command: enabled ? command : nil)
         guard updated != object else { return }
         try HookSettings.write(updated, to: source.configuration(home: home))
     }
 
-    /// The configuration with Agent HUD's handlers taken out, except those whose commands are in `keeping`, or with
-    /// `command` when it is given: in the handler already there, or in a group of its own.
-    static func updating(_ configuration: [String: ProviderJSON], source: Source, command: String?,
-                         keeping: Set<String> = []) throws -> [String: ProviderJSON] {
+    /// The configuration with Agent HUD's handlers taken out, or with `command` when it is given: in the first handler
+    /// already there, or in a group of its own.
+    static func updating(_ configuration: [String: ProviderJSON], source: Source, command: String?) throws -> [String: ProviderJSON] {
         var object = configuration
         guard object["hooks"] == nil || object["hooks"]?.objectValue != nil else { throw ProviderFailure.format }
         var hooks = object["hooks"]?.objectValue ?? [:]
@@ -195,7 +188,7 @@ public enum PermissionHooks {
         var events = source.nestsEvents ? hooks["events"]?.objectValue ?? [:] : hooks
         guard events[source.event] == nil || events[source.event]?.arrayValue != nil else { throw ProviderFailure.format }
         // A handler already there takes the new command and keeps the matcher, timeout and anything else the user set.
-        let groups = ClaudeStyleHooks.setting(command, in: events[source.event]?.arrayValue ?? [], keeping: keeping,
+        let groups = ClaudeStyleHooks.setting(command, in: events[source.event]?.arrayValue ?? [],
                                               owns: { ownsCommand($0, source: source) }) { command in
             var group: [String: ProviderJSON] = ["hooks": .array([.object(["type": .string("command"), "command": .string(command),
                                                                            "timeout": .integer(Int64(source.timeout))])])]

@@ -3,7 +3,8 @@ import Foundation
 import XCTest
 @testable import AgentHUDCore
 
-/// Switching client hooks off takes this installation's handlers out of the clients' files and adds nothing back.
+/// The copy of the app that runs keeps Agent HUD's handlers in the clients' files pointed at itself; switching client
+/// hooks off takes them all out and adds nothing back.
 final class ClientHooksTests: XCTestCase, @unchecked Sendable {
     private func directory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -30,14 +31,20 @@ final class ClientHooksTests: XCTestCase, @unchecked Sendable {
         for folder in [".claude/projects", ".qwen/projects"] {
             try FileManager.default.createDirectory(at: home.appendingPathComponent(folder), withIntermediateDirectories: true)
         }
+        // The user's own hook, and a notification hook another build of the app added while it ran.
         let claude = home.appendingPathComponent(".claude/settings.json")
         try JSONSerialization.data(withJSONObject: ["model": "opus", "hooks": [
-            "PreToolUse": [["matcher": "Bash", "hooks": [["type": "command", "command": "~/bin/lint"]]]]]]).write(to: claude)
+            "PreToolUse": [["matcher": "Bash", "hooks": [["type": "command", "command": "~/bin/lint"]]]],
+            "Notification": [["matcher": "permission_prompt", "hooks": [["type": "command",
+                "command": "'/Applications/Agent HUD Open.app/Contents/MacOS/Agent HUD Open' --attention-hook claude"]]]]]]).write(to: claude)
 
         let executable = URL(fileURLWithPath: "/Applications/Agent HUD.app/Contents/MacOS/Agent HUD")
         SessionObservers.configure(executable: executable, enabled: true, home: home)
         let qwen = home.appendingPathComponent(".qwen/settings.json")
-        XCTAssertEqual(try commands(claude).count, 3, "approval and notification hooks beside the user's own")
+        XCTAssertEqual(try commands(claude), ["'\(executable.path)' --attention-hook claude", "'\(executable.path)' --permission-hook claude",
+                                              "~/bin/lint"], "approval and notification hooks beside the user's own, all the running copy's")
+        XCTAssertEqual(try ProviderJSON.read(Data(contentsOf: claude))["hooks"]["Notification"].arrayValue?.first?["matcher"].stringValue,
+                       "permission_prompt", "the handler taken over keeps its matcher")
         XCTAssertEqual(try commands(qwen).count, 2, "approval and stop hooks")
 
         SessionObservers.configure(executable: executable, enabled: false, home: home)

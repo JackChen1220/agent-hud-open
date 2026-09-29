@@ -13,13 +13,6 @@ final class CompletionHooksTests: XCTestCase, @unchecked Sendable {
     private func json(_ value: [String: Any]) throws -> ProviderJSON {
         try .read(JSONSerialization.data(withJSONObject: value))
     }
-    /// A file standing in for an installed app's executable: one that exists is an installation still here.
-    private func app(_ name: String, in folder: URL) throws -> URL {
-        let url = folder.appendingPathComponent("\(name).app/Contents/MacOS/\(name)")
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data().write(to: url)
-        return url
-    }
 
     func testGrokNamespacedCompletionSurvivesUsageLogPrecedence() async throws {
         let root = try directory(), session = root.appendingPathComponent("sessions/%2Ffixture/s")
@@ -114,68 +107,52 @@ final class CompletionHooksTests: XCTestCase, @unchecked Sendable {
         XCTAssertTrue(restarted.update(report: report, agents: agents, now: now.addingTimeInterval(2)).completions.isEmpty)
     }
 
-    func testAutomaticInstallationDoesNotTakeOverAnotherHost() throws {
-        let home = try directory()
-        let first = try app("Agent HUD", in: home), second = try app("Agent HUD Open", in: home)
-        for source in CompletionHooks.Source.allCases {
-            try CompletionHooks.configure(source, enabled: true, executable: first, home: home)
-            let file = source.configuration(home: home)
-            let original = try Data(contentsOf: file)
-            XCTAssertThrowsError(try CompletionHooks.configure(source, enabled: true, executable: second, home: home))
-            XCTAssertEqual(try Data(contentsOf: file), original)
-            try CompletionHooks.configure(source, enabled: false, executable: second, home: home)
-            XCTAssertEqual(try Data(contentsOf: file), original, "\(source): switching hooks off leaves another installation's handler")
-            try CompletionHooks.configure(source, enabled: true, executable: second, home: home, replacingExisting: true)
-            XCTAssertTrue(try String(contentsOf: file, encoding: .utf8).contains(second.path))
-        }
-    }
-
-    func testAHandlerLeftWhereTheAppNoLongerRunsIsReplacedOrRemoved() throws {
-        let apps = try directory()
-        let current = try app("Agent HUD", in: apps.appendingPathComponent("Applications"))
-        // A translocated copy still mounted, the disk image the app came on, and an app since deleted.
-        let left = [try app("Agent HUD", in: apps.appendingPathComponent("AppTranslocation/5D1C/d")),
-                    URL(fileURLWithPath: "/Volumes/Agent HUD/Agent HUD.app/Contents/MacOS/Agent HUD"),
-                    apps.appendingPathComponent("Trash/Agent HUD.app/Contents/MacOS/Agent HUD")]
+    func testTheRunningAppTakesOverAHandlerAnotherCopyWrote() throws {
+        let current = URL(fileURLWithPath: "/Applications/Agent HUD.app/Contents/MacOS/Agent HUD")
+        // Another build still installed, a translocated copy, the disk image the app came on, and an app since deleted.
+        let others = [URL(fileURLWithPath: "/Applications/Agent HUD Open.app/Contents/MacOS/Agent HUD Open"),
+                      URL(fileURLWithPath: "/private/var/folders/x1/T/AppTranslocation/5D1C/d/Agent HUD.app/Contents/MacOS/Agent HUD"),
+                      URL(fileURLWithPath: "/Volumes/Agent HUD/Agent HUD.app/Contents/MacOS/Agent HUD"),
+                      URL(fileURLWithPath: "/Users/me/.Trash/Agent HUD.app/Contents/MacOS/Agent HUD")]
         for source in CompletionHooks.Source.allCases {
             let home = try directory(), file = source.configuration(home: home)
             let ours = { HookCommand.make(executable: $0, arguments: "--completion-hook \(source.rawValue)") }
-            for old in left {
+            let installed = { source.format.commands(in: try ProviderFiles.json(file).objectValue ?? [:]) }
+            for other in others {
                 for enabled in [false, true] {
                     try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    try JSONEncoder().encode(ProviderJSON.object(try source.format.updating([:], command: ours(old), keeping: [])))
-                        .write(to: file)
+                    try JSONEncoder().encode(ProviderJSON.object(try source.format.updating([:], command: ours(other)))).write(to: file)
                     try CompletionHooks.configure(source, enabled: enabled, executable: current, home: home)
-                    XCTAssertEqual(source.format.commands(in: try ProviderFiles.json(file).objectValue ?? [:]), enabled ? [ours(current)] : [],
-                                   "\(source): the handler left at \(old.path) is \(enabled ? "replaced" : "removed")")
+                    XCTAssertEqual(try installed(), enabled ? [ours(current)] : [],
+                                   "\(source): the handler \(other.path) wrote is \(enabled ? "taken over" : "removed")")
                 }
             }
-            let installed = try Data(contentsOf: file)
-            XCTAssertThrowsError(try CompletionHooks.configure(source, enabled: true, executable: left[1], home: home,
-                                                               replacingExisting: true))
-            XCTAssertEqual(try Data(contentsOf: file), installed, "\(source): an app running from its disk image adds nothing")
+            let taken = try Data(contentsOf: file)
+            XCTAssertThrowsError(try CompletionHooks.configure(source, enabled: true, executable: others[2], home: home))
+            XCTAssertEqual(try Data(contentsOf: file), taken, "\(source): an app running from its disk image writes nothing")
         }
     }
 
     func testAntigravityKeepsTheEntryAsTheUserLeftItAndOnlyMovesTheCommand() throws {
         let home = try directory(), file = CompletionHooks.Source.antigravity.configuration(home: home)
-        let first = try app("Agent HUD", in: home.appendingPathComponent("Applications"))
+        let first = URL(fileURLWithPath: "/Applications/Agent HUD.app/Contents/MacOS/Agent HUD")
         try CompletionHooks.configure(.antigravity, enabled: true, executable: first, home: home)
-        // Switched off in agy's own hooks file, with a longer wait.
+        // Switched off in agy's own hooks file, with a longer wait, beside a second handler an older copy left.
         var object = try XCTUnwrap(ProviderFiles.json(file).objectValue)
         var entry = try XCTUnwrap(object["agent-hud"]?.objectValue)
         entry["enabled"] = .bool(false)
         entry["Stop"] = .array([.object(["type": .string("command"), "command": .string(HookCommand.make(executable: first,
-            arguments: "--completion-hook antigravity")), "timeout": .integer(30)])])
+            arguments: "--completion-hook antigravity")), "timeout": .integer(30)]),
+            .object(["type": .string("command"), "command": .string("'/Volumes/Agent HUD/Agent HUD' --completion-hook antigravity")])])
         object["agent-hud"] = .object(entry)
         try JSONEncoder().encode(ProviderJSON.object(object)).write(to: file)
 
-        try FileManager.default.removeItem(at: home.appendingPathComponent("Applications"))
-        let moved = try app("Agent HUD", in: home.appendingPathComponent("Moved"))
+        let moved = URL(fileURLWithPath: "/Users/me/Applications/Agent HUD.app/Contents/MacOS/Agent HUD")
         try CompletionHooks.configure(.antigravity, enabled: true, executable: moved, home: home)
         let kept = try ProviderFiles.json(file)["agent-hud"]
         XCTAssertEqual(kept["enabled"].boolValue, false, "a hook the user switched off stays off")
         XCTAssertFalse(CompletionHooks.isInstalled(.antigravity, home: home))
+        XCTAssertEqual(kept["Stop"].arrayValue?.count, 1, "the entry keeps one handler, the running copy's")
         XCTAssertEqual(kept["Stop"].arrayValue?.first?["command"].stringValue,
                        HookCommand.make(executable: moved, arguments: "--completion-hook antigravity"))
         XCTAssertEqual(kept["Stop"].arrayValue?.first?["timeout"].numberValue, 30)

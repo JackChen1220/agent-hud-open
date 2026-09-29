@@ -20,11 +20,9 @@ protocol CompletionHookFormat {
     static func commands(in configuration: [String: ProviderJSON]) -> [String]
     /// Whether an Agent HUD handler is present and active.
     static func isActive(in configuration: [String: ProviderJSON]) -> Bool
-    /// The configuration with Agent HUD's handler set to `command`, or removed when `command` is nil; handlers whose
-    /// commands are in `keeping` stay where they are. Every other entry is preserved; an unrecognized layout throws
-    /// instead of being rewritten.
-    static func updating(_ configuration: [String: ProviderJSON], command: String?,
-                         keeping: Set<String>) throws -> [String: ProviderJSON]
+    /// The configuration with Agent HUD's handlers set to `command`, or all removed when `command` is nil. Every other
+    /// entry is preserved; an unrecognized layout throws instead of being rewritten.
+    static func updating(_ configuration: [String: ProviderJSON], command: String?) throws -> [String: ProviderJSON]
 }
 
 extension CompletionHookFormat {
@@ -106,23 +104,16 @@ public enum CompletionHooks {
         command?.hasSuffix(" --completion-hook " + source.rawValue) == true
     }
 
-    /// Adds or removes Agent HUD's handler, leaving every other hook in the file alone. Either way a handler whose
-    /// installation is gone goes too, and one another installation still answers stays with it (`HookCommand`), which
-    /// makes adding throw unless `replacingExisting` takes it over.
+    /// Points every Agent HUD handler of the client's stop hook at `executable`, whichever copy wrote it
+    /// (`HookCommand`), or with `enabled` false takes them all out, leaving every other hook in the file alone.
     public static func configure(_ source: Source, enabled: Bool, executable: URL,
-                                 home: URL = FileManager.default.homeDirectoryForCurrentUser,
-                                 replacingExisting: Bool = false) throws {
+                                 home: URL = FileManager.default.homeDirectoryForCurrentUser) throws {
         // Taking a handler out never leaves behind a file the client did not have.
         guard enabled || FileManager.default.fileExists(atPath: source.configuration(home: home).path) else { return }
+        if enabled { try HookCommand.checkInstall(executable: executable) }
         let object = try configuration(source, home: home)
         let command = HookCommand.make(executable: executable, arguments: "--completion-hook " + source.rawValue)
-        let others = replacingExisting ? [] : HookCommand.otherInstallations(source.format.commands(in: object), besides: command)
-        if enabled {
-            try HookCommand.checkInstall(executable: executable, others: others,
-                                         conflict: L10n.text("完成回调由另一安装管理，在该安装中关闭客户端回调或手动重新安装后即可切换",
-                                                             "Completion hook belongs to another installation; turn Client hooks off there or reinstall it explicitly to switch"))
-        }
-        let updated = try source.format.updating(object, command: enabled ? command : nil, keeping: others)
+        let updated = try source.format.updating(object, command: enabled ? command : nil)
         guard updated != object else { return }
         try HookSettings.write(updated, to: source.configuration(home: home))
     }
@@ -150,11 +141,9 @@ enum AntigravityHookFormat: CompletionHookFormat {
         !commands(in: configuration).isEmpty && configuration["agent-hud"]?["enabled"].boolValue != false
     }
 
-    /// The entry holds one installation's handler: adding sets its command, keeping `enabled` and whatever else the
-    /// user changed in the entry and its handler, and removing leaves one another installation still answers as it is.
-    static func updating(_ configuration: [String: ProviderJSON], command: String?,
-                         keeping: Set<String>) throws -> [String: ProviderJSON] {
-        if command == nil, commands(in: configuration).contains(where: keeping.contains) { return configuration }
+    /// The entry is Agent HUD's and holds one handler: adding sets its command, keeping `enabled` and whatever else the
+    /// user changed in the entry and its handler, and removing takes the entry out.
+    static func updating(_ configuration: [String: ProviderJSON], command: String?) throws -> [String: ProviderJSON] {
         var object = configuration
         guard let command else {
             object["agent-hud"] = nil
@@ -163,14 +152,10 @@ enum AntigravityHookFormat: CompletionHookFormat {
         guard object["agent-hud"] == nil || object["agent-hud"]?.objectValue != nil else { throw ProviderFailure.format }
         var entry = object["agent-hud"]?.objectValue ?? [:]
         guard entry["Stop"] == nil || entry["Stop"]?.arrayValue != nil else { throw ProviderFailure.format }
-        var handlers = entry["Stop"]?.arrayValue ?? []
-        if let index = handlers.firstIndex(where: { $0.objectValue != nil }), var handler = handlers[index].objectValue {
-            handler["command"] = .string(command)
-            handlers[index] = .object(handler)
-        } else {
-            handlers = [.object(["type": .string("command"), "command": .string(command), "timeout": .integer(5)])]
-        }
-        entry["Stop"] = .array(handlers)
+        var handler = (entry["Stop"]?.arrayValue ?? []).lazy.compactMap(\.objectValue).first
+            ?? ["type": .string("command"), "timeout": .integer(5)]
+        handler["command"] = .string(command)
+        entry["Stop"] = .array([.object(handler)])
         object["agent-hud"] = .object(entry)
         return object
     }
@@ -193,15 +178,14 @@ enum CursorHookFormat: CompletionHookFormat {
         (configuration["hooks"]?["stop"].arrayValue ?? []).filter(owns).map { $0["command"].stringValue ?? "" }
     }
 
-    static func updating(_ configuration: [String: ProviderJSON], command: String?,
-                         keeping: Set<String>) throws -> [String: ProviderJSON] {
+    static func updating(_ configuration: [String: ProviderJSON], command: String?) throws -> [String: ProviderJSON] {
         var object = configuration
         guard object["version"] == nil || object["version"] == .integer(1),
               object["hooks"] == nil || object["hooks"]?.objectValue != nil else { throw ProviderFailure.format }
         var hooks = object["hooks"]?.objectValue ?? [:]
         guard hooks["stop"] == nil || hooks["stop"]?.arrayValue != nil else { throw ProviderFailure.format }
         var placed = false
-        var handlers = ClaudeStyleHooks.setting(command, in: hooks["stop"]?.arrayValue ?? [], keeping: keeping,
+        var handlers = ClaudeStyleHooks.setting(command, in: hooks["stop"]?.arrayValue ?? [],
                                                 owns: { CompletionHooks.ownsCommand($0, source: .cursor) }, placed: &placed)
         if let command, !placed { handlers.append(.object(["command": .string(command), "timeout": .integer(5)])) }
         hooks["stop"] = handlers.isEmpty ? nil : .array(handlers)

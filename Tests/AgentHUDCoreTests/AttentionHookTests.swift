@@ -93,44 +93,30 @@ final class AttentionHookTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual((removed["hooks"]?["Notification"].arrayValue ?? []).count, 1, "the other handler stays")
     }
 
-    func testAHandlerNothingAnswersIsReplacedAndAnotherInstallationKeepsItsOwn() throws {
-        let home = try directory(), apps = try directory()
+    func testTheRunningAppTakesOverEveryHandlerAndSwitchingOffTakesThemAllOut() throws {
+        let home = try directory()
         let settings = home.appendingPathComponent(".claude/settings.json")
         try FileManager.default.createDirectory(at: settings.deletingLastPathComponent(), withIntermediateDirectories: true)
-        func app(_ name: String) throws -> URL {
-            let url = apps.appendingPathComponent("\(name).app/Contents/MacOS/\(name)")
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try Data().write(to: url)
-            return url
-        }
         func handlers(_ executables: String...) throws {
             try JSONSerialization.data(withJSONObject: ["hooks": ["Notification": [["hooks": executables.map { executable in
                 ["type": "command", "command": "'\(executable)' --attention-hook claude"] }]]]]).write(to: settings)
         }
         let installed = { AttentionHooks.commands(in: try AttentionHooks.configuration(.claude, home: home), source: .claude) }
-        let executable = try app("Agent HUD"), other = try app("Agent HUD Open")
-        // The disk image the app was first opened from, and an app since deleted.
-        let gone = apps.path + "/Gone.app/Contents/MacOS/Gone"
-        for left in ["/Volumes/Agent HUD/Agent HUD.app/Contents/MacOS/Agent HUD", gone] {
-            try handlers(left)
-            try AttentionHooks.configure(.claude, enabled: true, executable: executable, home: home)
-            XCTAssertEqual(try installed(), ["'\(executable.path)' --attention-hook claude"], "the handler left at \(left) is replaced")
-        }
-
-        // A handler from another installation that is still here is left alone unless the caller says to replace it,
-        // and switching hooks off leaves it too, while it takes out this installation's own and one left behind.
-        try handlers(other.path)
-        XCTAssertThrowsError(try AttentionHooks.configure(.claude, enabled: true, executable: executable, home: home))
-        try AttentionHooks.configure(.claude, enabled: true, executable: executable, home: home, replacingExisting: true)
-        XCTAssertEqual(try installed(), ["'\(executable.path)' --attention-hook claude"])
-        try handlers(other.path, executable.path, gone)
+        let executable = URL(fileURLWithPath: "/Applications/Agent HUD.app/Contents/MacOS/Agent HUD")
+        // Another build still installed, the disk image the app was first opened from, and an app since deleted.
+        let others = ["/Applications/Agent HUD Open.app/Contents/MacOS/Agent HUD Open",
+                      "/Volumes/Agent HUD/Agent HUD.app/Contents/MacOS/Agent HUD", "/tmp/Gone.app/Contents/MacOS/Gone"]
+        try handlers(others[0], others[1], executable.path, others[2])
+        try AttentionHooks.configure(.claude, enabled: true, executable: executable, home: home)
+        XCTAssertEqual(try installed(), ["'\(executable.path)' --attention-hook claude"], "whichever copy wrote them, the one that runs takes them over")
+        try handlers(others[0], executable.path, others[2])
         try AttentionHooks.configure(.claude, enabled: false, executable: executable, home: home)
-        XCTAssertEqual(try installed(), ["'\(other.path)' --attention-hook claude"])
+        XCTAssertEqual(try installed(), [], "switching hooks off takes out every handler of Agent HUD's")
 
-        try handlers()
+        try handlers(others[0])
         XCTAssertThrowsError(try AttentionHooks.configure(.claude, enabled: true,
             executable: URL(fileURLWithPath: "/Volumes/Agent HUD/Agent HUD.app/Contents/MacOS/Agent HUD"), home: home))
-        XCTAssertFalse(AttentionHooks.isActive(.claude, home: home), "an app running from its disk image adds nothing")
+        XCTAssertEqual(try installed(), ["'\(others[0])' --attention-hook claude"], "an app running from its disk image writes nothing")
     }
 
     func testAHomeWithoutTheClientIsLeftAlone() throws {

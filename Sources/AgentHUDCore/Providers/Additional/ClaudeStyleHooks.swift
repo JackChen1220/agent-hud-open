@@ -9,15 +9,14 @@ enum ClaudeStyleHooks {
             .compactMap { $0["command"].stringValue }.filter { CompletionHooks.ownsCommand($0, source: source) }
     }
 
-    /// `timeout` is in the client's own unit: seconds for Claude Code's forks, milliseconds for Qwen Code. Handlers whose
-    /// commands are in `keeping` stay where they are.
+    /// `timeout` is in the client's own unit: seconds for Claude Code's forks, milliseconds for Qwen Code.
     static func updating(_ configuration: [String: ProviderJSON], event: String, source: CompletionHooks.Source,
-                         command: String?, keeping: Set<String>, timeout: Int = 5) throws -> [String: ProviderJSON] {
+                         command: String?, timeout: Int = 5) throws -> [String: ProviderJSON] {
         var object = configuration
         guard object["hooks"] == nil || object["hooks"]?.objectValue != nil else { throw ProviderFailure.format }
         var hooks = object["hooks"]?.objectValue ?? [:]
         guard hooks[event] == nil || hooks[event]?.arrayValue != nil else { throw ProviderFailure.format }
-        let groups = setting(command, in: hooks[event]?.arrayValue ?? [], keeping: keeping,
+        let groups = setting(command, in: hooks[event]?.arrayValue ?? [],
                              owns: { CompletionHooks.ownsCommand($0, source: source) }) { command in
             .object(["hooks": .array([.object(["type": .string("command"), "command": .string(command), "timeout": .integer(Int64(timeout))])])])
         }
@@ -26,14 +25,13 @@ enum ClaudeStyleHooks {
         return object
     }
 
-    /// Agent HUD's handlers among `handlers`, set to `command`: the first one `owns` names, unless another installation
-    /// keeps it (`keeping`), takes the command under `key` and keeps everything else in it, such as a timeout the user
-    /// changed; the others Agent HUD owns go. `placed` turns true once a handler has taken the command.
-    static func setting(_ command: String?, in handlers: [ProviderJSON], key: String = "command", keeping: Set<String>,
+    /// Agent HUD's handlers among `handlers`, whichever copy wrote them, set to `command`: the first one `owns` names
+    /// takes the command under `key` and keeps everything else in it, such as a timeout the user changed; the others go,
+    /// and with no command all of them go. `placed` turns true once a handler has taken the command.
+    static func setting(_ command: String?, in handlers: [ProviderJSON], key: String = "command",
                         owns: (String?) -> Bool, placed: inout Bool) -> [ProviderJSON] {
         handlers.compactMap { handler in
-            let existing = handler[key].stringValue
-            guard owns(existing), !keeping.contains(existing ?? "") else { return handler }
+            guard owns(handler[key].stringValue) else { return handler }
             guard let command, !placed, var fields = handler.objectValue else { return nil }
             placed = true
             fields[key] = .string(command)
@@ -43,12 +41,12 @@ enum ClaudeStyleHooks {
 
     /// The same across matcher groups: the group holding the handler keeps its matcher and every other key, a group
     /// Agent HUD's handlers leave empty goes, and `group` makes a new one when no handler took the command.
-    static func setting(_ command: String?, in groups: [ProviderJSON], keeping: Set<String>, owns: (String?) -> Bool,
+    static func setting(_ command: String?, in groups: [ProviderJSON], owns: (String?) -> Bool,
                         group: (String) -> ProviderJSON) -> [ProviderJSON] {
         var placed = false
         var result = groups.compactMap { group -> ProviderJSON? in
             guard var fields = group.objectValue, let handlers = fields["hooks"]?.arrayValue else { return group }
-            let kept = setting(command, in: handlers, keeping: keeping, owns: owns, placed: &placed)
+            let kept = setting(command, in: handlers, owns: owns, placed: &placed)
             if kept == handlers { return group }
             if kept.isEmpty { return nil }
             fields["hooks"] = .array(kept)

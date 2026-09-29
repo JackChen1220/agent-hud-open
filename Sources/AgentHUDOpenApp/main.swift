@@ -127,7 +127,7 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--install-comp
    let source = CompletionHooks.Source(rawValue: CommandLine.arguments[2]) {
     do {
         try CompletionHooks.configure(source, enabled: true,
-            executable: URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL, replacingExisting: true)
+            executable: URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL)
         print("Completion hook installed: \(source.rawValue)")
         exit(0)
     } catch {

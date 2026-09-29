@@ -47,10 +47,11 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 - The merged report keeps the provider's discovered agents, accounts, active quota pools, completions and turns: the agent list and island events read them from `UsageStore.report`.
 - `UsageStore.remerge()` runs only `merge` again on the provider's last report, for data the host merges that changed since the pass. It never overlaps a local poll: a poll in progress merges for it, or merges again when its own merge had already started. A report installed with `replace(report:)` is not merged over.
 
-### Session observers and hook ownership
+### Session observers and hooks
 
-- `SessionObservers.configure(executable:enabled:)`, called after creating the store and before `start()` with `Settings.clientHooks`, installs the Pi observer when the Pi directory exists, the Antigravity, Cursor, GitHub Copilot CLI, CodeBuddy and Qwen Code stop hooks, Claude Code's notification hook and each detected client's approval hook when those clients are installed, or with `enabled` false removes this installation's handlers from them. Creating a `DesktopApplication` installs nothing; a change of `clientHooks` while it runs applies at once with the main bundle's executable.
-- A completion hook that points at another executable is preserved and the conflict is reported, unless that executable is gone or lies under App Translocation or `/Volumes`; `--install-completion-hook` transfers ownership explicitly ([completion hooks](session-lifecycle.md#completion-hooks)).
+- `SessionObservers.configure(executable:enabled:)`, called after creating the store and before `start()` with `Settings.clientHooks`, installs the Pi observer when the Pi directory exists, the Antigravity, Cursor, GitHub Copilot CLI, CodeBuddy and Qwen Code stop hooks, Claude Code's notification hook and each detected client's approval hook when those clients are installed, or with `enabled` false removes Agent HUD's handlers from them. Creating a `DesktopApplication` installs nothing; a change of `clientHooks` while it runs applies at once with the main bundle's executable.
+- Every Agent HUD handler belongs to the copy that runs, since only one runs at a time: `configure` points each one at the executable it is given, whichever copy wrote it, and adds none from under App Translocation or `/Volumes` ([completion hooks](session-lifecycle.md#completion-hooks)).
+- `HookSettings.write(_:to:)` writes every client settings file the hooks change, and a host's own hooks can use it too: through a symbolic link to the file it leads to, keeping the file's permissions.
 
 ### Storage
 
@@ -95,6 +96,7 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 | `SingleInstance.claim(at:)` | AgentHUDDesktop | Takes the shared lock and keeps it for the process lifetime; false after an alert naming the copy that holds it. A lock that cannot be created returns true |
 | `InstanceLock.claim(at:executable:)` → `Claim` | AgentHUDCore | `acquired` (the lock lasts as long as the value), `held(by:)` (the application that runs, its bundle when it has one) or `unavailable`; `InstanceLock.sharedURL` is `~/Library/Caches/app.agenthud/instance.lock` |
 | `SessionObservers.configure(executable:)` | AgentHUDCore | Adapter setup with the executable that handles hook callbacks |
+| `HookSettings.write(_:to:)` | AgentHUDCore | Writes a client's settings object as sorted, pretty-printed JSON through its symbolic links, keeping the file's permissions |
 | `AgentHUDDataDirectory` | Host `Info.plist` | Name of the data directory under `~/Library/Application Support`; default `Agent HUD Open` |
 | Launch switches and probes | Standalone executable | [Command line](command-line.md) |
 

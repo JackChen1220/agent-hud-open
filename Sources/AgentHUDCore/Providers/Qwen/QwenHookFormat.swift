@@ -22,8 +22,7 @@ enum QwenHookFormat: CompletionHookFormat {
         ClaudeStyleHooks.commands(in: configuration, event: "Stop", source: .qwen)
     }
 
-    static func updating(_ configuration: [String: ProviderJSON], command: String?,
-                         keeping: Set<String>) throws -> [String: ProviderJSON] {
-        try ClaudeStyleHooks.updating(configuration, event: "Stop", source: .qwen, command: command, keeping: keeping, timeout: timeout)
+    static func updating(_ configuration: [String: ProviderJSON], command: String?) throws -> [String: ProviderJSON] {
+        try ClaudeStyleHooks.updating(configuration, event: "Stop", source: .qwen, command: command, timeout: timeout)
     }
 }
