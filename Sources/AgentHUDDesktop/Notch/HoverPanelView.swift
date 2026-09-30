@@ -215,8 +215,7 @@ struct HoverPanelView: View {
 
     /// A running session wears its agent's colour, one blocked on the user the warning colour, and an ended one grey.
     static func sessionDot(_ session: LiveSession, store: UsageStore) -> SessionDot {
-        if store.isSessionWaiting(session) { return .waiting }
-        return store.isSessionLive(session) ? .running : .ended
+        SessionDot(store.view.phase(of: session))
     }
 
     private func sessionDotColor(_ session: LiveSession) -> Color {

@@ -181,8 +181,8 @@ struct StatsView: View {
 
     /// How many sessions the list shows, and how many of them are running.
     static func sessionCounts(_ store: UsageStore, source: SessionSource?, activeOnly: Bool) -> (listed: Int, running: Int) {
-        let sessions = store.listedSessions(source: source, activeOnly: activeOnly)
-        return (sessions.count, sessions.filter(store.isSessionLive).count)
+        let sessions = store.listedSessions(source: source, activeOnly: activeOnly), view = store.view
+        return (sessions.count, sessions.filter { view.phase(of: $0).isInFlight }.count)
     }
 
     /// Which token kinds the charts count: what calls added, everything, or any kinds picked one by one.

@@ -67,7 +67,7 @@ struct SessionDetailView: View {
 
     /// The header's dot: blocked on the user, running in its agent's colour, else grey.
     static func dot(_ session: LiveSession, store: UsageStore) -> SessionDot {
-        store.isSessionWaiting(session) ? .waiting : store.isSessionLive(session) ? .running : .ended
+        SessionDot(store.view.phase(of: session))
     }
 
     /// The header's state, as the store words it.

@@ -65,7 +65,8 @@ struct SessionList: View {
     /// How many of a day's sessions are running, and whether the day starts open: today does, and so does any day with a
     /// session still running.
     static func dayState(_ day: Date, sessions: [LiveSession], today: Date, store: UsageStore) -> (running: Int, opens: Bool) {
-        let running = sessions.filter(store.isSessionLive).count
+        let view = store.view
+        let running = sessions.filter { view.phase(of: $0).isInFlight }.count
         return (running, day == today || running > 0)
     }
 
@@ -220,6 +221,14 @@ struct SessionsTodayCard: View {
 /// The dot a session wears in the island, on its card and on its page: blocked on the user, running, or neither.
 enum SessionDot: Equatable {
     case waiting, running, ended
+
+    init(_ phase: SessionPhase) {
+        switch phase.state {
+        case .waitingForApproval: self = .waiting
+        case .running: self = .running
+        case .idle, .unverified: self = .ended
+        }
+    }
 }
 
 /// One session as the phone lists it: its state, title and tokens with sub-agents'; model, project and cost; each recent
@@ -318,7 +327,7 @@ struct SessionCard: View {
 
     /// Blocked on the user, else running, else neither.
     static func dot(_ session: LiveSession, store: UsageStore) -> SessionDot {
-        store.isSessionWaiting(session) ? .waiting : store.isSessionLive(session) ? .running : .ended
+        SessionDot(store.view.phase(of: session))
     }
 
     /// The state as the phone is told it. Without live status there is no state.
@@ -326,13 +335,15 @@ struct SessionCard: View {
         switch dot {
         case .waiting: return L10n.text("等待批准", "Needs approval")
         case .running: return L10n.text("运行中", "Running")
+        // A session in flight that the Mac can no longer vouch for reads like an idle one.
         case .ended: return store.liveStatusEnabled(for: session) ? L10n.text("等你回复", "Waiting for you") : nil
         }
     }
 
-    /// What the elapsed time counts from: the start of the turn in flight, else the session's last activity.
+    /// What the elapsed time counts from: the start of the turn in flight, else the session's last event.
     static func elapsedStart(_ session: LiveSession, dot: SessionDot, store: UsageStore) -> Date {
-        dot == .ended ? store.sessionLastActivity(session) : store.sessionTurnStart(session)
+        let shown = store.view.session(for: session)
+        return dot == .ended ? shown.lastEventAt : shown.phase.since
     }
 
     /// How long ago, as the phone says it: in seconds, minutes, hours, then days.
@@ -381,30 +392,10 @@ extension UsageStore {
     func listedSessions(source: SessionSource?, activeOnly: Bool) -> [LiveSession] {
         let sessions = statsSessions.filter { source == nil || sessionSource($0) == source }
         guard activeOnly else { return sessions }
-        let since = now.addingTimeInterval(-86_400), events = turnEvents
-        return sessions.filter { isSessionLive($0) || $0.lastEvent(turnAt: events[$0.id]) >= since }
-    }
-
-    /// When the session last did something, dated as its record for the phone is: its newest turn event, else its end.
-    func sessionLastActivity(_ session: LiveSession) -> Date {
-        session.lastEvent(turnAt: report?.turns.filter { $0.sessionID == session.id }.map(\.observedAtMs).max().map(Self.date))
-    }
-
-    /// When the turn in flight began, as the phone is told: the newest turn's start while it runs, else the session's.
-    func sessionTurnStart(_ session: LiveSession) -> Date {
-        let vendor = sessionSource(session).vendor?.lowercased()
-        guard let turn = report?.turns.last(where: { $0.sessionID == session.id && (vendor == nil || $0.provider.lowercased() == vendor) }),
-              turn.state == .running || turn.state == .waitingForApproval else { return session.startedAt }
-        return Self.date(turn.startedAtMs ?? turn.observedAtMs)
-    }
-
-    /// Each session's newest turn event.
-    private var turnEvents: [String: Date] {
-        (report?.turns ?? []).reduce(into: [:]) { events, turn in
-            let at = Self.date(turn.observedAtMs)
-            if at > events[turn.sessionID] ?? .distantPast { events[turn.sessionID] = at }
+        let view = self.view, since = now.addingTimeInterval(-86_400)
+        return sessions.filter {
+            let shown = view.session(for: $0)
+            return shown.phase.isInFlight || shown.lastEventAt >= since
         }
     }
-
-    private static func date(_ milliseconds: Int64) -> Date { Date(timeIntervalSince1970: Double(milliseconds) / 1000) }
 }
