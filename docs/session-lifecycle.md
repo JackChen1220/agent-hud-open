@@ -109,7 +109,7 @@ Antigravity, Cursor, GitHub Copilot CLI, CodeBuddy and Qwen Code do not record f
 | What a session's card, page and island row say: its dot, state, elapsed time and label | `Sources/AgentHUDCore/Logic/Countdown.swift`, `Sources/AgentHUDDesktop/Stats/SessionList.swift`, `Stats/SessionDetailView.swift`, `Notch/HoverPanelView.swift` |
 | Completion reminders | `Sources/AgentHUDCore/Logic/IslandEvents.swift`, `Sources/AgentHUDDesktop/App/DesktopApplication.swift` |
 | Adapter setup, a hook's installation, the handler command and the settings writer | `Sources/AgentHUDCore/Providers/SessionObservers.swift`, `Shared/HookInstaller.swift`, `Shared/HookCommand.swift`, `Shared/HookSettings.swift` |
-| The records handlers leave for the application; completion hooks and handler entry | `Sources/AgentHUDCore/Providers/Shared/HookInbox.swift`; `Additional/CompletionHooks.swift`, `Sources/AgentHUDOpenApp/main.swift` |
+| The records handlers leave for the application; completion hooks and handler entry | `Sources/AgentHUDCore/Providers/Shared/HookInbox.swift`, `Shared/HookEntry.swift`, `Additional/CompletionHooks.swift` |
 | Pi observer and its extension script | `Sources/AgentHUDCore/Providers/OpenAgents/PiSessionObserver.swift` |
 | Per-client turn parsing | `Sources/AgentHUDCore/Providers/Claude/ClaudeTranscripts.swift`, `Codex/CodexTranscripts.swift`, `DeepSeek/DeepSeekTranscript.swift`, `Grok/GrokSessions.swift`, `OpenAgents/OpenAgentSessions.swift` |
 | Claude sub-agents keeping their session running | `Sources/AgentHUDCore/Providers/Claude/ClaudeCodeProvider.swift` |

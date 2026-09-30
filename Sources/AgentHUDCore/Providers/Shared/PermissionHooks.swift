@@ -105,7 +105,8 @@ public enum PermissionHooks {
             return base.appendingPathComponent(directory, isDirectory: true)
         }
 
-        func configuration(home base: URL) -> URL {
+        /// The client's settings file that holds its hooks, in the directory its environment variable moves.
+        public func configuration(home base: URL) -> URL {
             let name: String
             switch self {
             case .codex: name = "hooks.json"

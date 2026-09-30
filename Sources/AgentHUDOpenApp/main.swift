@@ -30,35 +30,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 UserDefaults.standard.removePersistentDomain(forName: bundleID)
             }
         }
-        let defaults = options.demo ? UserDefaults(suiteName: demoSuite)! : .standard
-        let settings = SettingsStore(defaults: defaults, defaultAgents: options.demo ? DemoData.everyAgent : [])
-        if let language = options.language { settings.update { $0.language = language } }
-        L10n.setLanguage(settings.settings.language)
-        // A probe reads the way the application does and keeps nothing: its ledger lives in memory.
-        let ledger: UsageLedger? = options.demo ? nil : options.probe ? .inMemory() : .open()
-        let provider: any UsageProvider = ledger.map { CombinedUsageProvider.standard(settings: settings, ledger: $0, persistent: !options.probe) } ?? DemoUsageProvider()
+        let settings = UsageAssembly.settings(defaults: options.demo ? UserDefaults(suiteName: demoSuite)! : .standard,
+                                              defaultAgents: options.demo ? DemoData.everyAgent : [], language: options.language)
         if options.probe {
-            Task { @MainActor in
-                do {
-                    await provider.refreshAccountUsage(historyHours: 48)
-                    let report = try await provider.fetchUsage(agents: settings.agents, historyHours: 48)
-                    print("Quota windows: \(report.snapshots.count); sessions: \(report.sessions.count); live: \(report.sessions.filter(\.isLive).count); billing accounts: \(report.billing.count)")
-                    for (kind, values) in VendorCatalog.unnamed.sorted(by: { $0.key < $1.key }) {
-                        print("Unnamed \(kind): \(values.sorted().joined(separator: ", "))")
-                    }
-                    exit(0)
-                } catch {
-                    FileHandle.standardError.write(Data("Usage probe failed: \(error.localizedDescription)\n".utf8))
-                    exit(1)
-                }
-            }
+            Task { @MainActor in exit(await UsageProbe.run(settings: settings)) }
             return
         }
-        let retained = RetainedUsageProvider(provider: provider, cacheURL: options.demo ? nil
-            : AppSupport.directory.appendingPathComponent("last-usage-report.json"))
-        let store = UsageStore(provider: retained, settings: settings)
-        store.ledger = ledger
-        if let report = retained.initialReport { store.replace(report: report) }
+        let store = UsageAssembly.store(settings: settings, ledger: options.demo ? nil : .open())
         if !options.demo, let executable = Bundle.main.executableURL {
             SessionObservers.configure(executable: executable, enabled: settings.settings.clientHooks)
         }
@@ -71,69 +49,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) { desktop?.stop() }
 }
 
-if CommandLine.arguments.contains("--install-pi-observer") {
-    do {
-        try PiSessionObserver.configure(enabled: true)
-        print("Pi session observer installed. Run /reload in existing Pi sessions.")
-        exit(0)
-    } catch {
-        FileHandle.standardError.write(Data("Could not install Pi session observer: \(error.localizedDescription)\n".utf8))
-        exit(1)
-    }
-}
+// Hooks and adapter commands run as short-lived processes, without the interface or an account query.
+if let status = HookEntry.handle(arguments: CommandLine.arguments) { exit(status) }
 
 if CommandLine.arguments.contains("--probe-open-agents") {
     Task { print(await OpenAgentDiagnostics.localSummary()); exit(0) }
     dispatchMain()
-}
-
-if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--completion-hook",
-   let source = CompletionHooks.Source(rawValue: CommandLine.arguments[2]) {
-    var data = Data()
-    do {
-        while let chunk = try FileHandle.standardInput.read(upToCount: 64 * 1024), !chunk.isEmpty {
-            data.append(chunk)
-            if data.count > 1024 * 1024 { break }
-        }
-        try CompletionHooks.record(source: source, data: data)
-    } catch { /* Local status tracking must not affect the agent's execution. */ }
-    print(source == .antigravity ? #"{"decision":"stop"}"# : "{}")
-    exit(0)
-}
-
-if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--attention-hook",
-   let source = AttentionHooks.Source(rawValue: CommandLine.arguments[2]) {
-    var data = Data()
-    do {
-        while let chunk = try FileHandle.standardInput.read(upToCount: 64 * 1024), !chunk.isEmpty {
-            data.append(chunk)
-            if data.count > 1024 * 1024 { break }
-        }
-        try AttentionHooks.record(source: source, data: data)
-    } catch { /* Local status tracking must not affect the agent's execution. */ }
-    print("{}")
-    exit(0)
-}
-
-// The client waits on this one: it holds the request open until the user answers on the HUD, and prints nothing
-// when it cannot be answered, which leaves the client's own permission prompt exactly as it was.
-if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--permission-hook",
-   let source = PermissionHooks.Source(rawValue: CommandLine.arguments[2]) {
-    PermissionHookClient.run(source: source)
-    exit(0)
-}
-
-if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--install-completion-hook",
-   let source = CompletionHooks.Source(rawValue: CommandLine.arguments[2]) {
-    do {
-        try CompletionHooks.configure(source, enabled: true,
-            executable: URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL)
-        print("Completion hook installed: \(source.rawValue)")
-        exit(0)
-    } catch {
-        FileHandle.standardError.write(Data("Could not install completion hook: \(error.localizedDescription)\n".utf8))
-        exit(1)
-    }
 }
 
 let app = NSApplication.shared

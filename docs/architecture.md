@@ -20,6 +20,8 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 ### Host integration
 
 - A host creates a `SettingsStore` and a `UsageStore` around any `UsageProvider`, then a `DesktopApplication`; it owns every additional service and its lifecycle. The shared UI never initializes account services or transports.
+- A host hands its process arguments to `HookEntry.handle(arguments:)` first thing at launch: the clients' hook commands and the adapter commands run there and quit without the interface, and anything else starts the application.
+- `UsageAssembly` builds the settings and the store as the standalone application does, over the installed clients with the restart copy on screen, or over the sample data without a ledger, with the host's collection hooks; `UsageProbe.run(settings:)` prints the `--probe` diagnostics.
 - `fetchUsage(agents:historyHours:)` assembles local activity with the latest account results; `refreshAccountUsage(historyHours:)` performs the slower quota, balance and account-wide requests and has a no-op default; `accountRefreshSteps` splits it into steps the store runs between reads, and `watchedDirectories` names the directories whose changes need a read (nil means the provider is read every poll interval). A provider that wraps another forwards all of them.
 - `sources` splits a provider into parts read on their own, each with its signals: its directories, its account steps and the checks it asks for. A provider that does not split itself is one source. `fetchUsage(agents:historyHours:sources:)` reads the named sources again and keeps every other source's last result, and `sourceChecks()` names the times at which a source's last result changes with time alone. `accountChecks(since:now:)` names when each source's account steps are next worth running, and `seesLocalWork` is false for a provider whose usage is the account's from every device, which keeps it on the account interval. `CombinedUsageProvider` makes one source per vendor.
 - A provider that does not write the ledger reports its periods in `UsageReport.usage`; `CombinedUsageProvider` adds them to the ledger's totals.
@@ -55,6 +57,8 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 - `SessionObservers.configure(executable:enabled:)`, called after creating the store and before `start()` with `Settings.clientHooks`, installs the Pi observer when the Pi directory exists, the Antigravity, Cursor, GitHub Copilot CLI, CodeBuddy and Qwen Code stop hooks, Claude Code's notification hook and each detected client's approval hook when those clients are installed, or with `enabled` false removes Agent HUD's handlers from them. Creating a `DesktopApplication` installs nothing; a change of `clientHooks` while it runs applies at once with the main bundle's executable.
 - Every Agent HUD handler belongs to the copy that runs, since only one runs at a time: `configure` points each one at the executable it is given, whichever copy wrote it, and adds none from under App Translocation or `/Volumes` ([completion hooks](session-lifecycle.md#completion-hooks)).
 - `HookSettings.write(_:to:)` writes every client settings file the hooks change, and a host's own hooks can use it too: through a symbolic link to the file it leads to, keeping the file's permissions.
+- `HookInstaller` reads one hook's settings file, up to 16 MB, and points Agent HUD's handlers in it at the running copy or takes them out, the hook's own edit given; `HookCommand` makes and recognizes a handler's command. A host's own hooks use both.
+- `UnixSocketListener` is the application's end of the socket a hook process reaches through `UnixSocket`: only the user can reach it, a request is one message the sender ends by closing its side, and one process serves a path.
 
 ### Storage
 
@@ -101,6 +105,13 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 | `InstanceLock.claim(at:executable:)` → `Claim` | AgentHUDCore | `acquired` (the lock lasts as long as the value), `held(by:)` (the application that runs, its bundle when it has one) or `unavailable`; `InstanceLock.sharedURL` is `~/Library/Caches/app.agenthud/instance.lock` |
 | `SessionObservers.configure(executable:)` | AgentHUDCore | Adapter setup with the executable that handles hook callbacks |
 | `HookSettings.write(_:to:)` | AgentHUDCore | Writes a client's settings object as sorted, pretty-printed JSON through its symbolic links, keeping the file's permissions |
+| `HookInstaller(configuration:arguments:)` | AgentHUDCore | `read()`, `owns(_:)` and `configure(enabled:executable:updating:willWrite:)` for one hook of one client |
+| `HookCommand` | AgentHUDCore | `make(executable:arguments:)`, `runs(_:arguments:)`, `isTransient(_:)` and `checkInstall(executable:)` |
+| `HookEntry.handle(arguments:)` | AgentHUDCore | Runs the hook or adapter command the process arguments name and returns its exit status; nil starts the application |
+| `UnixSocket`, `UnixSocketListener(path:requestLimit:category:onRequest:)` | AgentHUDCore | The hook process's `connect(to:)`, `send(_:_:)` and `readToEnd(_:limit:)`; the application's `start()` and `stop()`, with each request handed over on the main actor |
+| `ChildProcess` | AgentHUDCore | A child whose pipes are drained up to their caps and whose reads end when it exits: `run(_:_:environment:timeout:stdoutLimit:)`, or `write(_:)`, `line(before:)`, `waitForExit(before:)` and `stop()` |
+| `UsageAssembly.settings(defaults:defaultAgents:language:)`, `store(settings:ledger:hooks:)` | AgentHUDCore | The settings and the store as the standalone application builds them; a nil ledger is the demo |
+| `UsageProbe.run(settings:)` | AgentHUDCore | Prints the `--probe` diagnostics and returns the exit status |
 | `AgentHUDDataDirectory` | Host `Info.plist` | Name of the data directory under `~/Library/Application Support`; default `Agent HUD Open` |
 | Launch switches and probes | Standalone executable | [Command line](command-line.md) |
 
@@ -118,7 +129,8 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 | Application object, launch options, host pages | `Sources/AgentHUDDesktop/App/DesktopApplication.swift`, `LaunchOptions.swift`, `Settings/DesktopSettingsPage.swift` |
 | One copy at a time | `Sources/AgentHUDCore/Store/InstanceLock.swift`, `Sources/AgentHUDDesktop/App/SingleInstance.swift` |
 | Island alerts: decision and presentation | `Sources/AgentHUDCore/Logic/IslandEvents.swift`, `QuotaAlerts.swift`; `Sources/AgentHUDDesktop/Notch/IslandController.swift`, `IslandAlert.swift` |
-| Standalone entry and commands | `Sources/AgentHUDOpenApp/main.swift` |
+| Standalone entry, launch assembly and probe | `Sources/AgentHUDOpenApp/main.swift`; `Sources/AgentHUDCore/Store/UsageAssembly.swift`, `UsageProbe.swift` |
+| Hook and adapter commands, hook installation and records, the socket to hook processes, child processes | `Sources/AgentHUDCore/Providers/Shared/HookEntry.swift`, `HookInstaller.swift`, `HookInbox.swift`, `HookCommand.swift`; `Sources/AgentHUDCore/Store/UnixSocket.swift`, `ChildProcess.swift` |
 | Build, boundary check, CI | `scripts/build-app.sh`, `scripts/check-source-boundaries.py`, `.github/workflows/ci.yml` |
 
 ## Related

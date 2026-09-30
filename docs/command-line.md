@@ -25,7 +25,7 @@ Only one Agent HUD runs at a time, whichever application built on these librarie
 
 | Command | Output |
 | --- | --- |
-| `--probe` | One real account refresh (48 h of history) followed by one report; prints `Quota windows: n; sessions: n; live: n; billing accounts: n` and exits 0, or prints the error and exits 1. It issues the same provider requests as the running application and nothing else, and keeps what it reads in memory: it writes nothing to the usage ledger, removes or imports no earlier version's files and remembers no account identity. |
+| `--probe` | Prints where Claude Code's engine, Codex's engine and home, DeepSeek Harness's home and Node.js are, the agents in the settings and one step of reading Claude Code's transcripts; then one real account refresh (48 h of history) and one report with how long each took, `Quota windows: n; sessions: n; live: n; billing accounts: n`, the plans and notice, the discovered rows, each window's share used and reset, sessions by client, DeepSeek Harness's sessions and tokens, each balance and its estimated cost, the five newest sessions with their tokens and the values the vendor catalog does not name. Exits 0, or prints the error and exits 1. It issues the same provider requests as the running application and nothing else, and keeps what it reads in memory: it writes nothing to the usage ledger, removes or imports no earlier version's files and remembers no account identity. No conversation text and no credential is printed. |
 | `--probe-open-agents` | Indexes the last seven days of local OpenCode, Kimi and Pi sessions and prints, per client, the session count, running count, distinct usage events, In / Out / Cache totals and the read status. No network requests, no transcript text, no credentials in the output. |
 | `AGENT_HUD_PROBE_ADDITIONAL=1 swift test --filter AdditionalProviderTests/testInstalledSourcesReadOnlyProbe` | Read-only probe of the installed Antigravity, Cursor and Grok sources from the test suite; the test is skipped unless the variable is set. |
 
@@ -56,7 +56,8 @@ Normal start-up already runs `SessionObservers.configure(executable:enabled:)` f
 | --- | --- |
 | Switch parsing | `Sources/AgentHUDDesktop/App/LaunchOptions.swift` |
 | One copy at a time | `Sources/AgentHUDCore/Store/InstanceLock.swift`, `Sources/AgentHUDDesktop/App/SingleInstance.swift` |
-| Probes, adapter commands, hook handler | `Sources/AgentHUDOpenApp/main.swift` |
+| Adapter commands and hook handlers | `Sources/AgentHUDCore/Providers/Shared/HookEntry.swift` |
+| Probes | `Sources/AgentHUDCore/Store/UsageProbe.swift`, `Sources/AgentHUDOpenApp/main.swift` |
 | Snapshot rendering | `Sources/AgentHUDDesktop/Debug/SnapshotRunner.swift` |
 | Real-window interaction tests | `Tests/AgentHUDDesktopTests/IslandAnimationTests.swift`, `IslandHoverTests.swift`, `AgentSettingsInteractionTests.swift` |
 | Build script and targets | `scripts/build-app.sh`, `Makefile` |

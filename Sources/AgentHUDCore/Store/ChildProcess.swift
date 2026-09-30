@@ -3,19 +3,19 @@ import Foundation
 
 /// A child process that cannot stall its caller. Both pipes are drained while it runs, each up to a byte cap, and reading
 /// ends when it exits rather than at pipe EOF, because a grandchild can inherit the pipes and hold them open indefinitely.
-final class ChildProcess: @unchecked Sendable {
-    struct Output: Sendable {
+public final class ChildProcess: @unchecked Sendable {
+    public struct Output: Sendable {
         /// The termination status, or nil while the child is running.
-        var status: Int32?
+        public var status: Int32?
         /// Reading lines consumes stdout.
-        var stdout = Data(), stderr = Data()
+        public var stdout = Data(), stderr = Data()
         /// Stdout outgrew its cap and the rest was discarded.
-        var truncated = false
+        public var truncated = false
     }
 
     /// Between SIGTERM and SIGKILL.
-    static let grace: TimeInterval = 2
-    static let stderrLimit = 64 * 1024
+    public static let grace: TimeInterval = 2
+    public static let stderrLimit = 64 * 1024
 
     private enum Condition { case line, exit }
 
@@ -32,11 +32,11 @@ final class ChildProcess: @unchecked Sendable {
     private var waiter: (id: Int, condition: Condition, continuation: CheckedContinuation<Void, Never>)?
     private var waits = 0, cancelledWait = 0, stopping = false
 
-    var output: Output { queue.sync { collected } }
+    public var output: Output { queue.sync { collected } }
 
     /// Launches the child. With `input` its stdin is a pipe for `write`, otherwise /dev/null.
-    init(_ executable: URL, _ arguments: [String], environment: [String: String]? = nil, directory: URL? = nil,
-         input: Bool = false, stdoutLimit: Int) throws {
+    public init(_ executable: URL, _ arguments: [String], environment: [String: String]? = nil, directory: URL? = nil,
+                input: Bool = false, stdoutLimit: Int) throws {
         self.stdoutLimit = stdoutLimit
         process.executableURL = executable
         process.arguments = arguments
@@ -71,8 +71,8 @@ final class ChildProcess: @unchecked Sendable {
     }
 
     /// Runs a child without stdin until it exits; at the deadline it is stopped and the output has no status.
-    static func run(_ executable: URL, _ arguments: [String], environment: [String: String]? = nil,
-                    timeout: TimeInterval, stdoutLimit: Int) async throws -> Output {
+    public static func run(_ executable: URL, _ arguments: [String], environment: [String: String]? = nil,
+                           timeout: TimeInterval, stdoutLimit: Int) async throws -> Output {
         try Task.checkCancellation()
         let child = try ChildProcess(executable, arguments, environment: environment, stdoutLimit: stdoutLimit)
         defer { child.stop() }
@@ -81,7 +81,7 @@ final class ChildProcess: @unchecked Sendable {
     }
 
     /// Writes to stdin. Requests are small, so a child that does not read cannot block the drain.
-    func write(_ data: Data) throws {
+    public func write(_ data: Data) throws {
         try queue.sync {
             guard let input else { throw POSIXError(.EPIPE) }
             try input.write(contentsOf: data)
@@ -89,7 +89,7 @@ final class ChildProcess: @unchecked Sendable {
     }
 
     /// The next complete stdout line; nil at the deadline, or once the child has exited and no complete line is left.
-    func line(before deadline: Date) async throws -> String? {
+    public func line(before deadline: Date) async throws -> String? {
         try await wait(until: deadline, for: .line)
         return queue.sync {
             guard let newline = collected.stdout[lineStart...].firstIndex(of: 0x0A) else { return nil }
@@ -102,12 +102,12 @@ final class ChildProcess: @unchecked Sendable {
     }
 
     /// Waits until the child exits or the deadline passes; `output.status` tells which.
-    func waitForExit(before deadline: Date) async throws {
+    public func waitForExit(before deadline: Date) async throws {
         try await wait(until: deadline, for: .exit)
     }
 
     /// Closes stdin and sends SIGTERM, then SIGKILL if the child outlives the grace period. Returns immediately.
-    func stop() {
+    public func stop() {
         queue.async { [self] in
             try? input?.close()
             input = nil
