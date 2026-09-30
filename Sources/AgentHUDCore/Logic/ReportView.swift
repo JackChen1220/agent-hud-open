@@ -131,8 +131,8 @@ public struct ReportView: Sendable {
     /// its vendor's entries take in this list.
     public var alertPulseVendors: [String] { rows.filter { $0.level != nil }.map { $0.agent.vendor } }
 
-    /// The most consumed window of a signed-in account, shown in the menu bar.
-    public var maxUsedPct: Double? { rows.filter(\.isCurrentAccount).compactMap(\.usedPct).max() }
+    /// The most consumed window of a signed-in account, shown in the menu bar, whatever its reading's status or age.
+    public var maxUsedPct: Double? { rows.filter(\.assessment.isCurrentAccount).compactMap(\.usedPct).max() }
 
     /// Plans of the vendors that have an enabled row.
     public var subscriptions: [String: String] {
@@ -155,12 +155,19 @@ public struct ReportView: Sendable {
         }
     }
 
-    /// What the header of an account's section says about its readings: the account's own notice, else its client's.
-    /// A billing pool speaks only for itself: its vendor's notices can be about another of its pools.
-    public func accountNotice(for section: AccountSection) -> String? {
+    /// An account's reading as its section header weighs it at the view's time.
+    public func assessment(of account: AccountObservation) -> ReadingAssessment {
+        report?.assess(.account(account), now: now)
+            ?? ReadingAssessment(status: account.ownStatus, isCurrentAccount: account.isCurrent, observedAt: account.observedAt, now: now)
+    }
+
+    /// What the header of an account's section says about its readings: the reason of the account's status, else, with
+    /// `clientNotices`, its client's notices. A billing pool speaks only for itself: its vendor's notices can be about
+    /// another of its pools.
+    public func accountNotice(for section: AccountSection, clientNotices: Bool = true) -> String? {
         guard let account = section.account else { return nil }
         let pooled = section.rows.first?.agent.billingPool != nil
-        return account.quotaNotice ?? (pooled ? nil : report?.sourceNotices[account.account.provider])
+        return assessment(of: account).status.reason ?? (pooled || !clientNotices ? nil : report?.sourceNotices[account.account.provider])
     }
 
     /// Tokens per hour over the observed part of this quota window's current cycle. Token history before the local ledger

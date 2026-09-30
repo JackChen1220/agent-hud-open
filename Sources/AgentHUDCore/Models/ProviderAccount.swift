@@ -103,10 +103,9 @@ public struct AccountObservation: Hashable, Codable, Sendable, Identifiable {
         return SourceStatus(id: source, name: account.provider, detail: "", state: .ready(plan: plan)).planLabel
     }
 
+    /// The header label of this reading judged on its own, without the report it came in.
     public func statusLabel(now: Date) -> String {
-        if isCurrent, quotaNotice == nil { return L10n.text("当前账户", "Current account") }
-        let ago = Countdown.formatRough(max(0, now.timeIntervalSince(observedAt)))
-        return L10n.text("上次读取 \(ago) 前", "Last read \(ago) ago")
+        ReadingAssessment(status: ownStatus, isCurrentAccount: isCurrent, observedAt: observedAt, now: now).accountLabel(now: now)
     }
 }
 

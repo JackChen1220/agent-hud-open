@@ -81,9 +81,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                     header.isEnabled = false
                     header.view = MenuRowView(
                         title: [account.displayName, account.planLabel].compactMap { $0 }.joined(separator: " · "),
-                        value: account.statusLabel(now: store.now), image: nil, font: .menuFont(ofSize: 11),
+                        value: store.accountLabel(for: account), image: nil, font: .menuFont(ofSize: 11),
                         titleColor: .secondaryLabelColor, minimumWidth: Self.menuWidth)
-                    header.toolTip = account.quotaNotice
+                    // The menu gives the account's own reason alone; the island adds its client's notices.
+                    header.toolTip = store.accountNotice(for: section, clientNotices: false)
                     menu.addItem(header)
                 }
                 for row in section.rows {
@@ -97,6 +98,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             let title = (billing.billingPool == nil ? billing.vendor : billing.displayName) + L10n.text(" · 余额", " · Balance")
             let item = NSMenuItem(title: title, action: #selector(openStats), keyEquivalent: "")
             item.target = self
+            // Red only when the service says the account cannot be used, whatever the balance or its reading.
             item.view = MenuRowView(title: title, value: balance.isEmpty ? "—" : balance,
                                          image: AgentArtwork.image(for: billing.vendor), font: Self.agentMenuFont,
                                          valueColor: billing.isAvailable == false ? .systemRed : .secondaryLabelColor, minimumWidth: Self.menuWidth)
@@ -148,6 +150,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             font: showVendor ? Self.agentMenuFont : .menuFont(ofSize: 13),
             titleColor: row.isCurrentAccount ? .labelColor : .secondaryLabelColor, valueColor: valueColor, minimumWidth: Self.menuWidth
         )
+        // Every row's hint, whatever its account or reading.
         item.toolTip = store.quotaForecastHint(for: row.id)
         item.view?.toolTip = item.toolTip
         return item

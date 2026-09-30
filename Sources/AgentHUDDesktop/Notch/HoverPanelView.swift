@@ -297,7 +297,7 @@ private struct ProviderQuotaBlock: View {
             let sections = store.accountSections(rows)
             ForEach(sections) { section in
                 if let account = section.account {
-                    AccountSectionHeader(account: account, now: store.now, notice: store.accountNotice(for: section))
+                    AccountSectionHeader(account: account, label: store.accountLabel(for: account), notice: store.accountNotice(for: section))
                 }
                 ForEach(section.rows) { row in
                     ModelUsageRow(row: row, now: store.now, metric: metric,
@@ -322,7 +322,8 @@ private struct ProviderQuotaBlock: View {
 /// that said why it has no current reading says it here, where the stale rows are.
 struct AccountSectionHeader: View {
     let account: AccountObservation
-    let now: Date
+    /// Whether the account is current or when it was last read.
+    let label: String
     var notice: String?
     private let theme = Theme.island
 
@@ -337,7 +338,7 @@ struct AccountSectionHeader: View {
                     Text(plan).foregroundStyle(theme.secondary)
                 }
                 Spacer(minLength: 8)
-                Text(account.statusLabel(now: now))
+                Text(label)
                     .foregroundStyle(theme.tertiary)
                     .lineLimit(1)
             }

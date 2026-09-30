@@ -514,6 +514,11 @@ public final class UsageStore {
     /// `view.accountSections(_:)`.
     public func accountSections(_ rows: [AgentRow]) -> [AccountSection] { view.accountSections(rows) }
 
-    /// `view.accountNotice(for:)`.
-    public func accountNotice(for section: AccountSection) -> String? { view.accountNotice(for: section) }
+    /// `view.accountNotice(for:clientNotices:)`.
+    public func accountNotice(for section: AccountSection, clientNotices: Bool = true) -> String? {
+        view.accountNotice(for: section, clientNotices: clientNotices)
+    }
+
+    /// `view.assessment(of:)` put into its header label.
+    public func accountLabel(for account: AccountObservation) -> String { view.assessment(of: account).accountLabel(now: now) }
 }

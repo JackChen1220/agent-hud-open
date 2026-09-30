@@ -93,6 +93,14 @@ public struct ReadingAssessment: Hashable, Sendable {
     /// The reading can confirm an event, such as a quota alert, added reset credits or a balance crossing: it shows a
     /// level and was not taken in the future.
     public var confirmsEvents: Bool { showsLevel && !isFromFuture }
+
+    /// What an account's header says of its reading: the current account while the reading is normal, else how long ago
+    /// it was last read.
+    public func accountLabel(now: Date) -> String {
+        if isCurrentAccount, status.isNormal { return L10n.text("当前账户", "Current account") }
+        let ago = Countdown.formatRough(max(0, now.timeIntervalSince(observedAt ?? now)))
+        return L10n.text("上次读取 \(ago) 前", "Last read \(ago) ago")
+    }
 }
 
 public extension UsageReport {
