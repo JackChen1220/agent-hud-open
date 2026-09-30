@@ -2,6 +2,10 @@
 
 Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the same number. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
+## 0.4.29 — 2026-10-01
+
+- Agent HUD Open is unchanged from 0.4.28. This version carries the release of the Agent HUD app built on it.
+
 ## 0.4.28 — 2026-09-30
 
 - Agent HUD Open is unchanged from 0.4.27. This version carries the release of the Agent HUD app built on it.
