@@ -191,8 +191,10 @@ public struct ReportView: Sendable {
     static let queueRecency: TimeInterval = 24 * 3600
 
     /// What a logo queue shows: every row's vendor, in row order, then any vendor with a session whose last event is at
-    /// most `queueRecency` old and has no row on that list, most recently used first. A vendor whose live status is off is
-    /// not counted as having run, since that switch is what says its runs may be reported at all.
+    /// most `queueRecency` old and has no row on that list, most recently used first. An agent used this morning belongs
+    /// in the queue whether or not its quota is followed; one nobody has run for a day and nobody watches does not. A
+    /// vendor whose live status is off is not counted as having run, since that switch is what says its runs may be
+    /// reported at all.
     public var queueVendors: [(vendor: String, isWorking: Bool)] {
         let working = workingVendors
         var order = rows.map(\.agent.vendor)

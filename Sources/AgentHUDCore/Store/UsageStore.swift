@@ -308,59 +308,20 @@ public final class UsageStore {
     /// `view.maxUsedPct`.
     public var maxUsedPct: Double? { view.maxUsedPct }
 
-    /// Newest first, by the last event each source reported: a prompt, a reply, a tool result or an approval request.
-    /// A running session nothing has been heard from for half an hour sits below one that just answered.
-    public var sessions: [LiveSession] {
-        let events = lastTurnEvents
-        return (report?.sessions ?? []).sorted {
-            let left = $0.lastEvent(turnAt: events[$0.id]), right = $1.lastEvent(turnAt: events[$1.id])
-            return left == right ? $0.id < $1.id : left > right
-        }
-    }
+    /// `view.sessions`, newest first.
+    public var sessions: [LiveSession] { view.sessions.map(\.session) }
 
-    /// The newest turn event per session, read once instead of once per session.
-    private var lastTurnEvents: [String: Date] {
-        (report?.turns ?? []).reduce(into: [:]) { events, turn in
-            let at = RecordCoding.date(turn.observedAtMs)
-            if at > events[turn.sessionID] ?? .distantPast { events[turn.sessionID] = at }
-        }
-    }
+    /// How long after its last event a vendor still belongs in a logo queue.
+    public static let queueRecency: TimeInterval = ReportView.queueRecency
 
-    /// How long after its last turn a vendor still belongs in a logo queue.
-    public static let queueRecency: TimeInterval = 24 * 3600
+    /// `view.queueVendors`.
+    public var queueVendors: [(vendor: String, isWorking: Bool)] { view.queueVendors }
 
-    /// What a logo queue shows: every watched window's vendor, in the order they are watched, then any
-    /// vendor that ran within the last day and has no window on that list, most recently used first. An
-    /// agent used this morning belongs in the row whether or not its quota is being followed; one nobody
-    /// has run for a day and nobody watches does not. A vendor whose Live status is off is not counted as
-    /// having run, since that switch is what says its runs may be reported at all.
-    public var queueVendors: [(vendor: String, isWorking: Bool)] {
-        let working = workingVendors
-        var order = rows.map(\.agent.vendor)
-        var seen = Set(order)
-        let cutoff = now.addingTimeInterval(-Self.queueRecency)
-        let events = lastTurnEvents
-        for session in sessions where session.lastEvent(turnAt: events[session.id]) >= cutoff {
-            guard liveStatusEnabled(for: session), let vendor = sessionSource(session).vendor,
-                  seen.insert(vendor).inserted else { continue }
-            order.append(vendor)
-        }
-        return order.map { (vendor: $0, isWorking: working.contains($0)) }
-    }
+    /// `view.workingVendors`.
+    public var workingVendors: Set<String> { view.workingVendors }
 
-    /// The vendors with work in flight, by the same liveness the panel ranks sessions with. A session names
-    /// the model it spends rather than the quota row it belongs to, so its vendor is resolved instead of its
-    /// id being compared with an agent's — which matched only in the demo, where the two happen to be equal.
-    public var workingVendors: Set<String> {
-        Set(sessions.filter { isSessionLive($0) }.compactMap { sessionSource($0).vendor })
-    }
-
-    public func sessionSource(_ session: LiveSession) -> SessionSource {
-        let vendor = consumers.first { $0.id == session.agentId }?.vendor
-            ?? settings.agents.first { $0.id == session.agentId }?.vendor
-            ?? SessionSource.vendor(impliedBy: session.agentId)
-        return SessionSource(vendor: vendor, client: session.client)
-    }
+    /// The session's source as the view reads it.
+    public func sessionSource(_ session: LiveSession) -> SessionSource { view.session(for: session).source }
 
     /// `view.subscriptions`.
     public var subscriptions: [String: String] { view.subscriptions }
@@ -375,40 +336,33 @@ public final class UsageStore {
         return sessions.filter { $0.startedAt <= interval.end && ($0.endedAt ?? now) >= interval.start }
     }
 
-    public func liveStatusEnabled(for session: LiveSession) -> Bool {
-        settings.settings.liveStatusEnabled(for: sessionSource(session).vendor ?? "")
-    }
+    /// Whether live status is on for the session's vendor.
+    public func liveStatusEnabled(for session: LiveSession) -> Bool { view.session(for: session).liveStatus }
 
     /// Running, including a turn blocked on the user: both are work in flight, and the panel tells them apart by colour.
-    public func isSessionLive(_ session: LiveSession) -> Bool {
-        session.isLive(at: now) && liveStatusEnabled(for: session)
-    }
+    public func isSessionLive(_ session: LiveSession) -> Bool { view.phase(of: session).isInFlight }
 
     /// What the newest turn of this session is doing, when its source reported one.
-    public func sessionState(_ session: LiveSession) -> SessionTurn.State? {
-        let vendor = sessionSource(session).vendor?.lowercased()
-        return report?.turns.last {
-            $0.sessionID == session.id && (vendor == nil || $0.provider.lowercased() == vendor)
-        }?.state
-    }
+    public func sessionState(_ session: LiveSession) -> SessionTurn.State? { view.session(for: session).turn?.state }
 
-    public func isSessionWaiting(_ session: LiveSession) -> Bool {
-        isSessionLive(session) && sessionState(session) == .waitingForApproval
-    }
+    public func isSessionWaiting(_ session: LiveSession) -> Bool { view.phase(of: session).state == .waitingForApproval }
 
     public func sessionStatusLabel(_ session: LiveSession) -> String {
-        guard liveStatusEnabled(for: session) else { return L10n.text("状态显示已关闭", "Live status off") }
-        if session.isLive && !session.isLive(at: now) { return L10n.text("状态待更新", "Status out of date") }
-        if isSessionWaiting(session) { return L10n.text("等待批准", "Needs approval") }
-        return Countdown.sessionLabel(session, now: now)
+        let shown = view.session(for: session)
+        guard shown.liveStatus else { return L10n.text("状态显示已关闭", "Live status off") }
+        switch shown.phase.state {
+        case .unverified: return L10n.text("状态待更新", "Status out of date")
+        case .waitingForApproval: return L10n.text("等待批准", "Needs approval")
+        // Counts a running session from its own start, not its turn's, and an ended one from its end.
+        case .running, .idle: return Countdown.sessionLabel(session, now: now)
+        }
     }
 
-    public var liveSessions: [LiveSession] { sessions.filter(isSessionLive) }
+    /// `view.liveSessions`.
+    public var liveSessions: [LiveSession] { view.liveSessions.map(\.session) }
 
     /// The focused session while this Mac still reports it.
-    public var focusedSession: LiveSession? {
-        focusedSessionID.flatMap { id in sessions.first { $0.id == id } }
-    }
+    public var focusedSession: LiveSession? { focusedSessionID.flatMap { view.session($0)?.session } }
 
     public func sessionUsage(_ session: LiveSession) -> SessionUsage? { report?.sessionUsage?[session.id] }
 
@@ -430,12 +384,7 @@ public final class UsageStore {
     }
 
     /// What the agent last said in the session's newest turn that carries a message.
-    public func sessionMessage(_ session: LiveSession) -> String? {
-        let vendor = sessionSource(session).vendor?.lowercased()
-        return report?.turns.last {
-            $0.sessionID == session.id && $0.message != nil && (vendor == nil || $0.provider.lowercased() == vendor)
-        }?.message
-    }
+    public func sessionMessage(_ session: LiveSession) -> String? { view.session(for: session).message }
 
     /// Every token the session and its sub-agents spent, by kind: its breakdown, or its log's counts, which do not split
     /// cache writes and reasoning apart.
@@ -456,7 +405,7 @@ public final class UsageStore {
         return days.sorted { $0.day > $1.day }
     }
 
-    public var hasLiveSession: Bool { !liveSessions.isEmpty }
+    public var hasLiveSession: Bool { view.sessions.contains { $0.phase.isInFlight } }
 
     public var updatedAt: Date? { report?.generatedAt }
 
