@@ -62,14 +62,12 @@ public struct QuotaAlertTracker: Sendable {
         previous = previous.filter { ids.contains($0.key) }
         var result = Update()
         for agent in quotaAgents {
+            let reading = report.assess(.window(agent), now: now)
             // Signing back in to an account is a new baseline, not a reset observed while it was away.
-            guard report.isCurrent(agent) else { previous[agent.id] = nil; continue }
-            guard let snapshot = report.snapshot(for: agent.id),
-                  report.quotaNotice(for: agent) == nil,
-                  snapshot.updatedAt <= now,
-                  now.timeIntervalSince(snapshot.updatedAt) < AlertPolicy.maximumReadingAge else { continue }
-            // A passed deadline is pending confirmation. An observed full idle window can have no deadline.
-            if let resetAt = snapshot.resetAt, resetAt <= now { continue }
+            guard reading.isCurrentAccount else { previous[agent.id] = nil; continue }
+            // A passed deadline is pending confirmation.
+            guard reading.confirmsEvents, let snapshot = report.snapshot(for: agent.id) else { continue }
+            // An observed full idle window can have no deadline.
             guard snapshot.resetAt != nil || snapshot.remainingPct == 100 else { continue }
             let old = previous[agent.id]
             let criticalThreshold = 100 - AlertPolicy.criticalUsed
@@ -94,6 +92,7 @@ public struct QuotaAlertTracker: Sendable {
             // full by a point or two is not one.
             let restoredEarly = snapshot.remainingPct == 100 && snapshot.remainingPct - old.snapshot.remainingPct >= AlertPolicy.resetRise
             if cycleAdvanced || restoredEarly {
+                // The account's other windows are named by their readings alone, whatever their status or age.
                 let otherExhausted = quotaAgents.filter {
                     $0.vendor == agent.vendor && $0.account?.id == agent.account?.id && $0.id != agent.id &&
                     report.snapshot(for: $0.id).map {
