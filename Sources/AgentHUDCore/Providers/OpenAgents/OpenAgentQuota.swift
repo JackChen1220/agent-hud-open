@@ -96,6 +96,7 @@ struct OpenAgentQuotaClient: Sendable {
         case .glmChina, .glmGlobal:
             guard root["success"].boolValue == true, root["code"].numberValue == 200,
                   let limits = root["data"]["limits"].arrayValue else { throw ProviderFailure.format }
+            quota.plan = root["data"]["planName"].stringValue
             for raw in limits {
                 guard let type = raw["type"].stringValue, ["TOKENS_LIMIT", "CREDIT_LIMIT", "TIME_LIMIT"].contains(type) else { continue }
                 guard let unit = raw["unit"].countValue, let count = raw["number"].countValue,
@@ -111,9 +112,12 @@ struct OpenAgentQuotaClient: Sendable {
                 var reset = ProviderDate.milliseconds(raw["nextResetTime"])
                 if type != "TIME_LIMIT", duration == 18000, let date = reset, date > now.addingTimeInterval(18060) { reset = nil }
                 let label = type == "TIME_LIMIT" ? "MCP" : (duration.map { "\(Int($0 / 60))m" } ?? type)
-                try add("\(type):\(unit):\(count)", label, percent, reset: reset, duration: type == "TIME_LIMIT" && unit == 5 && count == 1 ? nil : duration)
+                // Credit plans meter credits over 5 hours and a week, MCP calls included, and are named in Zhipu's words.
+                let credits = type != "CREDIT_LIMIT" ? nil : duration == 18000 ? L10n.text("5 小时积分", "5-hour credits")
+                    : duration == 604800 ? L10n.text("每周积分", "Weekly credits") : nil
+                try add("\(type):\(unit):\(count)", label, percent, reset: reset, duration: type == "TIME_LIMIT" && unit == 5 && count == 1 ? nil : duration,
+                        named: credits.map { named($0, plan: quota.plan) })
             }
-            quota.plan = root["data"]["planName"].stringValue
         }
         guard !quota.windows.isEmpty, Set(quota.windows.map(\.id)).count == quota.windows.count else { throw ProviderFailure.format }
         return quota

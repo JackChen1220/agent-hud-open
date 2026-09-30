@@ -134,6 +134,21 @@ final class OpenAgentProviderTests: XCTestCase {
         XCTAssertThrowsError(try OpenAgentQuotaClient.parse(json(#"{"success":false,"code":200,"data":{"limits":[]}}"#), credential: credential(.glmChina), now: now))
     }
 
+    /// GLM credit plans. The fixture is derived from Zhipu's Coding Plan docs (credits over 5 hours and a week, MCP
+    /// calls drawn from them) and the quota endpoint's fields, not captured from an account.
+    func testGLMCreditPlansAreNamedInZhipusWordsAndTokenLimitsKeepTheirs() throws {
+        L10n.setLanguage(.en)
+        defer { L10n.setLanguage(.system) }
+        let credits = try OpenAgentQuotaClient.parse(json(#"{"success":true,"code":200,"data":{"planName":"Pro","limits":[{"type":"CREDIT_LIMIT","unit":3,"number":5,"usage":12000,"currentValue":3000,"remaining":9000,"percentage":25,"nextResetTime":1788810000000},{"type":"CREDIT_LIMIT","unit":6,"number":1,"usage":60000,"currentValue":6000,"remaining":54000,"percentage":10}]}}"#), credential: credential(.glmGlobal), now: now)
+        XCTAssertEqual(credits.windows.map(\.label), ["5-hour credits · Pro", "Weekly credits · Pro"])
+        XCTAssertEqual(credits.windows.map(\.remaining), [75, 90])
+        XCTAssertEqual(credits.windows.map(\.duration), [18000, 604800])
+        XCTAssertEqual(credits.windows.map(\.id), ["CREDIT_LIMIT:3:5", "CREDIT_LIMIT:6:1"].map(credential(.glmGlobal).pool.windowID))
+        XCTAssertEqual(credits.plan, "Pro")
+        let tokens = try OpenAgentQuotaClient.parse(json(#"{"success":true,"code":200,"data":{"planName":"Pro","limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":25},{"type":"TIME_LIMIT","unit":5,"number":1,"percentage":5}]}}"#), credential: credential(.glmGlobal), now: now)
+        XCTAssertEqual(tokens.windows.map(\.label), ["300m", "MCP"].map { $0 + " · " + credential(.glmGlobal).pool.label })
+    }
+
     func piLines(session: String = "original", entry: String = "message-a", provider: String = "openai-codex", model: String = "model-x") -> String {
         """
         {"type":"session","id":"\(session)","cwd":"/workspace","timestamp":"2026-09-07T00:00:00Z"}
