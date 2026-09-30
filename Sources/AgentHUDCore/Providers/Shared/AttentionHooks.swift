@@ -51,30 +51,24 @@ public enum AttentionHooks {
 
     /// One file per session: only the latest request matters, and answering it is seen in the transcript, not here.
     public static func record(source: Source, data: Data, now: Date = Date(), directory: URL = directory) throws {
-        guard data.count <= 1024 * 1024 else { throw ProviderFailure.limit }
+        guard data.count <= HookInbox.payloadLimit else { throw ProviderFailure.limit }
         guard let event = event(try ProviderJSON.read(data), now: now) else { return }
-        let folder = directory.appendingPathComponent(source.rawValue)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let name = RecordCoding.hash([event.sessionID]) + ".json"
-        let file = folder.appendingPathComponent(name)
-        try JSONEncoder().encode(event).write(to: file, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        let inbox = HookInbox(directory: directory, source: source.rawValue)
+        let name = RecordCoding.hash([event.sessionID])
+        try inbox.write(event, name: name, replacing: true)
         // Requests age by when they were made, which is inside them; a file's own timestamps say nothing about that.
-        for file in try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
-        where file.pathExtension == "json" && file != file.deletingLastPathComponent().appendingPathComponent(name) {
-            let stored = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode(Event.self, from: $0) }
+        for file in try inbox.files() where file.lastPathComponent != name + ".json" {
+            let stored = (try? HookInbox.data(of: file)).flatMap { try? JSONDecoder().decode(Event.self, from: $0) }
             if stored.map({ $0.at <= now.addingTimeInterval(-retention) }) ?? true { try? FileManager.default.removeItem(at: file) }
         }
     }
 
     /// The requests still worth showing, by session.
     public static func read(source: Source, now: Date = Date(), directory: URL = directory) -> [String: Event] {
-        let folder = directory.appendingPathComponent(source.rawValue)
-        guard let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) else { return [:] }
+        guard let files = try? HookInbox(directory: directory, source: source.rawValue).files() else { return [:] }
         var result: [String: Event] = [:]
-        for file in files where file.pathExtension == "json" {
-            guard let data = try? Data(contentsOf: file), data.count <= 1024 * 1024,
-                  let event = try? JSONDecoder().decode(Event.self, from: data),
+        for file in files {
+            guard let data = try? HookInbox.data(of: file), let event = try? JSONDecoder().decode(Event.self, from: data),
                   event.at > now.addingTimeInterval(-retention), event.at <= now.addingTimeInterval(60) else { continue }
             if let existing = result[event.sessionID], existing.at >= event.at { continue }
             result[event.sessionID] = event
@@ -84,19 +78,18 @@ public enum AttentionHooks {
 
     // MARK: Installation
 
-    static func configuration(_ source: Source, home: URL) throws -> [String: ProviderJSON] {
-        let url = source.configuration(home: home)
-        guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
-        let data = try Data(contentsOf: url)
-        guard data.count <= 4 * 1024 * 1024 else { throw ProviderFailure.limit }
-        guard !data.isEmpty else { return [:] }
-        guard let object = try ProviderJSON.read(data).objectValue else { throw ProviderFailure.format }
-        return object
+    /// What follows the executable in Agent HUD's handler of the notification hook.
+    static func arguments(_ source: Source) -> String { "--attention-hook " + source.rawValue }
+
+    static func installer(_ source: Source, home: URL) -> HookInstaller {
+        HookInstaller(configuration: source.configuration(home: home), arguments: arguments(source))
     }
 
-    static func ownsCommand(_ command: String?, source: Source) -> Bool {
-        command?.hasSuffix(" --attention-hook " + source.rawValue) == true
+    static func configuration(_ source: Source, home: URL) throws -> [String: ProviderJSON] {
+        try installer(source, home: home).read()
     }
+
+    static func ownsCommand(_ command: String?, source: Source) -> Bool { HookCommand.runs(command, arguments: arguments(source)) }
 
     public static func isActive(_ source: Source, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Bool {
         guard let object = try? configuration(source, home: home) else { return false }
@@ -104,8 +97,7 @@ public enum AttentionHooks {
     }
 
     static func commands(in configuration: [String: ProviderJSON], source: Source) -> [String] {
-        (configuration["hooks"]?[source.event].arrayValue ?? []).flatMap { $0["hooks"].arrayValue ?? [] }
-            .compactMap { $0["command"].stringValue }.filter { ownsCommand($0, source: source) }
+        ClaudeStyleHooks.commands(in: configuration, event: source.event) { ownsCommand($0, source: source) }
     }
 
     /// Points every Agent HUD handler of the notification hook at `executable`, whichever copy wrote it
@@ -113,34 +105,20 @@ public enum AttentionHooks {
     /// unrecognized layout throws rather than being rewritten.
     public static func configure(_ source: Source, enabled: Bool, executable: URL,
                                  home: URL = FileManager.default.homeDirectoryForCurrentUser) throws {
-        // Taking a handler out never leaves behind a file the client did not have.
-        guard enabled || FileManager.default.fileExists(atPath: source.configuration(home: home).path) else { return }
-        if enabled { try HookCommand.checkInstall(executable: executable) }
-        let object = try configuration(source, home: home)
-        let command = HookCommand.make(executable: executable, arguments: "--attention-hook " + source.rawValue)
-        let updated = try updating(object, source: source, command: enabled ? command : nil)
-        guard updated != object else { return }
-        // The inbox exists from the moment the hook does, so its changes can be watched before the first request.
-        try? FileManager.default.createDirectory(at: directory.appendingPathComponent(source.rawValue),
-                                                 withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        try HookSettings.write(updated, to: source.configuration(home: home))
+        try installer(source, home: home).configure(enabled: enabled, executable: executable, updating: {
+            try updating($0, source: source, command: $1)
+        }, willWrite: {
+            // The inbox exists from the moment the hook does, so its changes can be watched before the first request.
+            try? HookInbox(directory: directory, source: source.rawValue).create()
+        })
     }
 
     /// The configuration with Agent HUD's handlers taken out, or with `command` when it is given: in the first handler
     /// already there, or in a group of its own.
     static func updating(_ configuration: [String: ProviderJSON], source: Source, command: String?) throws -> [String: ProviderJSON] {
-        var object = configuration
-        guard object["hooks"] == nil || object["hooks"]?.objectValue != nil else { throw ProviderFailure.format }
-        var hooks = object["hooks"]?.objectValue ?? [:]
-        guard hooks[source.event] == nil || hooks[source.event]?.arrayValue != nil else { throw ProviderFailure.format }
-        // A handler already there takes the new command and keeps the matcher, timeout and anything else the user set.
-        let groups = ClaudeStyleHooks.setting(command, in: hooks[source.event]?.arrayValue ?? [],
-                                              owns: { ownsCommand($0, source: source) }) { command in
+        try ClaudeStyleHooks.updating(configuration, event: source.event, owns: { ownsCommand($0, source: source) }, command: command) { command in
             .object(["matcher": .string(source.matcher),
                      "hooks": .array([.object(["type": .string("command"), "command": .string(command), "timeout": .integer(5)])])])
         }
-        hooks[source.event] = groups.isEmpty ? nil : .array(groups)
-        object["hooks"] = hooks.isEmpty && configuration["hooks"] == nil ? nil : .object(hooks)
-        return object
     }
 }

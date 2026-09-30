@@ -16,10 +16,11 @@ enum CodeBuddyHookFormat: CompletionHookFormat {
     }
 
     static func commands(in configuration: [String: ProviderJSON]) -> [String] {
-        ClaudeStyleHooks.commands(in: configuration, event: "Stop", source: .codebuddy)
+        ClaudeStyleHooks.commands(in: configuration, event: "Stop") { CompletionHooks.ownsCommand($0, source: .codebuddy) }
     }
 
     static func updating(_ configuration: [String: ProviderJSON], command: String?) throws -> [String: ProviderJSON] {
-        try ClaudeStyleHooks.updating(configuration, event: "Stop", source: .codebuddy, command: command)
+        try ClaudeStyleHooks.updating(configuration, event: "Stop", owns: { CompletionHooks.ownsCommand($0, source: .codebuddy) },
+                                      command: command, group: ClaudeStyleHooks.group(timeout: 5))
     }
 }

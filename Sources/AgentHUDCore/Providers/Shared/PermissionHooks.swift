@@ -133,19 +133,18 @@ public enum PermissionHooks {
 
     // MARK: Installation
 
-    static func configuration(_ source: Source, home: URL) throws -> [String: ProviderJSON] {
-        let url = source.configuration(home: home)
-        guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
-        let data = try Data(contentsOf: url)
-        guard data.count <= 4 * 1024 * 1024 else { throw ProviderFailure.limit }
-        guard !data.isEmpty else { return [:] }
-        guard let object = try ProviderJSON.read(data).objectValue else { throw ProviderFailure.format }
-        return object
+    /// What follows the executable in Agent HUD's handler of the permission hook.
+    static func arguments(_ source: Source) -> String { "--permission-hook " + source.rawValue }
+
+    static func installer(_ source: Source, home: URL) -> HookInstaller {
+        HookInstaller(configuration: source.configuration(home: home), arguments: arguments(source))
     }
 
-    static func ownsCommand(_ command: String?, source: Source) -> Bool {
-        command?.hasSuffix(" --permission-hook " + source.rawValue) == true
+    static func configuration(_ source: Source, home: URL) throws -> [String: ProviderJSON] {
+        try installer(source, home: home).read()
     }
+
+    static func ownsCommand(_ command: String?, source: Source) -> Bool { HookCommand.runs(command, arguments: arguments(source)) }
 
     public static func isActive(_ source: Source, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Bool {
         guard let object = try? configuration(source, home: home) else { return false }
@@ -164,14 +163,9 @@ public enum PermissionHooks {
     /// unrecognized layout throws rather than being rewritten.
     public static func configure(_ source: Source, enabled: Bool, executable: URL,
                                  home: URL = FileManager.default.homeDirectoryForCurrentUser) throws {
-        // Taking a handler out never leaves behind a file the client did not have.
-        guard enabled || FileManager.default.fileExists(atPath: source.configuration(home: home).path) else { return }
-        if enabled { try HookCommand.checkInstall(executable: executable) }
-        let object = try configuration(source, home: home)
-        let command = HookCommand.make(executable: executable, arguments: "--permission-hook " + source.rawValue)
-        let updated = try updating(object, source: source, command: enabled ? command : nil)
-        guard updated != object else { return }
-        try HookSettings.write(updated, to: source.configuration(home: home))
+        try installer(source, home: home).configure(enabled: enabled, executable: executable) {
+            try updating($0, source: source, command: $1)
+        }
     }
 
     /// The configuration with Agent HUD's handlers taken out, or with `command` when it is given: in the first handler

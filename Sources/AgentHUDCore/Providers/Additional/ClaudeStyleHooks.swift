@@ -4,25 +4,31 @@ import Foundation
 /// `hooks` list of command handlers. Agent HUD adds a group whose only handler runs its command, and afterwards changes
 /// nothing in it but the command.
 enum ClaudeStyleHooks {
-    static func commands(in configuration: [String: ProviderJSON], event: String, source: CompletionHooks.Source) -> [String] {
+    /// The commands of the handlers `owns` names under `hooks.<event>`.
+    static func commands(in configuration: [String: ProviderJSON], event: String, owns: (String?) -> Bool) -> [String] {
         (configuration["hooks"]?[event].arrayValue ?? []).flatMap { $0["hooks"].arrayValue ?? [] }
-            .compactMap { $0["command"].stringValue }.filter { CompletionHooks.ownsCommand($0, source: source) }
+            .compactMap { $0["command"].stringValue }.filter(owns)
     }
 
-    /// `timeout` is in the client's own unit: seconds for Claude Code's forks, milliseconds for Qwen Code.
-    static func updating(_ configuration: [String: ProviderJSON], event: String, source: CompletionHooks.Source,
-                         command: String?, timeout: Int = 5) throws -> [String: ProviderJSON] {
+    /// The configuration with the handlers `owns` names under `hooks.<event>` set to `command`, or taken out for nil:
+    /// the first one takes the command and keeps the matcher, timeout and anything else the user set, and without one
+    /// `group` makes a matcher group for it. An unrecognized layout throws.
+    static func updating(_ configuration: [String: ProviderJSON], event: String, owns: (String?) -> Bool, command: String?,
+                         group: (String) -> ProviderJSON) throws -> [String: ProviderJSON] {
         var object = configuration
         guard object["hooks"] == nil || object["hooks"]?.objectValue != nil else { throw ProviderFailure.format }
         var hooks = object["hooks"]?.objectValue ?? [:]
         guard hooks[event] == nil || hooks[event]?.arrayValue != nil else { throw ProviderFailure.format }
-        let groups = setting(command, in: hooks[event]?.arrayValue ?? [],
-                             owns: { CompletionHooks.ownsCommand($0, source: source) }) { command in
-            .object(["hooks": .array([.object(["type": .string("command"), "command": .string(command), "timeout": .integer(Int64(timeout))])])])
-        }
+        let groups = setting(command, in: hooks[event]?.arrayValue ?? [], owns: owns, group: group)
         hooks[event] = groups.isEmpty ? nil : .array(groups)
         object["hooks"] = hooks.isEmpty && configuration["hooks"] == nil ? nil : .object(hooks)
         return object
+    }
+
+    /// A matcher group of Agent HUD's alone: one command handler with `timeout`, in the client's own unit (seconds for
+    /// Claude Code's forks, milliseconds for Qwen Code).
+    static func group(timeout: Int) -> (String) -> ProviderJSON {
+        { command in .object(["hooks": .array([.object(["type": .string("command"), "command": .string(command), "timeout": .integer(Int64(timeout))])])]) }
     }
 
     /// Agent HUD's handlers among `handlers`, whichever copy wrote them, set to `command`: the first one `owns` names

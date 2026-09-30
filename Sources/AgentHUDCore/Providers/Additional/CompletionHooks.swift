@@ -57,65 +57,49 @@ public enum CompletionHooks {
     }
 
     public static func record(source: Source, data: Data, now: Date = Date(), directory: URL = directory) throws {
-        guard data.count <= 1024 * 1024 else { throw ProviderFailure.limit }
+        guard data.count <= HookInbox.payloadLimit else { throw ProviderFailure.limit }
         guard let event = completion(source: source, payload: try ProviderJSON.read(data), now: now) else { return }
-        let folder = directory.appendingPathComponent(source.rawValue)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let file = folder.appendingPathComponent(event.id + ".json")
-        if !FileManager.default.fileExists(atPath: file.path) {
-            try JSONEncoder().encode(event).write(to: file, options: .atomic)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
-        }
+        let inbox = HookInbox(directory: directory, source: source.rawValue)
+        try inbox.write(event, name: event.id, replacing: false)
         // This is a short-lived local inbox for agent completion events.
-        for file in try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey]) where file.pathExtension == "json" {
+        for file in try inbox.files(keys: [.contentModificationDateKey]) {
             if let date = try file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
                date < now.addingTimeInterval(-30 * 86400) { try? FileManager.default.removeItem(at: file) }
         }
     }
 
     static func read(source: Source, since: Date, directory: URL = directory) throws -> [SessionCompletion] {
-        let folder = directory.appendingPathComponent(source.rawValue)
-        guard FileManager.default.fileExists(atPath: folder.path) else { return [] }
-        return try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey])
-            .filter { $0.pathExtension == "json" }
-            .compactMap { url in
-                guard let date = try url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, date >= since else { return nil }
-                let data = try Data(contentsOf: url)
-                guard data.count <= 64 * 1024 else { throw ProviderFailure.limit }
-                let event = try JSONDecoder().decode(SessionCompletion.self, from: data)
-                return event.vendor == source.vendor && event.completedAt >= since ? event : nil
-            }
+        let inbox = HookInbox(directory: directory, source: source.rawValue)
+        guard FileManager.default.fileExists(atPath: inbox.folder.path) else { return [] }
+        return try inbox.files(keys: [.contentModificationDateKey]).compactMap { url in
+            guard let date = try url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, date >= since else { return nil }
+            let event = try JSONDecoder().decode(SessionCompletion.self, from: HookInbox.data(of: url))
+            return event.vendor == source.vendor && event.completedAt >= since ? event : nil
+        }
     }
 
-    private static func configuration(_ source: Source, home: URL) throws -> [String: ProviderJSON] {
-        let url = source.configuration(home: home)
-        guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
-        guard let object = try ProviderFiles.json(url).objectValue else { throw ProviderFailure.format }
-        return object
+    /// What follows the executable in Agent HUD's handler of the client's stop hook.
+    static func arguments(_ source: Source) -> String { "--completion-hook " + source.rawValue }
+
+    static func installer(_ source: Source, home: URL) -> HookInstaller {
+        HookInstaller(configuration: source.configuration(home: home), arguments: arguments(source))
     }
 
     public static func isInstalled(_ source: Source, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Bool {
-        guard let object = try? configuration(source, home: home) else { return false }
+        guard let object = try? installer(source, home: home).read() else { return false }
         return source.format.isActive(in: object)
     }
 
-    /// The suffix that marks a handler command as Agent HUD's in formats without a dedicated entry.
-    static func ownsCommand(_ command: String?, source: Source) -> Bool {
-        command?.hasSuffix(" --completion-hook " + source.rawValue) == true
-    }
+    /// Whether a handler command is Agent HUD's, in formats without a dedicated entry.
+    static func ownsCommand(_ command: String?, source: Source) -> Bool { HookCommand.runs(command, arguments: arguments(source)) }
 
     /// Points every Agent HUD handler of the client's stop hook at `executable`, whichever copy wrote it
     /// (`HookCommand`), or with `enabled` false takes them all out, leaving every other hook in the file alone.
     public static func configure(_ source: Source, enabled: Bool, executable: URL,
                                  home: URL = FileManager.default.homeDirectoryForCurrentUser) throws {
-        // Taking a handler out never leaves behind a file the client did not have.
-        guard enabled || FileManager.default.fileExists(atPath: source.configuration(home: home).path) else { return }
-        if enabled { try HookCommand.checkInstall(executable: executable) }
-        let object = try configuration(source, home: home)
-        let command = HookCommand.make(executable: executable, arguments: "--completion-hook " + source.rawValue)
-        let updated = try source.format.updating(object, command: enabled ? command : nil)
-        guard updated != object else { return }
-        try HookSettings.write(updated, to: source.configuration(home: home))
+        try installer(source, home: home).configure(enabled: enabled, executable: executable) {
+            try source.format.updating($0, command: $1)
+        }
     }
 }
 

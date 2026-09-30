@@ -11,6 +11,11 @@ enum HookCommand {
         "'" + executable.path.replacingOccurrences(of: "'", with: "'\\''") + "' " + arguments
     }
 
+    /// Whether `command` runs Agent HUD with `arguments`, whichever copy wrote it.
+    static func runs(_ command: String?, arguments: String) -> Bool {
+        command?.hasSuffix(" " + arguments) == true
+    }
+
     /// A place an app runs from only until it is moved: the randomized copy App Translocation makes of an app opened
     /// where it was downloaded, or a mounted volume such as the disk image it came on. A handler pointing there stops
     /// working once the app is moved or the image is ejected.
