@@ -73,7 +73,7 @@ public actor DeepSeekUsageProvider: UsageProvider, LedgerRecording {
         }
         let installed = DeepSeekLocator.isInstalled(directory: directory)
         let models = Set(indexed.sessions.flatMap { [$0.transcript.model] + $0.transcript.models }).sorted()
-        let consumers = models.map { AgentDescriptor(id: "deepseek-model:\($0)", vendor: "DeepSeek", model: $0,
+        let consumers = models.map { AgentDescriptor(id: "deepseek-model:\($0)", vendor: "DeepSeek", model: ModelCatalog.consumerName(of: "deepseek-model:\($0)"),
                                                      source: L10n.sourceDeepSeekSessions, enabled: true) }
         let sessions = indexed.sessions.filter { !$0.transcript.isSubagent }.map { session in
             let t = session.transcript

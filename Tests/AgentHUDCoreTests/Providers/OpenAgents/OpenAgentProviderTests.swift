@@ -194,6 +194,24 @@ final class OpenAgentProviderTests: XCTestCase {
         XCTAssertNil(ModelCatalog.model(for: kimi.events[0].agentId), "Kimi Code's plan id follows whichever model Moonshot ships")
     }
 
+    /// Consumers are named by the catalog, from their ids: a route the model already shows is left out, and Kimi Code's
+    /// plan model reads as Kimi's product.
+    func testConsumersAreNamedByTheCatalog() async throws {
+        let wire = #"{"type":"usage.record","model":"kimi-code/kimi-for-coding","usageScope":"turn","time":1788800001000,"usage":{"inputOther":10,"output":5}}"#
+        let kimi = try XCTUnwrap(OpenAgentParser.kimi(Data(wire.utf8), path: "/.kimi-code/sessions/work/session/agents/main/wire.jsonl").first)
+        let plan = try XCTUnwrap(OpenAgentParser.pi(Data(piLines(provider: "kimi-coding", model: "kimi-for-coding").utf8), path: "/a.jsonl").first)
+        let other = try XCTUnwrap(OpenAgentParser.pi(Data(piLines(session: "other", provider: "openai-codex", model: "gpt-5.6-luna").utf8), path: "/b.jsonl").first)
+        let now = self.now
+        let provider = OpenAgentUsageProvider(credentials: { [] }, sessions: { _ in .init(sessions: [kimi, plan, other]) },
+                                              fetchQuota: { _, _ in ProviderQuota() }, history: QuotaHistoryStore(), clock: { now })
+        let report = try await provider.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(Dictionary(uniqueKeysWithValues: report.consumers.map { ($0.id, $0.name) }), [
+            "kimi-model:kimi-code/kimi-for-coding#kimi-code": "Kimi For Coding",
+            "pi-model:kimi-for-coding#kimi-coding": "Kimi For Coding",
+            "pi-model:gpt-5.6-luna#openai-codex": "gpt-5.6-luna · openai-codex",
+        ])
+    }
+
     func testASessionRecordedUnderTheHashedIdIsPricedWhole() async throws {
         let luna = try XCTUnwrap(OpenAgentParser.pi(Data(piLines(model: "gpt-5.6-luna").utf8), path: "/a.jsonl").first)
         let ledger = UsageLedger.inMemory(), now = self.now

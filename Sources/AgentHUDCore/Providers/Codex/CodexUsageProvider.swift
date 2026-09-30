@@ -142,7 +142,7 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
             reading.limits.rows(home: source).map { (row: $0, reading: reading) }
         }
         let models = Set(indexed.sessions.flatMap(\.transcript.models)).sorted()
-        let consumers = models.map { AgentDescriptor(id: "codex-model:\($0)", vendor: "Codex", model: $0,
+        let consumers = models.map { AgentDescriptor(id: "codex-model:\($0)", vendor: "Codex", model: ModelCatalog.consumerName(of: "codex-model:\($0)"),
                                                      source: L10n.sourceCodexAppServer, enabled: true) }
         let snapshots = windows.map { row, reading in
             UsageSnapshot(agentId: row.id, remainingPct: row.window.remainingPct, weeklyRemainingPct: row.weekly?.remainingPct,

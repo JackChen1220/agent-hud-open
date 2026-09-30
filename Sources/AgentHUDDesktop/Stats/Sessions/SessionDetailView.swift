@@ -348,7 +348,7 @@ struct SessionDetailView: View {
 
     private func descriptor(_ id: String) -> AgentDescriptor {
         store.consumers.first { $0.id == id }
-            ?? AgentDescriptor(id: id, vendor: store.sessionSource(session).vendor ?? "", model: id, source: "", enabled: true)
+            ?? AgentDescriptor(id: id, vendor: store.sessionSource(session).vendor ?? "", model: ModelCatalog.consumerName(of: id), source: "", enabled: true)
     }
 
     // MARK: Last message

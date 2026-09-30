@@ -175,9 +175,7 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
         var consumers: [String: AgentDescriptor] = [:]
         for item in local.sessions {
             for event in item.events {
-                let route = event.attribution?.providerID ?? "Unknown"
-                consumers[event.agentId] = AgentDescriptor(id: event.agentId, vendor: item.client.name,
-                    model: "\(item.models[event.agentId] ?? "Unknown") · \(route)",
+                consumers[event.agentId] = AgentDescriptor(id: event.agentId, vendor: item.client.name, model: ModelCatalog.consumerName(of: event.agentId),
                     source: L10n.text("本地记录 · 计费归属未确认", "Local records · billing unconfirmed"), enabled: true,
                     billingPool: event.attribution?.pool)
             }
@@ -187,8 +185,7 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
             let last = item.events.max(by: { $0.timestamp < $1.timestamp })
             let agentID = item.currentModel?.id ?? last?.agentId ?? "\(item.client.rawValue)-model:Unknown"
             if consumers[agentID] == nil {
-                consumers[agentID] = AgentDescriptor(id: agentID, vendor: item.client.name,
-                    model: item.currentModel.map { "\($0.name) · \($0.provider)" } ?? "Unknown",
+                consumers[agentID] = AgentDescriptor(id: agentID, vendor: item.client.name, model: ModelCatalog.consumerName(of: agentID),
                     source: L10n.text("本地会话", "Local session"), enabled: true)
             }
             // The newest turn is the last one listed.

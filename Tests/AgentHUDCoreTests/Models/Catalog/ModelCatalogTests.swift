@@ -172,6 +172,42 @@ final class ModelCatalogTests: XCTestCase {
         }
     }
 
+    /// Every consumer is named from its id alone, by the one function the providers and a host's missing ids share.
+    func testConsumersAreNamedFromTheirIdsAlone() {
+        let cases: [(id: String, name: String)] = [
+            // Kimi Code logs its plan model under its route; the plan model is Kimi's product.
+            ("kimi-model:kimi-code/kimi-for-coding#kimi-code", "Kimi For Coding"),
+            ("kimi-model:kimi-for-coding#kimi-code", "Kimi For Coding"),
+            ("kimi-model:kimi-code/real-model#kimi-code", "real-model"),
+            ("kimi-model:kimi-code/kimi-for-coding-highspeed#kimi-code", "kimi-for-coding-highspeed"),
+            ("kimi-model:#kimi-code", "Unknown · kimi-code"),
+            (consumer(.opencode, "kimi-for-coding", via: "kimi-for-coding"), "Kimi For Coding"),
+            (consumer(.pi, "kimi-for-coding", via: "kimi-coding"), "Kimi For Coding"),
+            // A route that is not the product's own service, or does not show in the name, stays beside it.
+            (consumer(.opencode, "kimi-for-coding", via: "openrouter"), "Kimi For Coding · openrouter"),
+            (consumer(.opencode, "k3", via: "kimi-for-coding"), "k3 · kimi-for-coding"),
+            (consumer(.pi, "kimi-k3", via: "kimi-coding"), "kimi-k3 · kimi-coding"),
+            (consumer(.opencode, "kimi-k2", via: "moonshotai"), "kimi-k2 · moonshotai"),
+            (consumer(.opencode, "glm-5.1", via: "zhipuai-coding-plan"), "glm-5.1 · zhipuai-coding-plan"),
+            (consumer(.pi, "claude-fable-5[1m]", via: "anthropic"), "claude-fable-5[1m] · anthropic"),
+            ("opencode-model:openai/gpt-5.5#route", "openai/gpt-5.5 · route"),
+            ("opencode-model:anthropic/claude-opus-4.6#anthropic", "claude-opus-4.6"),
+            ("pi-model:gpt-5.6-luna#", "gpt-5.6-luna"),
+            ("pi-model:new-a", "new-a"),
+            // Other clients' consumers read as their providers name them.
+            ("claude-model:claude-opus-4-5-20251101", "Opus 4.5"),
+            ("claude-model:claude-fable-5-1[1m]", "Fable 5.1"),
+            ("claude-model:kimi-for-coding", "Kimi For Coding"),
+            ("claude-model:glm-5.1", "glm-5.1"),
+            ("codex-model:gpt-6.1-sol", "gpt-6.1-sol"),
+            ("deepseek-model:deepseek-v4-pro", "deepseek-v4-pro"),
+            ("cursor-model:auto", "auto"),
+            ("claude-session", "claude-session"),
+        ]
+        for (id, name) in cases { XCTAssertEqual(ModelCatalog.consumerName(of: id), name, id) }
+        XCTAssertEqual(DiscoveredModel(modelId: "claude-opus-4-5-20251101", lastSeen: .distantPast).descriptor.name, "Opus 4.5")
+    }
+
     func testContextWindowsComeFromTheLogThenTheCatalogThenWhatTheModelHeld() {
         XCTAssertEqual(ModelCatalog.contextWindow(agentId: "codex-model:gpt-6-astra", reported: 258_400, largestSeen: nil), 258_400)
         XCTAssertEqual(ModelCatalog.contextWindow(agentId: "claude-model:claude-haiku-4-5", reported: nil, largestSeen: 150_000), 200_000)

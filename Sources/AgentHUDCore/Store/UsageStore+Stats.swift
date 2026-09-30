@@ -133,7 +133,7 @@ public extension UsageStore {
 
     func consumerName(_ id: String) -> String {
         guard let consumer = consumers.first(where: { $0.id == id }) else {
-            guard let row = rows.first(where: { $0.id == id }) else { return id }
+            guard let row = rows.first(where: { $0.id == id }) else { return ModelCatalog.consumerName(of: id) }
             return row.agent.name
         }
         return consumer.name
