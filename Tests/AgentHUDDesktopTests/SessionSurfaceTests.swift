@@ -185,6 +185,22 @@ final class SessionSurfaceTests: XCTestCase {
         XCTAssertEqual(HoverPanelView.sessionRows(store).running.count, 2)
     }
 
+    /// A session whose client waits for an answer to a permission request needs approval on every surface while it waits.
+    @MainActor
+    func testASessionWaitingOnAPermissionRequestNeedsApprovalOnEverySurface() throws {
+        let store = try makeStore()
+        // The demo's requests include one from Codex's session demo-2.
+        PermissionRequests.shared.seedDemo(now: now)
+        defer { for request in PermissionRequests.shared.pending { PermissionRequests.shared.withdraw(request.id) } }
+        let codex = session("demo-2", agent: "codex-model:gpt-5", observed: -30)
+        show([codex], turns: [turn("demo-2", .running, provider: "codex", started: -600, observed: -200)], in: store)
+        XCTAssertEqual(surfaces(codex, in: store), Surfaces(
+            cardDot: .waiting, headerDot: .waiting, islandDot: .waiting, cardState: "Needs approval",
+            cardSince: now.addingTimeInterval(-600), headerLabel: "Needs approval"))
+        XCTAssertEqual(HoverPanelView.sessionRows(store).running.map(\.id), ["demo-2"])
+        XCTAssertEqual(StatsView.sessionCounts(store, source: nil, activeOnly: false).running, 1)
+    }
+
     // MARK: Fixtures
 
     @MainActor

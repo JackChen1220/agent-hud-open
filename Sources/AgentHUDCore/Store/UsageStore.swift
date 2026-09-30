@@ -141,7 +141,8 @@ public final class UsageStore {
     /// Counts the reports shown, so that a new one is told from the last without comparing them.
     @ObservationIgnored private var reportGeneration = 0
     /// The last view built, and what it was built from.
-    @ObservationIgnored private var built: (generation: Int, agents: [AgentDescriptor], settings: Settings, view: ReportView)?
+    @ObservationIgnored private var built: (generation: Int, agents: [AgentDescriptor], settings: Settings, approvals: [String],
+                                            view: ReportView)?
 
     /// `hooks` let a host choose the history window, publish each provider report and merge it into the displayed report.
     public init(provider: any UsageProvider, settings: SettingsStore, accessAllowed: @escaping () -> Bool = { true },
@@ -258,14 +259,17 @@ public final class UsageStore {
 
     // MARK: Derived
 
-    /// What the Mac shows of the report now: its rows, balances, levels and sessions. It is built again only when the
-    /// report, the agent list, the settings or the time changed, and reading it tracks all four.
+    /// What the Mac shows of the report now: its rows, balances, levels and sessions, with the sessions whose clients wait
+    /// for an answer to a permission request (`PermissionRequests.shared`) waiting for approval. It is built again only
+    /// when the report, the agent list, the settings, the waiting requests or the time changed, and reading it tracks all
+    /// five.
     public var view: ReportView {
         let report = self.report, agents = settings.agents, preferences = settings.settings, now = self.now
+        let approvals = PermissionRequests.shared.pending, requests = approvals.map(\.id)
         if let built, built.generation == reportGeneration, built.view.now == now, built.agents == agents,
-           built.settings == preferences { return built.view }
-        let view = ReportView(report: report, agents: agents, settings: preferences, now: now)
-        built = (reportGeneration, agents, preferences, view)
+           built.settings == preferences, built.approvals == requests { return built.view }
+        let view = ReportView(report: report, agents: agents, settings: preferences, approvals: approvals, now: now)
+        built = (reportGeneration, agents, preferences, requests, view)
         return view
     }
 

@@ -22,8 +22,8 @@ public struct SessionPhase: Hashable, Sendable {
     /// In flight: when the turn started, or the session while no turn in flight is known. Otherwise: when the newest turn
     /// finished, else the session's last event.
     public let since: Date
-    /// In flight: when the Mac stops vouching for the state without a newer reading. Nil otherwise, and for a hook turn,
-    /// which nothing bounds.
+    /// In flight: when the Mac stops vouching for the state without a newer reading. Nil otherwise, for a hook turn, which
+    /// nothing bounds, and for a client waiting for an answer to a permission request, which lasts as long as it waits.
     public let validUntil: Date?
 
     public init(state: State, since: Date, validUntil: Date?) {
@@ -59,23 +59,24 @@ public struct SessionPhase: Hashable, Sendable {
 
     // MARK: Source
 
-    /// Which of a client's records decide whether its session is in flight when a provider reads it.
+    /// Which of a client's records decide whether its session is in flight when a provider reads it. Under every rule a
+    /// turn waiting for approval is in flight as a running one is: its client is blocked on the user, not finished.
     public enum SourceRule: Hashable, Sendable {
-        /// A log that dates every line and follows its turn, as Claude Code's main and sub-agent logs do. A running turn is
-        /// in flight until the log has been quiet for `Limits.abandoned`, or for `Limits.quiet` when the log never showed
+        /// A log that dates every line and follows its turn, as Claude Code's main and sub-agent logs do. A turn in flight
+        /// stays so until the log has been quiet for `Limits.abandoned`, or for `Limits.quiet` when the log never showed
         /// the turn start; a log that never said what its turn is doing is in flight until it has been quiet for
         /// `Limits.quiet`. A session also runs while any of its sub-agents does.
         case transcript
-        /// A log that follows its turns but is dated as a file, as a Codex rollout is: a running newest turn is in flight
-        /// until the file has been left unwritten for `Limits.abandoned`, and a rollout that never logged a turn until
-        /// it has for `Limits.quiet`. One that wrote nothing is never in flight.
+        /// A log that follows its turns but is dated as a file, as a Codex rollout is: a newest turn in flight stays so
+        /// until the file has been left unwritten for `Limits.abandoned`, and a rollout that never logged a turn is in
+        /// flight until it has for `Limits.quiet`. One that wrote nothing is never in flight.
         case rollout
-        /// A log whose client's process can be checked, as DeepSeek Harness's can: a running newest turn of a log that
-        /// recorded something is in flight however quiet the log is, unless the process table, when it was read, holds
-        /// no process that predates the turn.
+        /// A log whose client's process can be checked, as DeepSeek Harness's can: a newest turn in flight of a log that
+        /// recorded something stays so however quiet the log is, unless the process table, when it was read, holds no
+        /// process that predates the turn.
         case process
         /// Turns a client's records report, and nothing else, as the additional clients' and the open agents' do: a
-        /// running newest turn is in flight until it has gone unobserved for `Limits.abandoned`. A session without turns
+        /// newest turn in flight stays so until it has gone unobserved for `Limits.abandoned`. A session without turns
         /// is never in flight.
         case turns
     }
@@ -132,7 +133,7 @@ public struct SessionPhase: Hashable, Sendable {
             let limit: TimeInterval?
             if let turn = evidence.turn {
                 // A turn nothing was seen to start comes from a partial log; only its freshness vouches for it.
-                limit = turn.state == .running ? (turn.startedAtMs == nil ? Limits.quiet : Limits.abandoned) : nil
+                limit = turn.state.isInFlight ? (turn.startedAtMs == nil ? Limits.quiet : Limits.abandoned) : nil
             } else {
                 limit = Limits.quiet
             }
@@ -144,29 +145,29 @@ public struct SessionPhase: Hashable, Sendable {
             guard let lastWriteAt = evidence.lastWriteAt else { return SourceReading(inFlight: false, turn: evidence.turn) }
             let quiet = readAt.timeIntervalSince(lastWriteAt)
             guard let turn = evidence.turn else { return SourceReading(inFlight: quiet < Limits.quiet, turn: nil) }
-            return SourceReading(inFlight: turn.state == .running && quiet < Limits.abandoned, turn: turn)
+            return SourceReading(inFlight: turn.state.isInFlight && quiet < Limits.abandoned, turn: turn)
         case .process:
-            return SourceReading(inFlight: evidence.turn?.state == .running && evidence.lastWriteAt != nil
+            return SourceReading(inFlight: evidence.turn?.state.isInFlight == true && evidence.lastWriteAt != nil
                                      && evidence.processOutlivesTurn != false, turn: evidence.turn)
         case .turns:
             guard let turn = evidence.turn else { return SourceReading(inFlight: false, turn: nil) }
-            return SourceReading(inFlight: turn.state == .running
+            return SourceReading(inFlight: turn.state.isInFlight
                                      && readAt.timeIntervalSince1970 - Double(turn.observedAtMs) / 1000 < Limits.abandoned, turn: turn)
         }
     }
 
-    /// A turn as it stands once its client's Stop hook fired at `stop`, the latest the session's hooks reported: a running
-    /// turn observed at or before it completed then. Nil leaves the turn as it is.
+    /// A turn as it stands once its client's Stop hook fired at `stop`, the latest the session's hooks reported: a turn in
+    /// flight observed at or before it completed then. Nil leaves the turn as it is.
     public static func stopped(_ turn: SessionTurn, atMs stop: Int64?) -> SessionTurn {
-        guard let stop, turn.state == .running, stop >= turn.observedAtMs else { return turn }
+        guard let stop, turn.state.isInFlight, stop >= turn.observedAtMs else { return turn }
         return SessionTurn(provider: turn.provider, sessionID: turn.sessionID, turnID: turn.turnID, state: .completed,
                            startedAtMs: turn.startedAtMs, observedAtMs: stop, message: turn.message)
     }
 
-    /// A turn a heartbeat keeps fresh, as Pi's observer does, as it stands at `readAt`: a running turn whose last
+    /// A turn a heartbeat keeps fresh, as Pi's observer does, as it stands at `readAt`: a turn in flight whose last
     /// snapshot is `Limits.heartbeat` old ended there, without a completion.
     public static func lapsed(_ turn: SessionTurn, at readAt: Date) -> SessionTurn {
-        guard turn.state == .running,
+        guard turn.state.isInFlight,
               readAt.timeIntervalSince1970 - Double(turn.observedAtMs) / 1000 >= Limits.heartbeat else { return turn }
         return SessionTurn(provider: turn.provider, sessionID: turn.sessionID, turnID: turn.turnID, state: .ended,
                            startedAtMs: turn.startedAtMs, observedAtMs: turn.observedAtMs, message: turn.message)
@@ -206,17 +207,26 @@ public struct SessionPhase: Hashable, Sendable {
             return
         }
         if session.isLive(at: now) {
-            let validUntil = session.observedAt.addingTimeInterval(Limits.vouched)
-            if let turn, turn.state == .running || turn.state == .waitingForApproval {
-                self.init(state: turn.state == .running ? .running : .waitingForApproval,
-                          since: RecordCoding.date(turn.startedAtMs ?? turn.observedAtMs), validUntil: validUntil)
-            } else {
-                self.init(state: .running, since: session.startedAt, validUntil: validUntil)
-            }
+            self.init(state: turn?.state == .waitingForApproval ? .waitingForApproval : .running,
+                      since: Self.inFlightSince(session, turn: turn), validUntil: session.observedAt.addingTimeInterval(Limits.vouched))
             return
         }
         let finishedAt = turn.flatMap { $0.state == .completed || $0.state == .ended ? RecordCoding.date($0.observedAtMs) : nil }
         self.init(state: session.endedAt == nil ? .unverified : .idle, since: finishedAt ?? lastEventAt, validUntil: nil)
+    }
+
+    /// When the work in flight started: the newest turn's start while it runs or waits for approval, or its observation
+    /// without one; with no such turn, the session's start.
+    static func inFlightSince(_ session: LiveSession, turn: SessionTurn?) -> Date {
+        guard let turn, turn.state.isInFlight else { return session.startedAt }
+        return RecordCoding.date(turn.startedAtMs ?? turn.observedAtMs)
+    }
+
+    /// The phase of a session whose client waits for an answer to a permission request, given the phase it has otherwise:
+    /// waiting for approval for as long as the client waits, which no reading's age bounds, since the work in flight
+    /// started.
+    func awaitingApproval(_ session: LiveSession, turn: SessionTurn?) -> SessionPhase {
+        SessionPhase(state: .waitingForApproval, since: isInFlight ? since : Self.inFlightSince(session, turn: turn), validUntil: nil)
     }
 
     // MARK: Hooks
@@ -252,4 +262,9 @@ public struct SessionPhase: Hashable, Sendable {
         return !(hook.endedAt == nil
             && (reading.state == .waitingForApproval || (!reading.isInFlight && reading.since > hook.startedAt)))
     }
+}
+
+extension SessionTurn.State {
+    /// Running or blocked on the user: both are a turn in flight.
+    var isInFlight: Bool { self == .running || self == .waitingForApproval }
 }

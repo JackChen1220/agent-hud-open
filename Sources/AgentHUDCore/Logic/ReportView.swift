@@ -4,7 +4,7 @@ import Foundation
 /// What the Mac shows of a report at one time: the quota rows it lists and how they group, the balances, the glow's
 /// levels, and each session with its source, newest turn, last event, message and phase. Rows, balances, levels and
 /// sessions are worked out when the view is built, a window's metrics only when asked for. A session's phase comes from
-/// the report alone: neither a client's hook turns nor a permission request waiting for an answer changes it.
+/// the report and the permission requests waiting for an answer; a client's hook turns do not change it.
 public struct ReportView: Sendable {
     /// One session as the Mac shows it.
     public struct Session: Hashable, Sendable, Identifiable {
@@ -14,7 +14,8 @@ public struct ReportView: Sendable {
         /// The newest turn: the last one listed from the session's vendor, or from any provider without a vendor.
         public let turn: SessionTurn?
         /// When the session last did something: its newest turn event from any provider, or its end when that is later;
-        /// without turns, its end, or while in flight the reading that last saw it.
+        /// without turns, its end, or while in flight the reading that last saw it. A permission request waiting for an
+        /// answer is an event too.
         public let lastEventAt: Date
         /// What the agent last said: the message of the last turn listed that carries one, from the providers `turn`
         /// comes from.
@@ -49,7 +50,9 @@ public struct ReportView: Sendable {
     private let index: Index
 
     /// - agents: the settings' rows, in their order.
-    public init(report: UsageReport?, agents: [AgentDescriptor], settings: Settings, now: Date) {
+    /// - approvals: the permission requests waiting for an answer. A session whose client waits for one is waiting for
+    ///   approval, however its source reads, for as long as the client waits.
+    public init(report: UsageReport?, agents: [AgentDescriptor], settings: Settings, approvals: [PermissionRequest] = [], now: Date) {
         let visible = report?.visibleRows(agents) ?? agents
         // Without a report, a plan pool's rows stay hidden.
         let enabled = visible.filter { $0.enabled && Self.isPoolActive($0, in: report, withoutReport: false) }
@@ -89,7 +92,7 @@ public struct ReportView: Sendable {
             if groups[vendor] == nil { order.append(vendor) }
             groups[vendor, default: []].append(row)
         }
-        let index = Index(report: report, agents: agents)
+        let index = Index(report: report, agents: agents, approvals: approvals)
         self.report = report
         self.settings = settings
         self.index = index
@@ -211,14 +214,16 @@ public struct ReportView: Sendable {
         return order.map { (vendor: $0, isWorking: working.contains($0)) }
     }
 
-    /// What sessions are read against: the vendor of each agent id, and the report's turns and newest turn event by session.
+    /// What sessions are read against: the vendor of each agent id, the report's turns and newest turn event by session,
+    /// and when each session's client last asked for approval among the requests still waiting.
     private struct Index: Sendable {
         var vendors: [String: String] = [:]
         var turns: [String: [SessionTurn]] = [:]
         var lastTurnEvents: [String: Date] = [:]
+        var requests: [String: Date] = [:]
 
         /// A vendor comes from the consumers, then the settings rows, then the report's own rows.
-        init(report: UsageReport?, agents: [AgentDescriptor]) {
+        init(report: UsageReport?, agents: [AgentDescriptor], approvals: [PermissionRequest]) {
             for agent in (report?.consumers ?? []) + agents + (report?.discoveredAgents ?? []) where vendors[agent.id] == nil {
                 vendors[agent.id] = agent.vendor
             }
@@ -227,6 +232,9 @@ public struct ReportView: Sendable {
                 let at = RecordCoding.date(turn.observedAtMs)
                 if at > lastTurnEvents[turn.sessionID] ?? .distantPast { lastTurnEvents[turn.sessionID] = at }
             }
+            for request in approvals where request.at > requests[request.sessionID] ?? .distantPast {
+                requests[request.sessionID] = request.at
+            }
         }
     }
 
@@ -234,10 +242,13 @@ public struct ReportView: Sendable {
         let vendor = index.vendors[session.agentId] ?? SessionSource.vendor(impliedBy: session.agentId)
         let provider = vendor?.lowercased()
         let turns = (index.turns[session.id] ?? []).filter { provider == nil || $0.provider.lowercased() == provider }
-        let lastEventAt = session.lastEvent(turnAt: index.lastTurnEvents[session.id])
+        let asked = index.requests[session.id]
+        let lastEventAt = max(session.lastEvent(turnAt: index.lastTurnEvents[session.id]), asked ?? .distantPast)
         let liveStatus = settings.liveStatusEnabled(for: vendor ?? "")
+        var phase = SessionPhase(session: session, turn: turns.last, lastEventAt: lastEventAt, liveStatus: liveStatus, now: now)
+        if liveStatus, asked != nil { phase = phase.awaitingApproval(session, turn: turns.last) }
         return Session(session: session, source: SessionSource(vendor: vendor, client: session.client), turn: turns.last,
                        lastEventAt: lastEventAt, message: turns.last { $0.message != nil }?.message, liveStatus: liveStatus,
-                       phase: SessionPhase(session: session, turn: turns.last, lastEventAt: lastEventAt, liveStatus: liveStatus, now: now))
+                       phase: phase)
     }
 }

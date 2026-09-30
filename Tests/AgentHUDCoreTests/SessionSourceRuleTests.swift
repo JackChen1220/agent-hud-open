@@ -334,7 +334,9 @@ final class SessionSourceRuleTests: XCTestCase, @unchecked Sendable {
             ("a running turn tied with an earlier-listed one", [turn(.completed, observed: -10, id: "a"), turn(.running, observed: -10, id: "b")], false),
             ("a running turn quiet for 1799.999 s", [turn(.running, observed: -1799.999)], true),
             ("a running turn quiet for 1800 s", [turn(.running, observed: -1800)], false),
-            ("a waiting turn", [turn(.waitingForApproval, observed: -10)], false),
+            // A turn waiting for approval is in flight as a running one is, until it too is abandoned.
+            ("a turn waiting for approval", [turn(.waitingForApproval, observed: -10)], true),
+            ("a turn waiting for approval quiet for 1800 s", [turn(.waitingForApproval, observed: -1800)], false),
             ("no turn", [], false),
         ]
         for item in cases {
@@ -368,7 +370,30 @@ final class SessionSourceRuleTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(after.turns.map(\.observedAtMs), [ms(-10), ms(-10)], "an earlier stop of the same session is not used")
         XCTAssertEqual(after.sessions.map(\.isLive), [false])
         let finished = try await additional([grok([turn(.completed, observed: -60), turn(.waitingForApproval, observed: -50, id: "w")])], stops: [-10])
-        XCTAssertEqual(finished.turns.map(\.observedAtMs), [ms(-60), ms(-50)], "a stop rewrites running turns only")
+        XCTAssertEqual(finished.turns.map(\.state), [.completed, .completed])
+        XCTAssertEqual(finished.turns.map(\.observedAtMs), [ms(-60), ms(-10)],
+                       "a stop completes a turn waiting for approval as it does a running one, and leaves a finished turn alone")
+    }
+
+    /// Under every rule a turn waiting for approval is in flight as a running one is, and ends the same ways.
+    func testEveryRuleCountsATurnWaitingForApprovalAsInFlight() {
+        let waiting = turn(.waitingForApproval, observed: -10)
+        // The rule, what the source read, and whether the session is still in flight half an hour after it was last heard.
+        let rules: [(SessionPhase.SourceRule, SessionPhase.SourceEvidence, later: Bool)] = [
+            (.transcript, .init(turn: waiting, lastWriteAt: at(-10)), false),
+            (.rollout, .init(turn: waiting, lastWriteAt: at(-10)), false),
+            // However quiet the log is, the process decides.
+            (.process, .init(turn: waiting, lastWriteAt: at(-10), processOutlivesTurn: true), true),
+            (.turns, .init(turn: waiting), false),
+        ]
+        for (rule, evidence, later) in rules {
+            XCTAssertTrue(SessionPhase.read(evidence, rule: rule, at: base).inFlight, "\(rule)")
+            XCTAssertEqual(SessionPhase.read(evidence, rule: rule, at: at(1790)).inFlight, later, "\(rule) half an hour later")
+        }
+        XCTAssertFalse(SessionPhase.read(.init(turn: waiting, lastWriteAt: at(-10), processOutlivesTurn: false), rule: .process, at: base).inFlight,
+                       "a turn no process predates has lost its client")
+        XCTAssertEqual(SessionPhase.lapsed(turn(.waitingForApproval, observed: -120), at: base).state, .ended, "a heartbeat that stopped ends it")
+        XCTAssertEqual(SessionPhase.lapsed(turn(.waitingForApproval, observed: -119.999), at: base).state, .waitingForApproval)
     }
 
     func testAnAdditionalClientSessionThatEndedBeforeTheReadWindowIsDropped() async throws {

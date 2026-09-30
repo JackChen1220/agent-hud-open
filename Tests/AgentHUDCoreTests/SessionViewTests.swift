@@ -189,6 +189,35 @@ final class SessionViewTests: XCTestCase {
             liveSessions: ["vendorless"], hasLiveSession: true, workingVendors: [], breathSeconds: 3))
     }
 
+    /// A session whose client waits for an answer to a permission request waits for approval for as long as the client
+    /// waits, however its source reads it: since its turn in flight started, else since its own start, with the request as
+    /// its last event. With live status off it shows no state, and once the client stops waiting the source decides again.
+    @MainActor
+    func testAPermissionRequestWaitingForAnAnswerMarksItsSessionWaitingForApproval() throws {
+        let store = try makeStore()
+        store.settings.update { $0.setLiveStatus(for: "Claude", enabled: false) }
+        // The demo's requests: Claude's session demo-1 asked 38 s ago, Codex's demo-2 124 s ago and CodeBuddy's demo-3 71 s ago.
+        PermissionRequests.shared.seedDemo(now: now)
+        defer { for request in PermissionRequests.shared.pending { PermissionRequests.shared.withdraw(request.id) } }
+        let codex = session("demo-2", agent: "codex-model:gpt-5", observed: -30)
+        let buddy = session("demo-3", agent: "codebuddy-model:x", ended: -300, observed: -300)
+        let claude = session("demo-1", observed: -30)
+        show([codex, buddy, claude], turns: [turn("demo-2", .running, provider: "codex", started: -600, observed: -200)], in: store)
+        let view = store.view
+        XCTAssertEqual(view.session("demo-2")?.phase, SessionPhase(state: .waitingForApproval, since: now.addingTimeInterval(-600), validUntil: nil))
+        XCTAssertEqual(view.session("demo-2")?.lastEventAt, now.addingTimeInterval(-124))
+        XCTAssertEqual(view.session("demo-3")?.phase, SessionPhase(state: .waitingForApproval, since: buddy.startedAt, validUntil: nil),
+                       "a client whose records never say it works still waits")
+        XCTAssertEqual(view.session("demo-3")?.lastEventAt, now.addingTimeInterval(-71))
+        XCTAssertEqual([codex, buddy, claude].map(store.sessionStatusLabel), ["Needs approval", "Needs approval", "Live status off"])
+        XCTAssertEqual(store.liveSessions.map(\.id), ["demo-3", "demo-2"])
+        XCTAssertEqual(store.workingVendors, ["Codex", "CodeBuddy"])
+
+        for request in PermissionRequests.shared.pending { PermissionRequests.shared.withdraw(request.id) }
+        XCTAssertEqual(store.view.session("demo-2")?.phase.state, .running)
+        XCTAssertEqual(store.view.session("demo-3")?.phase.state, .idle)
+    }
+
     // MARK: Fixtures
 
     @MainActor
