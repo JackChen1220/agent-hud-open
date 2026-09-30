@@ -89,9 +89,10 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
         // All observed models are consumers; quota rows remain the plan's independent windows below.
         let consumers = ClaudeModelDiscovery.discover(observations).map(\.descriptor)
 
-        // 1. Quota from the engine. A login without plan limits (API key, third-party platform) keeps the local data.
+        // 1. Quota from the engine. A login without plan limits (API key, third-party platform) keeps the local data; it has
+        // no current account, so its notice is shown and holds nothing back. Only a failed engine read is a failed read.
         var usage: ClaudeUsage?
-        var notice: String?
+        var notice: String?, failure: String?
         var updatedAt = now
         var reading: EngineUsageCache.Reading?
         do {
@@ -111,6 +112,7 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
             // Quota availability does not determine whether a local turn completed.
             guard !sessions.isEmpty else { throw error }
             notice = error.localizedDescription
+            failure = notice
         }
         let plan = reading?.plan
         let account = reading.map(account(for:))
@@ -202,7 +204,8 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
             insightsByAgent: insightsByAgent,
             subscriptions: plan.map { ["Claude": $0] } ?? [:],
             sourceNotices: notice.map { ["Claude": $0] } ?? [:],
-            readingIssues: notice.map { ["Claude": .readFailed($0)] } ?? [:],
+            quotaNotices: failure.map { ["Claude": $0] } ?? [:],
+            readingIssues: failure.map { ["Claude": .readFailed($0)] } ?? [:],
             consumerIdsByQuota: consumerIdsByQuota,
             completions: sessions.flatMap(\.completions),
             turns: candidates.compactMap(\.reading.turn),

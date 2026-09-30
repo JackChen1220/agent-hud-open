@@ -62,7 +62,7 @@ struct GrokClient: Sendable {
             }
             quota.windows.append(.init(id: "grok", label: label, remaining: QuotaMath.remaining(usedPercent: used), reset: end, duration: duration))
         } else {
-            quota.notice = L10n.text("Grok 已连接，但服务未返回已用额度", "Grok is connected, but used credits were not reported")
+            quota.displayNotice = L10n.text("Grok 已连接，但服务未返回已用额度", "Grok is connected, but used credits were not reported")
         }
         // Extra spending is a distinct budget, never a substitute for subscription consumption.
         if let cap = config["onDemandCap"]["val"].numberValue, cap > 0,

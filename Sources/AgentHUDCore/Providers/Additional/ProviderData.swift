@@ -67,7 +67,11 @@ struct ProviderQuota: Sendable {
     }
     var windows: [Window] = []
     var plan: String? = nil
+    /// Why the quota could not be read although the service answered, such as a client that is not running or not signed
+    /// in: a failed read, which holds the vendor's readings back.
     var notice: String? = nil
+    /// Something the answer left out, shown under the client beside the windows it did give; it holds nothing back.
+    var displayNotice: String? = nil
     /// The signed-in account the quota belongs to; nil when the service answered without naming it.
     var account: ProviderAccount? = nil
     /// An email or name from the same response or login record, shown to this Mac's user.

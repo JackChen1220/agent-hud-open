@@ -91,6 +91,30 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(quota.windows.map(\.remaining), [87.5, 85])
         XCTAssertEqual(quota.windows[0].duration, 604800)
         XCTAssertTrue(try GrokClient.parse(json(#"{"config":{}}"#)).windows.isEmpty)
+        let extraOnly = try GrokClient.parse(json(#"{"config":{"onDemandCap":{"val":20},"onDemandUsed":{"val":3}}}"#))
+        XCTAssertEqual(extraOnly.windows.map(\.id), ["grok:extra"])
+        XCTAssertNil(extraOnly.notice, "a subscription share the service left out is no failed read")
+        XCTAssertNotNil(extraOnly.displayNotice)
+    }
+
+    /// A notice about what a quota answer left out is shown, and the windows the answer did give keep their levels.
+    @MainActor
+    func testWhatAQuotaAnswerLeftOutIsShownWithoutHoldingItsWindowsBack() async throws {
+        let now = now
+        let provider = AdditionalUsageProvider(source: .grok, readQuota: {
+            try GrokClient.parse(ProviderJSON.read(Data(#"{"config":{"onDemandCap":{"val":20},"onDemandUsed":{"val":15}}}"#.utf8)))
+        }, readSessions: { _ in ProviderSessions() }, history: QuotaHistoryStore(), clock: { now })
+        await provider.refreshAccountUsage(historyHours: 48)
+        let report = try await provider.fetchUsage(agents: [], historyHours: 48)
+        XCTAssertEqual(report.sourceNotices["Grok"], "Grok is connected, but used credits were not reported")
+        XCTAssertEqual(report.readingIssues, [:])
+        XCTAssertEqual(report.quotaNotices, [:])
+        let suite = "AdditionalProviderTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = UsageStore(provider: DemoUsageProvider(), settings: SettingsStore(defaults: defaults, defaultAgents: report.discoveredAgents))
+        store.replace(report: report)
+        store.now = now
+        XCTAssertEqual(store.rows.map(\.level), [.warning], "the extra budget read keeps its level")
     }
 
     func testGrokAuthUsesOnlySupportedNonexpiredIssuer() throws {
@@ -103,7 +127,10 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         let quota = try CursorClient.parseQuota(json(#"{"membershipType":"pro","individualUsage":{"plan":{"totalPercentUsed":0.36,"autoPercentUsed":0.1},"onDemand":{"used":5,"limit":10}}}"#))
         XCTAssertEqual(quota.windows.map(\.remaining), [99.64, 99.9, 50])
         XCTAssertNil(quota.windows.first?.reset)
-        XCTAssertTrue(try CursorClient.parseQuota(json(#"{"membershipType":"free"}"#)).windows.isEmpty)
+        let free = try CursorClient.parseQuota(json(#"{"membershipType":"free"}"#))
+        XCTAssertTrue(free.windows.isEmpty)
+        XCTAssertNil(free.notice, "a plan that reports no percentage is no failed read")
+        XCTAssertNotNil(free.displayNotice)
     }
 
     func testCursorReadsLiveWALAndUTF16WithoutWritingCredentials() async throws {

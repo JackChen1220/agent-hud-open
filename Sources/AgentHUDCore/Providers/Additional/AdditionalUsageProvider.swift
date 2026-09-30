@@ -164,8 +164,8 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
             let readings = await history.samples(agentId: snapshot.agentId, since: QuotaMath.historyStart(for: snapshot, now: now))
             insights[snapshot.agentId] = QuotaMath.insights(snapshot: snapshot, samples: readings, capsSince: weekAgo, now: now)
         }
-        // Every notice is shown; only the quota reading's holds back the vendor's alerts, levels and retained sessions.
-        let notice = [quotaNotice, local.notice, hookNotice].compactMap { $0 }.joined(separator: " · ")
+        // Every notice is shown; only a quota reading that failed holds back the vendor's alerts, levels and retained sessions.
+        let notice = [quotaNotice, quota.displayNotice, local.notice, hookNotice].compactMap { $0 }.joined(separator: " · ")
         let descriptors = windows.map {
             AgentDescriptor(id: $0.id, vendor: source.vendor, model: $0.label, source: L10n.sourceAdditionalUsage, enabled: true, account: account)
         }

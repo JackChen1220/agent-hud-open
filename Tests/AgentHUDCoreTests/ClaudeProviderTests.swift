@@ -912,6 +912,9 @@ final class ClaudeCodeProviderTests: XCTestCase {
         )
         let report = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 48)
         XCTAssertEqual(report.notice, "当前登录方式没有订阅额度（API key 或第三方平台）")
+        XCTAssertEqual(report.sourceNotices["Claude"], report.notice, "the notice is shown under Claude")
+        XCTAssertEqual(report.readingIssues, [:], "a login without plan limits has no current account and no failed read")
+        XCTAssertEqual(report.quotaNotices, [:])
         XCTAssertTrue(report.snapshots.isEmpty)
         XCTAssertEqual(report.sessions.map(\.id), ["k"], "sessions still come from local logs")
     }
