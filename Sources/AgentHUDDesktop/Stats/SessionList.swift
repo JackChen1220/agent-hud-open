@@ -330,13 +330,16 @@ struct SessionCard: View {
         SessionDot(store.view.phase(of: session))
     }
 
-    /// The state as the phone is told it. Without live status there is no state.
+    /// The state, as the session's page words it. Without live status there is no state.
     static func state(_ session: LiveSession, dot: SessionDot, store: UsageStore) -> String? {
         switch dot {
         case .waiting: return L10n.text("等待批准", "Needs approval")
         case .running: return L10n.text("运行中", "Running")
-        // A session in flight that the Mac can no longer vouch for reads like an idle one.
-        case .ended: return store.liveStatusEnabled(for: session) ? L10n.text("等你回复", "Waiting for you") : nil
+        case .ended:
+            let shown = store.view.session(for: session)
+            guard shown.liveStatus else { return nil }
+            // In flight by a reading too old for the Mac to vouch for, the session's state is not known.
+            return shown.phase.state == .unverified ? L10n.text("状态待更新", "Status out of date") : L10n.text("等你回复", "Waiting for you")
         }
     }
 

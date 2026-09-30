@@ -18,7 +18,7 @@ public struct ReportView: Sendable {
         /// answer is an event too.
         public let lastEventAt: Date
         /// What the agent last said: the message of the last turn listed that carries one, from the providers `turn`
-        /// comes from.
+        /// comes from. Nil while live status is off.
         public let message: String?
         /// Whether live status is on for the session's vendor; a session without a vendor answers to no vendor's switch.
         public let liveStatus: Bool
@@ -248,7 +248,7 @@ public struct ReportView: Sendable {
         var phase = SessionPhase(session: session, turn: turns.last, lastEventAt: lastEventAt, liveStatus: liveStatus, now: now)
         if liveStatus, asked != nil { phase = phase.awaitingApproval(session, turn: turns.last) }
         return Session(session: session, source: SessionSource(vendor: vendor, client: session.client), turn: turns.last,
-                       lastEventAt: lastEventAt, message: turns.last { $0.message != nil }?.message, liveStatus: liveStatus,
-                       phase: phase)
+                       lastEventAt: lastEventAt, message: liveStatus ? turns.last { $0.message != nil }?.message : nil,
+                       liveStatus: liveStatus, phase: phase)
     }
 }

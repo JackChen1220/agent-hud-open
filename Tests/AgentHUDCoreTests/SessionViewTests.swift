@@ -80,10 +80,11 @@ final class SessionViewTests: XCTestCase {
             for (newest, label) in zip(Newest.allCases, row.labels) {
                 let session = session("s", ended: row.inFlight ? nil : -2 * hour, observed: -row.age)
                 show([session], turns: turns(of: "s", newest: newest), in: store)
-                // A waiting turn blocks only a live session; the state and the message come from the turns whatever else
-                // holds, and everything that counts live sessions follows whether this one is live.
+                // A waiting turn blocks only a live session; the state comes from the turns whatever else holds, the
+                // message too unless live status is off, and everything that counts live sessions follows whether this one
+                // is live.
                 let expected = Answers(live: row.live, waiting: row.live && newest == .waiting, state: newest.state, label: label,
-                                       message: newest == .none ? nil : "Earlier answer", liveSessions: row.live ? ["s"] : [],
+                                       message: newest == .none || !row.liveStatus ? nil : "Earlier answer", liveSessions: row.live ? ["s"] : [],
                                        hasLiveSession: row.live, workingVendors: row.live ? ["Claude"] : [],
                                        breathSeconds: row.live ? 3 : 7)
                 XCTAssertEqual(answers(session, in: store), expected, "\(row) with the newest turn \(newest)")

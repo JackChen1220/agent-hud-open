@@ -54,7 +54,8 @@ final class SessionSurfaceTests: XCTestCase {
 
     /// The grid of the store's own tests: a Claude session that started five hours ago, has ended two hours ago unless
     /// the source still has it in flight, and was last read `age` seconds ago; its newest turn started three hours ago
-    /// and was heard from half an hour later. The three dots always agree; the card and the header word the rest differently.
+    /// and was heard from half an hour later. The three dots always agree, and a session the Mac can no longer vouch for
+    /// is out of date on the card as on the header.
     @MainActor
     func testTheCardHeaderAndIslandForEachSession() throws {
         let store = try makeStore()
@@ -71,7 +72,7 @@ final class SessionSurfaceTests: XCTestCase {
              ["Running", "Running", "Running", "Needs approval", "Running", "Running"],
              [.sessionStart, .turnStart, .turnHeard, .turnStart, .sessionStart, .sessionStart],
              [running, running, running, "Needs approval", running, running]),
-            (true, true, 1800, same(.ended), same("Waiting for you"), heard, same("Status out of date")),
+            (true, true, 1800, same(.ended), same("Status out of date"), heard, same("Status out of date")),
             (true, false, 1799.999, same(.ended), same("Waiting for you"), same(.end), same(ended)),
             (true, false, 1800, same(.ended), same("Waiting for you"), same(.end), same(ended)),
             (false, true, 1799.999, same(.ended), same(nil), heard, same(off)),

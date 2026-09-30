@@ -387,7 +387,7 @@ public final class UsageStore {
         focusedTurnCalls = calls
     }
 
-    /// What the agent last said in the session's newest turn that carries a message.
+    /// What the agent last said in the session's newest turn that carries a message; nothing while live status is off.
     public func sessionMessage(_ session: LiveSession) -> String? { view.session(for: session).message }
 
     /// Every token the session and its sub-agents spent, by kind: its breakdown, or its log's counts, which do not split
