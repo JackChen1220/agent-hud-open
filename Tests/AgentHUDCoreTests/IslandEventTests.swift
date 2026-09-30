@@ -40,6 +40,27 @@ final class IslandEventTests: XCTestCase {
         }
     }
 
+    func testACompletionCountsFromJustAfterTheTrackerStartedUpToNow() {
+        var tracker = IslandEventTracker(startedAt: start)
+        let now = start.addingTimeInterval(60), later = now.addingTimeInterval(0.001)
+        let atStart = completion("start", at: start), justAfter = completion("after", at: start.addingTimeInterval(0.001))
+        let atNow = completion("now", at: now), ahead = completion("ahead", at: later)
+        let all = [ahead, atNow, justAfter, atStart]
+        XCTAssertEqual(tracker.update(report: report(completions: all, at: now), agents: [], now: now).completions.map(\.id), [justAfter.id, atNow.id])
+        XCTAssertEqual(tracker.update(report: report(completions: all, at: later), agents: [], now: later).completions.map(\.id), [ahead.id],
+                       "one ahead of the clock waits for it; one at the start never counts")
+    }
+
+    func testACompletionWhileLiveStatusIsOffIsConsumedWithoutAnEvent() {
+        var tracker = IslandEventTracker(startedAt: start)
+        let now = start.addingTimeInterval(60), later = now.addingTimeInterval(0.001)
+        let off = Settings().with { $0.setLiveStatus(for: "Codex", enabled: false) }
+        let done = completion("one", at: now), ahead = completion("two", at: later)
+        XCTAssertEqual(tracker.update(report: report(completions: [done, ahead], at: now), agents: [], now: now, settings: off).completions, [])
+        XCTAssertEqual(tracker.update(report: report(completions: [done, ahead], at: later), agents: [], now: later).completions, [ahead],
+                       "switched on again, the one read while it was off stays consumed; the one not yet due was never read")
+    }
+
     func testHiddenAndWindowlessAgentsReceiveCompletionsWithoutReplay() {
         var tracker = IslandEventTracker(startedAt: start)
         var agents = [AgentDescriptor(id: "codex", vendor: "Codex", model: "5h", source: "", enabled: false),
