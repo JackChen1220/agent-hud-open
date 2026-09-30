@@ -4,7 +4,7 @@ import Foundation
 enum ClaudeSubscription {
     /// `CLAUDE_CONFIG_DIR`, when it is set.
     static func configDirectory(_ environment: [String: String] = ProcessInfo.processInfo.environment) -> URL? {
-        environment["CLAUDE_CONFIG_DIR"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
+        ClientHome.variable("CLAUDE_CONFIG_DIR", in: environment).map { URL(fileURLWithPath: $0, isDirectory: true) }
     }
 
     /// Claude Code's configuration directory: `CLAUDE_CONFIG_DIR`, else `~/.claude`. The account profile and the hooks

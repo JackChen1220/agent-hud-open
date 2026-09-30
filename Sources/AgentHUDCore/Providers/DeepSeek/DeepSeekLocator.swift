@@ -4,7 +4,7 @@ public enum DeepSeekLocator {
     public static var dataDirectory: URL { dataDirectory(environment: ProcessInfo.processInfo.environment) }
 
     public static func dataDirectory(environment: [String: String], home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
-        guard let path = environment["DSH_HOME"], !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard let path = ClientHome.variable("DSH_HOME", in: environment) else {
             return home.appendingPathComponent(".dsh", isDirectory: true)
         }
         let expanded = path == "~" ? home.path : path.hasPrefix("~/") ? home.appendingPathComponent(String(path.dropFirst(2))).path : path

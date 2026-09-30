@@ -9,7 +9,7 @@ enum OpenClawSessions: LocalSessionLayout {
     static let lookback: TimeInterval = 8 * 86400
 
     static func roots(home: URL, environment: [String: String]) -> [URL] {
-        if let state = environment["OPENCLAW_STATE_DIR"]?.trimmingCharacters(in: .whitespaces), !state.isEmpty {
+        if let state = ClientHome.variable("OPENCLAW_STATE_DIR", in: environment) {
             let path = state == "~" ? home.path : state.hasPrefix("~/") ? home.path + state.dropFirst() : state
             return [URL(fileURLWithPath: path).appendingPathComponent("agents")]
         }

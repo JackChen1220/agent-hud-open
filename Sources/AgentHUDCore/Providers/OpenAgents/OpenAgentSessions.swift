@@ -20,12 +20,12 @@ public enum OpenAgentSource: String, CaseIterable, Sendable {
 struct OpenAgentPaths: Sendable {
     let home: URL
     let environment: [String: String]
-    var openCode: URL { URL(fileURLWithPath: environment["XDG_DATA_HOME"] ?? home.appendingPathComponent(".local/share").path).appendingPathComponent("opencode") }
+    var openCode: URL { URL(fileURLWithPath: ClientHome.variable("XDG_DATA_HOME", in: environment) ?? home.appendingPathComponent(".local/share").path).appendingPathComponent("opencode") }
     var openCodeTurns: URL { openCode.appendingPathComponent("agent-hud/turns") }
-    var openCodeConfig: URL { URL(fileURLWithPath: environment["XDG_CONFIG_HOME"] ?? home.appendingPathComponent(".config").path).appendingPathComponent("opencode") }
-    var pi: URL { URL(fileURLWithPath: environment["PI_CODING_AGENT_DIR"] ?? home.appendingPathComponent(".pi/agent").path) }
+    var openCodeConfig: URL { URL(fileURLWithPath: ClientHome.variable("XDG_CONFIG_HOME", in: environment) ?? home.appendingPathComponent(".config").path).appendingPathComponent("opencode") }
+    var pi: URL { URL(fileURLWithPath: ClientHome.variable("PI_CODING_AGENT_DIR", in: environment) ?? home.appendingPathComponent(".pi/agent").path) }
     var piTurns: URL { pi.appendingPathComponent("agent-hud/turns") }
-    var kimi: URL { URL(fileURLWithPath: environment["KIMI_CODE_HOME"] ?? home.appendingPathComponent(".kimi-code").path) }
+    var kimi: URL { URL(fileURLWithPath: ClientHome.variable("KIMI_CODE_HOME", in: environment) ?? home.appendingPathComponent(".kimi-code").path) }
     func roots(for source: OpenAgentSource) -> [URL] {
         switch source {
         case .opencode: [openCode]

@@ -48,7 +48,7 @@ Normal start-up already runs `SessionObservers.configure(executable:enabled:)` f
 | `SWIFT_SCRATCH_PATH` | Passed to `swift build` as `--scratch-path` by the build script |
 | `AGENTHUD_SNAPSHOT_PREFIX` | Limits `--snapshot` to snapshots whose name starts with the prefix |
 | `AGENT_HUD_PROBE_ADDITIONAL` | Enables the read-only probe test above |
-| Client home overrides and provider keys (`CODEX_HOME`, `DSH_HOME`, `PI_CODING_AGENT_DIR`, …) | Read from the process environment ([providers](providers.md)). An application started from Finder or Launch Services inherits the login session's environment, not the exports of a terminal shell. |
+| Client home overrides and provider keys (`CODEX_HOME`, `DSH_HOME`, `PI_CODING_AGENT_DIR`, …) | Read from the process environment ([providers](providers.md)); a directory variable that is empty or only whitespace counts as unset. An application started from Finder or Launch Services inherits the login session's environment, not the exports of a terminal shell. |
 
 ## Code map
 

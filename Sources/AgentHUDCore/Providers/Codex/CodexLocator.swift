@@ -6,7 +6,7 @@ public enum CodexLocator {
     }
 
     static func dataDirectory(home: URL, environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
-        if let path = environment["CODEX_HOME"], !path.isEmpty {
+        if let path = ClientHome.variable("CODEX_HOME", in: environment) {
             return URL(fileURLWithPath: path, isDirectory: true)
         }
         return home.appendingPathComponent(".codex", isDirectory: true)

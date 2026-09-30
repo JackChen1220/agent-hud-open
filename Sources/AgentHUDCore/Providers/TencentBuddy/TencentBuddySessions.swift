@@ -132,7 +132,7 @@ enum CodeBuddySessions: LocalSessionLayout {
     static let installPaths = [".codebuddy/projects"]
     /// CodeBuddy Code's configuration and data folder: `CODEBUDDY_CONFIG_DIR`, else `~/.codebuddy`.
     static func home(_ home: URL, environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
-        environment["CODEBUDDY_CONFIG_DIR"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".codebuddy")
+        ClientHome.variable("CODEBUDDY_CONFIG_DIR", in: environment).map { URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".codebuddy")
     }
     static func roots(home: URL, environment: [String: String]) -> [URL] { [self.home(home, environment: environment).appendingPathComponent("projects")] }
     static func accepts(_ url: URL) -> Bool { url.pathExtension == "jsonl" }

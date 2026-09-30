@@ -8,7 +8,7 @@ enum AntigravitySessions: LocalSessionLayout {
     /// The Gemini home agy keeps its conversations and hooks in: `GEMINI_CLI_HOME`, else `~/.gemini`. Its reader and the
     /// completion hook written into it both follow it.
     static func home(_ home: URL, environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
-        environment["GEMINI_CLI_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
+        ClientHome.variable("GEMINI_CLI_HOME", in: environment).map { URL(fileURLWithPath: $0, isDirectory: true) }
             ?? home.appendingPathComponent(".gemini", isDirectory: true)
     }
 

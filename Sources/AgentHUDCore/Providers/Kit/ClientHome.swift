@@ -8,4 +8,11 @@ public enum ClientHome {
         let path = directory.standardizedFileURL.resolvingSymlinksInPath().path
         return path == defaultDirectory.standardizedFileURL.resolvingSymlinksInPath().path ? "" : RecordCoding.hash([path])
     }
+
+    /// The directory `variable` moves a client's files to, without the whitespace around it; nil when the variable is
+    /// unset, empty or only whitespace, which clients read as unset.
+    static func variable(_ variable: String, in environment: [String: String]) -> String? {
+        guard let value = environment[variable]?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+        return value
+    }
 }

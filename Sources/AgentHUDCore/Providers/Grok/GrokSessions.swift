@@ -6,7 +6,7 @@ enum GrokSessions: LocalSessionLayout {
     static let installPaths = [".grok"]
 
     static func directory(home: URL, environment: [String: String]) -> URL {
-        environment["GROK_HOME"].map { URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".grok")
+        ClientHome.variable("GROK_HOME", in: environment).map { URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".grok")
     }
 
     static func roots(home: URL, environment: [String: String]) -> [URL] {

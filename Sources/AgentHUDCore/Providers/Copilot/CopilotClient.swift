@@ -86,8 +86,8 @@ struct CopilotCredentials: Sendable {
     }
 
     var hostsFile: URL {
-        let folder = environment["GH_CONFIG_DIR"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
-            ?? environment["XDG_CONFIG_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0).appendingPathComponent("gh") }
+        let folder = ClientHome.variable("GH_CONFIG_DIR", in: environment).map { URL(fileURLWithPath: $0) }
+            ?? ClientHome.variable("XDG_CONFIG_HOME", in: environment).map { URL(fileURLWithPath: $0).appendingPathComponent("gh") }
             ?? home.appendingPathComponent(".config/gh")
         return folder.appendingPathComponent("hosts.yml")
     }

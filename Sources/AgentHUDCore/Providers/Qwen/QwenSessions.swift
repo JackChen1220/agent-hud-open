@@ -13,11 +13,11 @@ enum QwenSessions: LocalSessionLayout {
 
     /// Qwen Code's configuration folder: `QWEN_HOME`, else `~/.qwen`.
     static func home(_ home: URL, environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
-        environment["QWEN_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".qwen")
+        ClientHome.variable("QWEN_HOME", in: environment).map { URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".qwen")
     }
 
     static func roots(home: URL, environment: [String: String]) -> [URL] {
-        let runtime = environment["QWEN_RUNTIME_DIR"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+        let runtime = ClientHome.variable("QWEN_RUNTIME_DIR", in: environment).map { URL(fileURLWithPath: $0) }
             ?? self.home(home, environment: environment)
         return [runtime.appendingPathComponent("projects")]
     }

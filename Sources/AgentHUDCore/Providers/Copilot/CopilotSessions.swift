@@ -11,11 +11,11 @@ enum CopilotSessions: LocalSessionLayout {
                                                 "assistant.turn_end", "abort", "hook.start", "session.shutdown"]
 
     static func roots(home: URL, environment: [String: String]) -> [URL] {
-        let base = environment["COPILOT_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".copilot")
+        let base = ClientHome.variable("COPILOT_HOME", in: environment).map { URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".copilot")
         let otel = base.appendingPathComponent("otel")
         var roots = [base.appendingPathComponent("session-state"), otel]
         // An exporter file outside the otel directory is found by scanning only its own folder.
-        if let path = environment[exporterVariable], !path.isEmpty {
+        if let path = ClientHome.variable(exporterVariable, in: environment) {
             let folder = URL(fileURLWithPath: path).deletingLastPathComponent().standardizedFileURL
             if !(folder.path + "/").hasPrefix(otel.standardizedFileURL.path + "/") { roots.append(folder) }
         }
@@ -29,7 +29,7 @@ enum CopilotSessions: LocalSessionLayout {
     static func accepts(_ url: URL) -> Bool {
         if isLog(url) { return true }
         guard url.pathExtension == "jsonl", !url.pathComponents.contains("session-state") else { return false }
-        return url.pathComponents.contains("otel") || ProcessInfo.processInfo.environment[exporterVariable]
+        return url.pathComponents.contains("otel") || ClientHome.variable(exporterVariable, in: ProcessInfo.processInfo.environment)
             .map { URL(fileURLWithPath: $0).standardizedFileURL.path == url.standardizedFileURL.path } == true
     }
 
