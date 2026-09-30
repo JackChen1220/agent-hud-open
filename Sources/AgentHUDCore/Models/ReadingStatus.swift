@@ -168,7 +168,6 @@ public extension UsageReport {
 extension AccountObservation {
     /// The account's own status; an observation saved without a typed issue gives its notice as a failed read.
     var ownStatus: ReadingStatus { readingIssue?.status ?? quotaNotice.map { .readFailed(reason: $0) } ?? .normal }
-
 }
 
 extension APIBilling {
