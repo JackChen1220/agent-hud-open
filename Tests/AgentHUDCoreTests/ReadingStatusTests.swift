@@ -1,9 +1,9 @@
 import XCTest
 @testable import AgentHUDCore
 
-/// One status and one assessment answer for every surface that weighs a reading. The grid compares them with the rules
-/// each surface applied on its own: the row's level, the quota alerts' baseline, the reset credits' baseline, the account
-/// header and the balance events.
+/// One status and one assessment answer for every surface that weighs a reading. The grid compares them with each
+/// surface's rule: the row's level, the quota alerts' baseline, the reset credits' baseline, the account header and the
+/// balance events.
 final class ReadingStatusTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
     private let account = ProviderAccount.identified(provider: "Codex", user: "a@example.com", workspace: nil)!
@@ -33,9 +33,9 @@ final class ReadingStatusTests: XCTestCase {
                                 XCTAssertEqual(window.status, .unverified(reason: "account failed"), name)
                             }
                             XCTAssertEqual(window.isCurrentAccount, report.isCurrent(agent), name)
-                            // The row's level.
+                            // The row's level, however old the reading.
                             let level = report.isCurrent(agent) && quotaNotice == nil
-                                && (snapshot.resetAt ?? .distantFuture) > now && now.timeIntervalSince(snapshot.updatedAt) < 1800
+                                && (snapshot.resetAt ?? .distantFuture) > now && snapshot.updatedAt <= now
                                 ? AlertPolicy.quotaLevel(remaining: snapshot.remainingPct) : nil
                             XCTAssertEqual(window.showsLevel ? AlertPolicy.quotaLevel(remaining: snapshot.remainingPct) : nil, level, name)
                             // The quota alerts' baseline, before their own checks of the reset, a full window and a newer reading.

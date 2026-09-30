@@ -52,6 +52,8 @@ public struct ReportView: Sendable {
     private let report: UsageReport?
     private let settings: Settings
     private let index: Index
+    /// Why the last pass failed when every source failed to read; every reading then counts as failed.
+    private let failure: String?
 
     /// - agents: the settings' rows, in their order.
     /// - approvals: the permission requests waiting for an answer. A session whose client waits for one is waiting for
@@ -59,16 +61,18 @@ public struct ReportView: Sendable {
     /// - hookTurns: the turns clients' prompt and Stop hooks saw, by session id. A hook turn takes the place of the phase
     ///   the report gives wherever the hooks saw more (`SessionPhase.hookPrevails(_:over:lastEventAt:)`), unless it is out
     ///   of date while the report has the session in flight.
+    /// - failure: the error of the last pass when every source failed to read it.
     public init(report: UsageReport?, agents: [AgentDescriptor], settings: Settings, approvals: [PermissionRequest] = [],
-                hookTurns: [String: SessionPhase.HookTurn] = [:], now: Date) {
+                hookTurns: [String: SessionPhase.HookTurn] = [:], now: Date, failure: String? = nil) {
         let visible = report?.visibleRows(agents) ?? agents
         // Without a report, a plan pool's rows stay hidden.
         let enabled = visible.filter { $0.enabled && Self.isPoolActive($0, in: report, withoutReport: false) }
         let rows = enabled.filter { !$0.isAPIBilled }.enumerated().map { index, agent in
             let snapshot = report?.snapshot(for: agent.id)
             // Without a report, a row has no reading and counts as its account's current one.
-            let assessment = report?.assess(.window(agent), now: now)
+            let reading = report?.assess(.window(agent), now: now)
                 ?? ReadingAssessment(status: .normal, isCurrentAccount: true, observedAt: nil, now: now)
+            let assessment = failure.map(reading.failing) ?? reading
             return AgentRow(
                 agent: agent,
                 remainingPct: snapshot?.remainingPct,
@@ -100,6 +104,7 @@ public struct ReportView: Sendable {
             groups[vendor, default: []].append(row)
         }
         let index = Index(report: report, agents: agents, approvals: approvals, hookTurns: hookTurns)
+        self.failure = failure
         self.report = report
         self.settings = settings
         self.index = index
@@ -157,8 +162,9 @@ public struct ReportView: Sendable {
 
     /// An account's reading as its section header weighs it at the view's time.
     public func assessment(of account: AccountObservation) -> ReadingAssessment {
-        report?.assess(.account(account), now: now)
+        let reading = report?.assess(.account(account), now: now)
             ?? ReadingAssessment(status: account.ownStatus, isCurrentAccount: account.isCurrent, observedAt: account.observedAt, now: now)
+        return failure.map(reading.failing) ?? reading
     }
 
     /// What the header of an account's section says about its readings: the reason of the account's status, else, with

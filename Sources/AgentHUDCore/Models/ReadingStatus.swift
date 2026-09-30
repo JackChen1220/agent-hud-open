@@ -63,7 +63,7 @@ public enum ReadingSubject: Sendable {
 /// Everything the surfaces weigh about one reading at one time. `status` does not depend on the time; the other facets
 /// come from the reading's time and, for a window, its reset.
 public struct ReadingAssessment: Hashable, Sendable {
-    public let status: ReadingStatus
+    public private(set) var status: ReadingStatus
     /// A window of the account the client is signed in to, or of no known account. Balances always count as current.
     public let isCurrentAccount: Bool
     /// When the reading was taken; nil when there is none.
@@ -84,15 +84,23 @@ public struct ReadingAssessment: Hashable, Sendable {
         isResetPending = resetAt.map { $0 <= now } ?? false
     }
 
-    /// The reading gives its window a status level: it is normal, of the current account, younger than the maximum
-    /// reading age, and its reset has not passed. A reading taken in the future passes.
+    /// The reading gives its window a status level: it is normal, of the current account, not taken in the future, and
+    /// its reset has not passed. It keeps the level however old it grows, since collection reads a client again only
+    /// when its work or a reset makes a new reading worth taking.
     public var showsLevel: Bool {
-        status.isNormal && isCurrentAccount && observedAt != nil && !isStale && !isResetPending
+        status.isNormal && isCurrentAccount && observedAt != nil && !isFromFuture && !isResetPending
     }
 
     /// The reading can confirm an event, such as a quota alert, added reset credits or a balance crossing: it shows a
-    /// level and was not taken in the future.
-    public var confirmsEvents: Bool { showsLevel && !isFromFuture }
+    /// level and is younger than the maximum reading age.
+    public var confirmsEvents: Bool { showsLevel && !isStale }
+
+    /// The same reading after a pass in which every source failed to read: its read failed for `reason`.
+    public func failing(_ reason: String) -> ReadingAssessment {
+        var failed = self
+        failed.status = .readFailed(reason: reason)
+        return failed
+    }
 
     /// What an account's header says of its reading: the current account while the reading is normal, else how long ago
     /// it was last read.

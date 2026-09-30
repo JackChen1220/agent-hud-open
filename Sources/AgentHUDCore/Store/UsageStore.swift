@@ -149,7 +149,7 @@ public final class UsageStore {
     @ObservationIgnored private var reportGeneration = 0
     /// The last view built, and what it was built from.
     @ObservationIgnored private var built: (generation: Int, agents: [AgentDescriptor], settings: Settings, approvals: [String],
-                                            hookTurns: [String: SessionPhase.HookTurn], view: ReportView)?
+                                            hookTurns: [String: SessionPhase.HookTurn], failure: String?, view: ReportView)?
 
     /// `hooks` let a host choose the history window, publish each provider report and merge it into the displayed report.
     public init(provider: any UsageProvider, settings: SettingsStore, accessAllowed: @escaping () -> Bool = { true },
@@ -268,15 +268,19 @@ public final class UsageStore {
 
     /// What the Mac shows of the report now: its rows, balances, levels and sessions, with the sessions whose clients wait
     /// for an answer to a permission request (`PermissionRequests.shared`) waiting for approval and the hooks' turns in
-    /// their place. It is built again only when the report, the agent list, the settings, the waiting requests, the hooks'
-    /// turns or the time changed, and reading it tracks all six.
+    /// their place, and every reading failed while the last pass failed to read any source. It is built again only when
+    /// the report, the agent list, the settings, the waiting requests, the hooks' turns, a failed pass or the time changed,
+    /// and reading it tracks all seven.
     public var view: ReportView {
-        let report = self.report, agents = settings.agents, preferences = settings.settings, now = self.now
+        let report = self.report, agents = settings.agents, preferences = settings.settings, now = self.now, failure = lastError
         let approvals = PermissionRequests.shared.pending, requests = approvals.map(\.id), hookTurns = self.hookTurns
         if let built, built.generation == reportGeneration, built.view.now == now, built.agents == agents,
-           built.settings == preferences, built.approvals == requests, built.hookTurns == hookTurns { return built.view }
-        let view = ReportView(report: report, agents: agents, settings: preferences, approvals: approvals, hookTurns: hookTurns, now: now)
-        built = (reportGeneration, agents, preferences, requests, hookTurns, view)
+           built.settings == preferences, built.approvals == requests, built.hookTurns == hookTurns, built.failure == failure {
+            return built.view
+        }
+        let view = ReportView(report: report, agents: agents, settings: preferences, approvals: approvals, hookTurns: hookTurns, now: now,
+                              failure: failure)
+        built = (reportGeneration, agents, preferences, requests, hookTurns, failure, view)
         return view
     }
 

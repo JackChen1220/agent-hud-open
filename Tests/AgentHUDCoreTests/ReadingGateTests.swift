@@ -89,9 +89,11 @@ final class ReadingGateTests: XCTestCase {
              Gates(keptSessions: ["Pi"])),
             ("the account's read failed in a client home it has left", Reading(otherHomes: [failedAccount]), Gates()),
             ("a reading 29:59 old", Reading(age: 1799), Gates()),
-            ("a reading 30:00 old", Reading(age: 1800), Gates(level: nil, startsAlerts: false, startsCredits: false)),
-            // The level takes a reading from the future; alerts and reset credits do not.
-            ("a reading 60 s in the future", Reading(age: -60), Gates(startsAlerts: false, startsCredits: false)),
+            // A reading keeps its level however old; alerts and reset credits need one under 30 minutes old.
+            ("a reading 30:00 old", Reading(age: 1800), Gates(startsAlerts: false, startsCredits: false)),
+            ("a reading two hours old", Reading(age: 7200), Gates(startsAlerts: false, startsCredits: false, status: "Current account")),
+            // A reading from the future is used nowhere.
+            ("a reading 60 s in the future", Reading(age: -60), Gates(level: nil, startsAlerts: false, startsCredits: false)),
             ("a reset that has passed", Reading(resetIn: -60), Gates(level: nil, startsAlerts: false, reset: "Pending update")),
             ("a reset under a minute away", Reading(resetIn: 30), Gates(reset: "<1m")),
             ("no reset and a full window", Reading(remaining: 100, resetIn: nil),
@@ -201,18 +203,24 @@ final class ReadingGateTests: XCTestCase {
         XCTAssertEqual(store.rows.map(\.paletteIndex), [0, 1], "the quota rows number their palette colours without the balance")
     }
 
-    /// A pass in which every source failed keeps the last report, and with it every colour and figure.
+    /// A pass in which every source failed keeps the last report on screen, but every window's reading counts as failed:
+    /// the windows lose their colours and their accounts say when they were last read.
     @MainActor
-    func testAPassInWhichEverySourceFailedKeepsEveryColour() throws {
+    func testAPassInWhichEverySourceFailedTakesEveryWindowsColour() throws {
         let (rows, store) = try balanceStore()
         let billing = APIBilling(vendor: "DeepSeek", balances: [AccountBalance(currency: "CNY", total: 8, granted: 0, toppedUp: 8)],
                                  isAvailable: true, updatedAt: now.addingTimeInterval(-60), notice: nil)
         show(balanceReport(rows, billing: billing), in: store)
-        store.lastError = "offline"
         XCTAssertEqual(store.levels, [.warning, .warning, .ok])
-        XCTAssertEqual(store.rows.map(\.level), [.warning, .ok])
+        store.lastError = "offline"
+        XCTAssertEqual(store.levels, [.warning], "the balance keeps its colour")
+        XCTAssertEqual(store.rows.map(\.level), [nil, nil])
+        XCTAssertEqual(store.rows.map(\.assessment.status), [.readFailed(reason: "offline"), .readFailed(reason: "offline")])
+        XCTAssertEqual(store.rows.compactMap(\.account).map(store.accountLabel(for:)), ["Last read 1m ago", "Last read 1m ago"])
         XCTAssertEqual(store.maxUsedPct, 75)
         XCTAssertEqual(store.rows.map { $0.resetLabel(now: now) }, ["2h 00m", "2h 00m"])
+        store.lastError = nil
+        XCTAssertEqual(store.levels, [.warning, .warning, .ok], "the next pass that reads a source brings them back")
     }
 
     // MARK: Fixtures
