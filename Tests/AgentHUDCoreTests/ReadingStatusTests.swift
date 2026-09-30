@@ -77,9 +77,9 @@ final class ReadingStatusTests: XCTestCase {
 
     func testAnIssueOfAnUnknownKindOrWithoutAReasonReadsAsAFailedRead() throws {
         let decoded = try JSONDecoder().decode([ReadingIssue].self, from: Data(#"""
-            [{"kind":"unverified","reason":"identity"},{"kind":"expired","reason":"later"},{"reason":"no kind"},{"kind":"readFailed"}]
+            [{"kind":"unverified","reason":"identity"},{"kind":"expired","reason":"unknown kind"},{"reason":"no kind"},{"kind":"readFailed"}]
             """#.utf8))
-        XCTAssertEqual(decoded.map(\.status), [.unverified(reason: "identity"), .readFailed(reason: "later"), .readFailed(reason: "no kind"),
+        XCTAssertEqual(decoded.map(\.status), [.unverified(reason: "identity"), .readFailed(reason: "unknown kind"), .readFailed(reason: "no kind"),
                                               .readFailed(reason: "")])
         let issue = ReadingIssue.unverified("identity")
         XCTAssertEqual(try JSONDecoder().decode(ReadingIssue.self, from: JSONEncoder().encode(issue)), issue)
@@ -99,12 +99,12 @@ final class ReadingStatusTests: XCTestCase {
                          remaining: Double) -> (UsageReport, AgentDescriptor, AccountObservation) {
         let pooled = [.poolAccount, .poolVendor, .typedPoolUnverified].contains(notice)
         let vendor = pooled ? "Kimi" : "Codex"
-        let owner = pooled ? ProviderAccount(pool: pool) : account
-        let agent = AgentDescriptor(id: owner.windowID("5h"), vendor: vendor, model: "5h", source: "", enabled: true,
-                                    billingPool: pooled ? pool : nil, account: owner)
+        let holder = pooled ? ProviderAccount(pool: pool) : account
+        let agent = AgentDescriptor(id: holder.windowID("5h"), vendor: vendor, model: "5h", source: "", enabled: true,
+                                    billingPool: pooled ? pool : nil, account: holder)
         let at = now.addingTimeInterval(-age)
         let unverified = [.typedAccountUnverified, .typedPoolUnverified].contains(notice)
-        let observation = AccountObservation(account: owner, observedAt: at, isCurrent: isCurrent,
+        let observation = AccountObservation(account: holder, observedAt: at, isCurrent: isCurrent,
                                              quotaNotice: [.account, .poolAccount].contains(notice) || unverified ? "account failed" : nil,
                                              readingIssue: unverified ? .unverified("account failed") : nil)
         let vendorNotice = [.vendorQuota, .vendorDisplay, .legacyVendor, .poolVendor, .typedVendor].contains(notice)
