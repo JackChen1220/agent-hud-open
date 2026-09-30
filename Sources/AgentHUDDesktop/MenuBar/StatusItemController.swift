@@ -134,8 +134,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let level = row.level ?? .ok
         let light = SystemAppearance.isLight
         let color = NSColor(StatusPalette.color(for: level, light: light))
-        let label = L10n.modelLabel(row.agent.model)
-        let name = showVendor ? "\(row.agent.vendorName) · \(L10n.shortModelLabel(row.agent.model))" : label
+        let label = row.agent.name
+        let name = showVendor ? row.agent.compactName : label
         let value: String
         if let used = row.usedPct {
             value = "\(TokenFormat.percent(used)) · \(row.resetLabel(now: store.now, compact: true))"

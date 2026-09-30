@@ -128,7 +128,7 @@ struct HeatmapModelDetails: View {
                 HStack(spacing: 5) {
                     Circle().fill(index.map { AgentPalette.swiftUIColor(index: $0) } ?? theme.secondary).frame(width: 6, height: 6)
                     if let consumer { AgentLogo(vendor: consumer.vendor, size: 12) }
-                    Text(consumer.map { L10n.modelLabel($0.model) } ?? model.key)
+                    Text(consumer.map(\.name) ?? model.key)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 6)
                     Text(model.value.formatted()).font(.tabular(11)).fixedSize()

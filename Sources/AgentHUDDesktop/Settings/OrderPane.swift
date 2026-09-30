@@ -12,7 +12,7 @@ struct AgentOrderRow: View {
         HStack(spacing: 12) {
             OrderDragHandle(theme: theme)
             VStack(alignment: .leading, spacing: 3) {
-                Text(L10n.modelLabel(agent.model))
+                Text(agent.name)
                     .fixedSize(horizontal: false, vertical: true)
                 if let accountName {
                     Text(accountName).font(.ui(11)).foregroundStyle(theme.secondary)

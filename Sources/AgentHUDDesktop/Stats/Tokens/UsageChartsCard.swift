@@ -90,7 +90,7 @@ struct TokenConsumptionChart: View {
         HStack(spacing: 5) {
             Circle().fill(AgentPalette.swiftUIColor(index: store.consumerPaletteIndex(consumer.id))).frame(width: 7, height: 7)
             AgentLogo(vendor: consumer.vendor, size: 12)
-            Text(L10n.modelLabel(consumer.model))
+            Text(consumer.name)
                 .lineLimit(1)
             Spacer(minLength: 4)
             Text(TokenFormat.short(tokens)).font(.tabular(11)).fixedSize()
@@ -224,7 +224,7 @@ struct TokenBarsChart: View {
                     HStack(spacing: 5) {
                         Circle().fill(colors[index]).frame(width: 6, height: 6)
                         AgentLogo(vendor: consumer.vendor, size: 12)
-                        Text(L10n.modelLabel(consumer.model)).lineLimit(1)
+                        Text(consumer.name).lineLimit(1)
                         Spacer(minLength: 6)
                         Text(column.tokens[index].formatted()).font(.tabular(11))
                     }

@@ -131,8 +131,8 @@ public extension UsageStore {
     func consumerName(_ id: String) -> String {
         guard let consumer = consumers.first(where: { $0.id == id }) else {
             guard let row = rows.first(where: { $0.id == id }) else { return id }
-            return L10n.modelLabel(row.agent.model)
+            return row.agent.name
         }
-        return L10n.modelLabel(consumer.model)
+        return consumer.name
     }
 }

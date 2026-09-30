@@ -103,6 +103,17 @@ final class AgentDescriptorTests: XCTestCase {
         XCTAssertEqual(a.source, DemoData.agents[0].source)
         XCTAssertEqual(a.displayName, "Claude · Opus 4.5")
     }
+
+    /// Every surface names a row through its descriptor: a window key in words, a model as written.
+    func testNamesComeFromTheDescriptor() {
+        L10n.setLanguage(.en)
+        defer { L10n.setLanguage(.system) }
+        let session = AgentDescriptor(id: "claude-session", vendor: "Claude", model: L10n.windowSession, source: "", enabled: true)
+        XCTAssertEqual([session.name, session.shortName, session.displayName, session.compactName],
+                       ["Session · 5h", "Session", "Claude · Session · 5h", "Claude · Session"])
+        let model = DemoData.agents[0]
+        XCTAssertEqual([model.name, model.shortName, model.compactName], ["Opus 4.5", "Opus", "Claude · Opus"])
+    }
 }
 
 final class AgentSettingsTests: XCTestCase {

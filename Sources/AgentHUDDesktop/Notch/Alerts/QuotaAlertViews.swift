@@ -49,7 +49,7 @@ struct QuotaAlertDetailView: View {
                 AgentLogo(vendor: alert.agent.vendor, size: 22)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(alert.agent.vendorName).font(.ui(13, .semibold)).foregroundStyle(.white)
-                    Text(L10n.modelLabel(alert.agent.model)).font(.ui(10)).foregroundStyle(.white.opacity(0.42))
+                    Text(alert.agent.name).font(.ui(10)).foregroundStyle(.white.opacity(0.42))
                 }
                 Spacer(minLength: 8)
                 HStack(spacing: 5) {
@@ -68,7 +68,7 @@ struct QuotaAlertDetailView: View {
             }
             VStack(alignment: .leading, spacing: 7) {
                 HStack {
-                    Text(L10n.modelLabel(alert.agent.model))
+                    Text(alert.agent.name)
                     Spacer()
                     Text(copy.used)
                 }

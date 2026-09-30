@@ -62,7 +62,7 @@ struct UsagePeriodsCard: View {
                         HStack(spacing: 5) {
                             Circle().fill(color(consumer.id)).frame(width: 6, height: 6)
                             AgentLogo(vendor: consumer.vendor, size: 11)
-                            Text(L10n.modelLabel(consumer.model)).lineLimit(1)
+                            Text(consumer.name).lineLimit(1)
                             Spacer(minLength: 4)
                             Text(TokenFormat.short(counts[consumer.id]!)).font(.tabular(11))
                         }

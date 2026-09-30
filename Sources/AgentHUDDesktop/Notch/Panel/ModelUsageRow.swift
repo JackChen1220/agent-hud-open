@@ -104,7 +104,7 @@ struct ModelUsageRow: View {
     }
 
     private var nameText: Text {
-        let label = L10n.modelLabel(row.agent.model)
+        let label = row.agent.name
         if showVendor {
             return Text(row.agent.vendorName).fontWeight(.semibold) + Text(" · \(label)").foregroundColor(theme.secondary)
         }
