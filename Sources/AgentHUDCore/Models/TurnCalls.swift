@@ -118,8 +118,7 @@ enum CallTools {
         let lower: String, upper: String
 
         init(start: Date, end: Date) {
-            let format = ISO8601DateFormatter()
-            lower = String(format.string(from: start).prefix(19)); upper = String(format.string(from: end).prefix(19))
+            lower = String(start.formatted(.iso8601).prefix(19)); upper = String(end.formatted(.iso8601).prefix(19))
         }
 
         /// Whether the line's time, its first or last `"timestamp"` key, lies in the window; a line without one is let

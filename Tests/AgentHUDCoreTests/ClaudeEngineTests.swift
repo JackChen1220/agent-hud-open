@@ -171,7 +171,7 @@ final class ISO8601FastTests: XCTestCase {
                      "2026-09-07T05:41:44Z junk", "1969-12-31T23:59:59Z", "2026-09-07 05:41:44Z", "nonsense"]
         for sample in usual + loose {
             XCTAssertEqual(ISO8601Fast.internetMilliseconds(sample) != nil, usual.contains(sample), sample)
-            XCTAssertEqual(ProviderDate.iso(sample), fractional.date(from: sample) ?? whole.date(from: sample), sample)
+            XCTAssertEqual(DateParsing.internet(sample), fractional.date(from: sample) ?? whole.date(from: sample), sample)
         }
     }
 }

@@ -177,7 +177,7 @@ private struct AgentCard: View {
         VStack(alignment: .leading, spacing: 10) {
             if let usage {
                 let count = dimensions.count(usage.tokens)
-                header(share: total > 0 ? share(count, of: total) : nil)
+                header(share: total > 0 ? TokenFormat.share(count, of: total) : nil)
                 HStack(alignment: .bottom, spacing: 10) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(value(count)).font(.tabular(24, .semibold))
@@ -264,12 +264,6 @@ private struct AgentCard: View {
 
     private func value(_ tokens: Int) -> String { tokens > 0 ? TokenFormat.short(tokens) : "—" }
 
-    /// A share that rounds to nothing but is not nothing reads as under one percent.
-    private func share(_ part: Int, of whole: Int) -> String {
-        let percent = Double(part) / Double(max(1, whole)) * 100
-        return part > 0 && percent < 0.5 ? "<1%" : TokenFormat.percent(percent)
-    }
-
     /// Where the price went: reading context back from the cache, and sending it again after the cache lapsed.
     private func moneyNote(_ usage: AgentUsage) -> String? {
         let note = [usage.cacheReadShare.map { L10n.text("缓存读占费用 ", "Cache reads ") + TokenFormat.percent($0 * 100) + L10n.text("", " of cost") },
@@ -313,7 +307,7 @@ private struct AgentCard: View {
             Text(name).lineLimit(1)
             Spacer(minLength: 6)
             Text(value(tokens)).font(.tabular(12))
-            Text(share(tokens, of: sum)).font(.tabular(11)).foregroundStyle(theme.secondary).frame(width: 34, alignment: .trailing)
+            Text(TokenFormat.share(tokens, of: sum)).font(.tabular(11)).foregroundStyle(theme.secondary).frame(width: 34, alignment: .trailing)
         }
     }
 

@@ -27,7 +27,7 @@ struct GrokClient: Sendable {
         let valid = entries.filter { key, value in
             (key.hasPrefix("https://auth.x.ai::") || key == "https://accounts.x.ai/sign-in")
                 && value["key"].stringValue?.isEmpty == false
-                && ProviderDate.iso(value["expires_at"].stringValue).map { $0 > now } == true
+                && DateParsing.internet(value["expires_at"].stringValue).map { $0 > now } == true
         }.sorted { lhs, rhs in
             let a = lhs.key.hasPrefix("https://auth.x.ai::"), b = rhs.key.hasPrefix("https://auth.x.ai::")
             return a != b ? a : lhs.key < rhs.key
@@ -49,8 +49,8 @@ struct GrokClient: Sendable {
         let config = response["config"]
         guard config.objectValue != nil else { throw ProviderFailure.format }
         let period = config["currentPeriod"]
-        let start = ProviderDate.iso(period["start"].stringValue)
-        let end = ProviderDate.iso(period["end"].stringValue) ?? ProviderDate.iso(config["billingPeriodEnd"].stringValue)
+        let start = DateParsing.internet(period["start"].stringValue)
+        let end = DateParsing.internet(period["end"].stringValue) ?? DateParsing.internet(config["billingPeriodEnd"].stringValue)
         let duration = ProviderDate.period(start: start, end: end)
         var quota = ProviderQuota()
         if let used = config["creditUsagePercent"].numberValue, used >= 0 {

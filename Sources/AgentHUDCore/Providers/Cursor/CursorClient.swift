@@ -70,8 +70,8 @@ actor CursorClient {
         guard json["individualUsage"].objectValue != nil || json["teamUsage"].objectValue != nil || json["membershipType"].stringValue != nil else {
             throw ProviderFailure.format
         }
-        let end = ProviderDate.iso(json["billingCycleEnd"].stringValue)
-        let start = ProviderDate.iso(json["billingCycleStart"].stringValue)
+        let end = DateParsing.internet(json["billingCycleEnd"].stringValue)
+        let start = DateParsing.internet(json["billingCycleStart"].stringValue)
         let duration = ProviderDate.period(start: start, end: end)
         let plan = json["individualUsage"]["plan"]
         func ratio(_ value: ProviderJSON) -> Double? {

@@ -153,7 +153,7 @@ private struct ResetCreditAlertCopy {
     var expiry: String {
         guard let deadline = grant.credits.creditsByExpiry.compactMap(\.expirationDate).first else { return "—" }
         return deadline.formatted(Date.FormatStyle().month(.abbreviated).day()
-            .locale(Locale(identifier: L10n.resolved == .zhHans ? "zh_CN" : "en_GB")))
+            .locale(L10n.dateLocale))
     }
     var accessibilityLabel: String {
         grant.account.account.provider + " · " + title + (grant.isPreview ? L10n.text(" · 动画测试", " · Animation test") : "")

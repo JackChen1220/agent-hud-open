@@ -100,7 +100,7 @@ enum OpenAgentParser {
             let type = line["type"].stringValue
             if type == "session", let id = line["id"].stringValue {
                 session = .init(id: "pi:\(id)", client: .pi, title: "Pi", workspace: line["cwd"].stringValue, path: path,
-                                start: ProviderDate.iso(line["timestamp"].stringValue))
+                                start: DateParsing.internet(line["timestamp"].stringValue))
                 name = nil; prompt = nil
                 return
             }
@@ -118,7 +118,7 @@ enum OpenAgentParser {
                 return
             }
             guard type == "message", message["role"].stringValue == "assistant", message["usage"].objectValue != nil else { return }
-            guard let at = ProviderDate.iso(line["timestamp"].stringValue) ?? ProviderDate.milliseconds(message["timestamp"]) else { throw ProviderFailure.format }
+            guard let at = DateParsing.internet(line["timestamp"].stringValue) ?? ProviderDate.milliseconds(message["timestamp"]) else { throw ProviderFailure.format }
             let usage = message["usage"]
             let input = try usage["input"].optionalCounter(), output = try usage["output"].optionalCounter()
             let read = try usage["cacheRead"].optionalCounter(), write = try usage["cacheWrite"].optionalCounter()

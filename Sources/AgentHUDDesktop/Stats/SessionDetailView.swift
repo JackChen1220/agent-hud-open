@@ -291,18 +291,13 @@ struct SessionDetailView: View {
                     Text(kind.label).font(.ui(12))
                     Spacer()
                     Text(TokenFormat.short(total[kind])).font(.tabular(12, .semibold)).help(total[kind].formatted())
-                    Text(share(total[kind], of: sum)).font(.tabular(11)).foregroundStyle(theme.secondary).frame(width: 40, alignment: .trailing)
+                    Text(TokenFormat.share(total[kind], of: sum)).font(.tabular(11)).foregroundStyle(theme.secondary).frame(width: 40, alignment: .trailing)
                 }
                 .padding(.vertical, 7)
                 .overlay(alignment: .top) { if index > 0 { Rectangle().fill(theme.divider).frame(height: 1) } }
             }
         }
         .card(theme, padding: EdgeInsets(top: 3, leading: 14, bottom: 3, trailing: 14))
-    }
-
-    private func share(_ value: Int, of total: Int) -> String {
-        let fraction = Double(value) / Double(total)
-        return fraction < 0.01 ? "<1%" : TokenFormat.percent(fraction * 100)
     }
 
     // MARK: Models
@@ -335,7 +330,7 @@ struct SessionDetailView: View {
                     .frame(height: 5)
                     Text(model.tokens.kinds.cacheHitRate.map { TokenFormat.percent($0 * 100) } ?? "—").font(.tabular(11))
                         .foregroundStyle(theme.secondary).frame(width: 60, alignment: .trailing)
-                    Text(share(count, of: total)).font(.tabular(11)).foregroundStyle(theme.secondary)
+                    Text(TokenFormat.share(count, of: total)).font(.tabular(11)).foregroundStyle(theme.secondary)
                         .frame(width: 44, alignment: .trailing)
                     Text(TokenFormat.short(count)).font(.tabular(11)).frame(width: 60, alignment: .trailing)
                 }

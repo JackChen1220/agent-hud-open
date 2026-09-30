@@ -135,7 +135,7 @@ struct SessionList: View {
         if day == calendar.date(byAdding: .day, value: -1, to: today) { return L10n.text("昨天", "Yesterday") }
         if day == .distantPast { return L10n.text("更早", "Earlier") }
         return day.formatted(.dateTime.weekday(.wide).month(.wide).day()
-            .locale(Locale(identifier: L10n.resolved == .zhHans ? "zh_CN" : "en_GB")))
+            .locale(L10n.dateLocale))
     }
 }
 
@@ -321,7 +321,7 @@ struct SessionCard: View {
     private func status(_ usage: SessionUsage?, dot: SessionDot) -> String {
         let turns = usage.flatMap { $0.turnCount > 0 ? L10n.text("\($0.turnCount) 轮", $0.turnCount == 1 ? "1 turn" : "\($0.turnCount) turns") : nil }
         let interval = store.now.timeIntervalSince(Self.elapsedStart(session, store: store))
-        let elapsed = dot == .ended ? Self.age(interval) : Countdown.format(interval)
+        let elapsed = dot == .ended ? Countdown.age(interval) : Countdown.format(interval)
         return [Self.state(session, dot: dot, store: store), turns, elapsed].compactMap { $0 }.joined(separator: " · ")
     }
 
@@ -346,13 +346,6 @@ struct SessionCard: View {
     /// What the elapsed time counts from: the start of the work in flight, else the session's last event.
     static func elapsedStart(_ session: LiveSession, store: UsageStore) -> Date {
         store.view.phase(of: session).since
-    }
-
-    /// How long ago, as the phone says it: in seconds, minutes, hours, then days.
-    static func age(_ interval: TimeInterval) -> String {
-        let seconds = max(0, Int(interval))
-        let value = seconds < 60 ? "\(seconds)s" : seconds < 3600 ? "\(seconds / 60)m" : seconds < 86400 ? "\(seconds / 3600)h" : "\(seconds / 86400)d"
-        return L10n.text("\(value) 前", "\(value) ago")
     }
 }
 

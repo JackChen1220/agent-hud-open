@@ -189,11 +189,8 @@ private struct PermissionRowHead: View {
         }
     }
 
-    /// How long the client has been waiting. Seconds while that is still the honest unit, then the shared format.
-    static func waited(_ since: Date, now: Date) -> String {
-        let seconds = max(0, now.timeIntervalSince(since))
-        return seconds < 60 ? "\(Int(seconds))s" : Countdown.compact(seconds)
-    }
+    /// How long the client has been waiting (`Countdown.waited`).
+    static func waited(_ since: Date, now: Date) -> String { Countdown.waited(now.timeIntervalSince(since)) }
 }
 
 private extension PermissionRequest {

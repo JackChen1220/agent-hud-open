@@ -36,7 +36,7 @@ enum QwenSessions: LocalSessionLayout {
         var titled: Set<String> = [], incomplete = false
         try ProviderFiles.lines(url) { json, line in
             let raw = nonEmpty(json["sessionId"]) ?? stem
-            let id = "qwen:\(raw)", date = ProviderDate.iso(json["timestamp"].stringValue)
+            let id = "qwen:\(raw)", date = DateParsing.internet(json["timestamp"].stringValue)
             var session = sessions[id] ?? ProviderSession(id: id, title: "Qwen · \(raw.prefix(8))", path: url.path, client: "Qwen Code")
             if session.workspace == nil, let cwd = nonEmpty(json["cwd"]) {
                 session.workspace = cwd
@@ -61,7 +61,7 @@ enum QwenSessions: LocalSessionLayout {
             let counted: (input: Int, output: Int, cache: Int)?
             do { counted = try tokens(event) } catch { incomplete = true; return }
             guard let tokens = counted else { return }
-            guard let time = ProviderDate.iso(event["event.timestamp"].stringValue) ?? date else { incomplete = true; return }
+            guard let time = DateParsing.internet(event["event.timestamp"].stringValue) ?? date else { incomplete = true; return }
             let key = nonEmpty(json["uuid"]) ?? "\(raw):line-\(line)"
             events[id, default: [:]][key] = ProviderEvent(id: key, model: nonEmpty(event["model"]) ?? "Unknown", timestamp: time,
                                                           input: tokens.input, output: tokens.output, cacheRead: tokens.cache)

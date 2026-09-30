@@ -71,10 +71,7 @@ struct CopilotClient: Sendable {
     }
 
     static func date(_ text: String?) -> Date? {
-        guard let text else { return nil }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withFullDate]
-        return ProviderDate.iso(text) ?? formatter.date(from: text)
+        DateParsing.internet(text) ?? DateParsing.day(text)
     }
 }
 

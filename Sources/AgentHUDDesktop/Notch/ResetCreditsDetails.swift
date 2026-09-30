@@ -44,7 +44,7 @@ struct ResetCreditsDetails: View {
         guard let date = credit.expirationDate else { return L10n.text("有效期未提供", "Expiry unavailable") }
         return date.formatted(Date.FormatStyle()
             .year().month(.twoDigits).day(.twoDigits).hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)
-            .locale(Locale(identifier: L10n.resolved == .zhHans ? "zh_CN" : "en_GB")))
+            .locale(L10n.dateLocale))
     }
 
     static func missingLabel(_ count: Int) -> String {

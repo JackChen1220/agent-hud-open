@@ -54,6 +54,12 @@ final class CountdownTests: XCTestCase {
         XCTAssertEqual(Countdown.formatRough(7260), "2h 01m")
         XCTAssertEqual(Countdown.formatRough(1800), "30m")
     }
+
+    func testAgeAndWaitEachKeepOneUnit() {
+        let ages: [TimeInterval] = [42, 300, 14_340, 172_805], waits: [TimeInterval] = [42, 180, 3900]
+        XCTAssertEqual(ages.map(Countdown.age), ["42s 前", "5m 前", "3h 前", "2d 前"])
+        XCTAssertEqual(waits.map(Countdown.waited), ["42s", "3m", "1h05m"])
+    }
 }
 
 final class TokenFormatTests: XCTestCase {
@@ -74,6 +80,12 @@ final class TokenFormatTests: XCTestCase {
         XCTAssertEqual(TokenFormat.percent(72), "72%")
         XCTAssertEqual(TokenFormat.percent(6.6), "7%")
         XCTAssertEqual(TokenFormat.percent1(6.2), "6.2%")
+    }
+
+    /// A share reads "<1%" only where it would round to nothing without being nothing.
+    func testShare() {
+        XCTAssertEqual([0, 3, 7, 12, 1000].map { TokenFormat.share($0, of: 1000) }, ["0%", "<1%", "1%", "1%", "100%"])
+        XCTAssertEqual(TokenFormat.share(0, of: 0), "0%")
     }
 }
 

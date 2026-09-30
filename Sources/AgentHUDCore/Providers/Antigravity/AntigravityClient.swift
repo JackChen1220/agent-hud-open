@@ -110,7 +110,7 @@ struct AntigravityClient: Sendable {
                 let duration: TimeInterval? = cadence.contains("weekly") ? 604800
                     : cadence.contains("five_hour") || cadence.contains("5-hour") || cadence.contains("5 hour") ? 18000 : nil
                 result.windows.append(.init(id: "antigravity:\(id)", label: label, remaining: fraction * 100,
-                    reset: ProviderDate.iso(bucket["resetTime"].stringValue), duration: duration))
+                    reset: DateParsing.internet(bucket["resetTime"].stringValue), duration: duration))
             }
         }
         return result
@@ -134,7 +134,7 @@ struct AntigravityClient: Sendable {
             guard !family.isEmpty else { continue }
             let name = family == "gemini" ? "Gemini" : family == "claude-gpt" ? "Claude + GPT" : label
             let window = ProviderQuota.Window(id: "antigravity:legacy:\(family)", label: name, remaining: fraction * 100,
-                reset: ProviderDate.iso(config["quotaInfo"]["resetTime"].stringValue))
+                reset: DateParsing.internet(config["quotaInfo"]["resetTime"].stringValue))
             if pools[family].map({ window.remaining < $0.remaining }) ?? true { pools[family] = window }
         }
         let plan = status["userTier"]["name"].stringValue ?? status["planStatus"]["planInfo"]["planName"].stringValue

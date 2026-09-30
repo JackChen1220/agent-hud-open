@@ -84,7 +84,7 @@ enum CopilotSessions: LocalSessionLayout {
                                        startedAtMs: turn.started, observedAtMs: turn.observed))
         }
         try events(url, types: logTypes) { json in
-            guard let type = json["type"].stringValue, let date = ProviderDate.iso(json["timestamp"].stringValue) else { return }
+            guard let type = json["type"].stringValue, let date = DateParsing.internet(json["timestamp"].stringValue) else { return }
             let ms = RecordCoding.milliseconds(date), data = json["data"], main = json["agentId"] == .null
             session.startedAt = min(session.startedAt ?? date, date)
             session.lastActivity = max(session.lastActivity ?? date, date)

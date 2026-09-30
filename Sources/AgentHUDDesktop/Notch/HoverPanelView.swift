@@ -413,12 +413,8 @@ struct CodexResetCreditsView: View {
         guard dates.count == resets.availableCount else {
             return L10n.text("部分有效期可查看", "Partial expiry details")
         }
-        let label = date.formatted(Date.FormatStyle().month(.abbreviated).day().locale(dateLocale))
+        let label = date.formatted(Date.FormatStyle().month(.abbreviated).day().locale(L10n.dateLocale))
         return L10n.text("最早 \(label) 到期", "First expires \(label)")
-    }
-
-    private var dateLocale: Locale {
-        Locale(identifier: L10n.resolved == .zhHans ? "zh_CN" : "en_GB")
     }
 }
 
@@ -593,7 +589,7 @@ struct QuotaRowMetrics {
         if date.timeIntervalSince(now) < 7 * 86400 { return ChartData.weekdayTime(date) }
         return date.formatted(Date.FormatStyle().month(.abbreviated).day()
             .hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)
-            .locale(Locale(identifier: L10n.resolved == .zhHans ? "zh_CN" : "en_GB")))
+            .locale(L10n.dateLocale))
     }
 
     /// Used by the reset at the existing burn rate, when the outlook has the rest last past the reset; the UI does not

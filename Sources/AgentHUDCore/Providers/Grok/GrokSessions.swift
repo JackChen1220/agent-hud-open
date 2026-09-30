@@ -146,7 +146,7 @@ enum GrokSessions: LocalSessionLayout {
             case "shell.turn.inference_done": break
             default: return
             }
-            guard let date = ProviderDate.iso(json["ts"].stringValue) ?? ProviderDate.milliseconds(json["ts"]),
+            guard let date = DateParsing.internet(json["ts"].stringValue) ?? ProviderDate.milliseconds(json["ts"]),
                   let input = context["prompt_tokens"].countValue, let output = context["completion_tokens"].countValue else { throw ProviderFailure.format }
             let cache = try context["cached_prompt_tokens"].optionalCounter()
             guard cache <= input else { throw ProviderFailure.format }

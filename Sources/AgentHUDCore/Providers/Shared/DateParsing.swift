@@ -1,6 +1,8 @@
+import AgentHUDSupport
 import Foundation
 
-/// Reusable, Sendable ISO-8601 parsing (Claude writes `2026-09-07T05:41:44.123Z` or `…00.182540+00:00`).
+/// Every ISO 8601 date a provider reads as text is parsed here (Claude writes `2026-09-07T05:41:44.123Z` or
+/// `…00.182540+00:00`); `ISO8601Fast` is the hand-rolled path for the shapes read most.
 public enum DateParsing {
     private static let fractional = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
     private static let whole = Date.ISO8601FormatStyle()
@@ -18,6 +20,36 @@ public enum DateParsing {
             }
         }
         return nil
+    }
+
+    /// An internet date-time, read as `ISO8601DateFormatter` reads it with or without fractional seconds: only the first
+    /// three fractional digits count. The usual shape is parsed by hand; other text goes to the formatters, which cost
+    /// far more to create than to use.
+    static func internet(_ text: String?) -> Date? {
+        guard let text else { return nil }
+        if let milliseconds = ISO8601Fast.internetMilliseconds(text) { return RecordCoding.date(milliseconds) }
+        return Formatters.shared.date(text)
+    }
+
+    /// A date without a time, such as `2026-09-30`, at its midnight in UTC.
+    static func day(_ text: String?) -> Date? {
+        text.flatMap(Formatters.shared.day)
+    }
+
+    /// Formatters are not Sendable, so every reader shares these under a lock.
+    private final class Formatters: @unchecked Sendable {
+        static let shared = Formatters()
+        private let lock = NSLock()
+        private let fractional = ISO8601DateFormatter(), whole = ISO8601DateFormatter(), fullDate = ISO8601DateFormatter()
+
+        private init() {
+            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            whole.formatOptions = [.withInternetDateTime]
+            fullDate.formatOptions = [.withFullDate]
+        }
+
+        func date(_ text: String) -> Date? { lock.withLock { fractional.date(from: text) ?? whole.date(from: text) } }
+        func day(_ text: String) -> Date? { lock.withLock { fullDate.date(from: text) } }
     }
 }
 

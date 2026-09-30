@@ -38,6 +38,32 @@ public enum Countdown {
         return ChartData.weekdayTime(date, calendar: calendar)
     }
 
+    /// A forecast's duration in the interface's words, in whole minutes rounded up: "2小时14分" / "2h 14m", and "2小时" /
+    /// "2h" for whole hours.
+    public static func forecast(_ interval: TimeInterval) -> String {
+        // A pace a hair above zero can put the end further off than a whole number of minutes holds.
+        let minutes = Int(min(ceil(interval / 60), Double(Int32.max)))
+        let hours = minutes / 60
+        if hours > 0 {
+            if minutes % 60 == 0 { return L10n.text("\(hours)小时", "\(hours)h") }
+            return L10n.text("\(hours)小时\(minutes % 60)分", "\(hours)h \(minutes % 60)m")
+        }
+        return L10n.text("\(minutes)分", "\(minutes)m")
+    }
+
+    /// How long ago, in its largest unit: seconds, minutes, hours, then days: "5m 前" / "5m ago".
+    public static func age(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval))
+        let value = seconds < 60 ? "\(seconds)s" : seconds < 3600 ? "\(seconds / 60)m" : seconds < 86400 ? "\(seconds / 3600)h" : "\(seconds / 86400)d"
+        return L10n.text("\(value) 前", "\(value) ago")
+    }
+
+    /// A wait, counted in seconds while that is still the honest unit, then as `compact`: "42s", "3m", "1h05m".
+    public static func waited(_ interval: TimeInterval) -> String {
+        let seconds = max(0, interval)
+        return seconds < 60 ? "\(Int(seconds))s" : compact(seconds)
+    }
+
     /// Like `format` but drops a zero minute part: "2h" instead of "2h 00m".
     public static func formatRough(_ interval: TimeInterval) -> String {
         let total = max(0, Int(interval.rounded()))

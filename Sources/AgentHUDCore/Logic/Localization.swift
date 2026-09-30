@@ -49,6 +49,10 @@ public enum L10n {
         resolved == .zhHans ? zh : en
     }
 
+    /// The locale dates are written in: Chinese, or British English, whose day before month and 24-hour clock match the
+    /// rest of the interface.
+    public static var dateLocale: Locale { Locale(identifier: resolved == .zhHans ? "zh_CN" : "en_GB") }
+
     // MARK: Persisted keys → display text
 
     public static let sourceClaudeCode = "claude-code"

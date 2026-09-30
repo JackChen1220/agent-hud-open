@@ -20,6 +20,12 @@ public enum TokenFormat {
         "\(Int(value.rounded()))%"
     }
 
+    /// A part of a whole in percent with no decimals; a part that rounds to nothing but is not nothing reads "<1%".
+    public static func share(_ part: Int, of whole: Int) -> String {
+        let value = Double(part) / Double(max(1, whole)) * 100
+        return part > 0 && value < 0.5 ? "<1%" : percent(value)
+    }
+
     /// Percent with one decimal: 6.2 → "6.2%".
     public static func percent1(_ value: Double) -> String {
         String(format: "%.1f%%", value)

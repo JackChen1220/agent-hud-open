@@ -48,7 +48,7 @@ struct OpenAgentQuotaClient: Sendable {
             func window(_ detail: ProviderJSON, key: String, title: String, duration: Double?) throws {
                 guard let limit = numeric(detail["limit"]), limit > 0,
                       let used = numeric(detail["used"]) ?? numeric(detail["remaining"]).map({ max(0, limit - $0) }) else { throw ProviderFailure.format }
-                try add(key, title, used / limit * 100, reset: ProviderDate.iso(detail["resetTime"].stringValue), duration: duration)
+                try add(key, title, used / limit * 100, reset: DateParsing.internet(detail["resetTime"].stringValue), duration: duration)
             }
             if root["usage"].objectValue != nil { try window(root["usage"], key: "weekly", title: "7d", duration: 7 * 86400) }
             for entry in root["limits"].arrayValue ?? [] {
@@ -68,7 +68,7 @@ struct OpenAgentQuotaClient: Sendable {
                 guard value != .null else { continue }
                 guard let percent = numeric(value["percent"]) else { throw ProviderFailure.format }
                 let reset = numeric(value["resetInSec"]).flatMap { $0 <= 253402300799 - now.timeIntervalSince1970 ? now.addingTimeInterval($0) : nil }
-                    ?? ProviderDate.iso(value["resetTime"].stringValue)
+                    ?? DateParsing.internet(value["resetTime"].stringValue)
                 // Direct API percentage is 0...100: 0.5 means 0.5%, never 50%.
                 try add(key, key, percent, reset: reset, duration: key == "rolling" ? 5 * 3600 : key == "weekly" ? 7 * 86400 : nil)
             }
