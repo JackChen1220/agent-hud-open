@@ -269,6 +269,7 @@ final class StatsWindowController: HostedWindowController {
     /// Keep the top edge stable and let the scroll view handle content taller than the screen.
     private func fitHeightToContent() {
         guard idealContentHeight > 0, let window,
+              window.isVisible, !window.isMiniaturized,
               !window.inLiveResize, !window.styleMask.contains(.fullScreen),
               let screen = window.screen ?? NSScreen.main else { return }
         let available = screen.visibleFrame.insetBy(dx: 0, dy: 12)

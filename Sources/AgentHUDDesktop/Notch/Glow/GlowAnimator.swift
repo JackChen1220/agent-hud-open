@@ -23,6 +23,15 @@ final class GlowAnimator {
     /// around an expanded panel lowers its frame rate instead of spending more than its share of a core.
     private static let frameCostSpacing: CFTimeInterval = 12
 
+    /// Ask the display link for the rate we can actually draw, rather than waking at 24 fps and discarding
+    /// most callbacks for a slow idle effect or an expensive multi-screen frame.
+    static func requestedFrameRate(breathSeconds: Double, frameCost: CFTimeInterval, activeGlows: Int) -> Float {
+        let nominal = min(Self.framesPerSecond, max(Self.idleFramesPerSecond,
+            Self.framesPerSecond * Float(GlowMotion.breathePeriod / max(0.5, breathSeconds))))
+        let budget = frameCost > 0 ? Float(1 / (frameCost * Self.frameCostSpacing * Double(max(1, activeGlows)))) : nominal
+        return max(1, min(nominal, budget).rounded(.down))
+    }
+
     /// How many glows are running. The budget is the HUD's, not each screen's: spacing every glow at a tenth
     /// of a core would cost a third of one on three displays. They divide the same tenth instead, so a second
     /// display costs frames rather than CPU.
@@ -68,6 +77,7 @@ final class GlowAnimator {
         } else if fadeTo != 1 {
             fade(from: blend(at: now), to: 1, at: now)
         }
+        updateFrameRate()
     }
 
     /// Eases the running effect back to the resting frame, then stops and calls `completion`.
@@ -100,9 +110,16 @@ final class GlowAnimator {
     private func start() {
         let target = DisplayLinkTarget { [weak self] in self?.step() }
         let link = host.displayLink(target: target, selector: #selector(DisplayLinkTarget.fire(_:)))
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 12, maximum: Self.framesPerSecond, preferred: Self.framesPerSecond)
-        link.add(to: .main, forMode: .common)
         self.link = link
+        updateFrameRate()
+        link.add(to: .main, forMode: .common)
+    }
+
+    private func updateFrameRate() {
+        guard let link else { return }
+        let rate = Self.requestedFrameRate(breathSeconds: breathSeconds, frameCost: frameCost, activeGlows: Self.activeGlows)
+        guard link.preferredFrameRateRange.preferred != rate else { return }
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: min(Self.idleFramesPerSecond, rate), maximum: rate, preferred: rate)
     }
 
     private func step() {
@@ -115,6 +132,7 @@ final class GlowAnimator {
                                     breathSeconds: breathSeconds, breathAmplitude: breathAmplitude)
         let cost = CACurrentMediaTime() - now
         frameCost = frameCost == 0 ? cost : frameCost * 0.8 + cost * 0.2
+        updateFrameRate()
         if let frame {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
