@@ -48,12 +48,15 @@ public extension UsageStore {
             ?? TokenKinds(tokensIn: session.tokensIn, tokensOut: session.tokensOut, cacheRead: session.cacheReadTokens)
     }
 
-    /// Sessions under the local day they started on, in the order given; the newest day first. A session keeps its day
-    /// however long it runs, so a day's sessions and their totals do not move as they carry on.
+    /// Sessions under the local day they were last active on, in the order given; the newest day first. A session in
+    /// flight is active now, so it sits under today however long ago its last event was, and a session moves to today
+    /// as soon as it does something again.
     func sessionsByDay(_ sessions: [LiveSession], calendar: Calendar = .current) -> [(day: Date, sessions: [LiveSession])] {
+        let view = self.view, now = self.now
         var days: [(day: Date, sessions: [LiveSession])] = []
         for session in sessions {
-            let day = calendar.startOfDay(for: session.startedAt)
+            let shown = view.session(for: session)
+            let day = calendar.startOfDay(for: shown.phase.isInFlight ? now : min(shown.lastEventAt, now))
             if let index = days.firstIndex(where: { $0.day == day }) { days[index].sessions.append(session) }
             else { days.append((day, [session])) }
         }

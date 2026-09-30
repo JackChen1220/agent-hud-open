@@ -2,10 +2,11 @@ import AppKit
 import SwiftUI
 import AgentHUDCore
 
-/// The Sessions page: every session of the last seven days under the day it started on, newest first, below today's
-/// totals. Today and any day with a session still running are open; the other days fold to their totals until clicked.
-/// Sessions that started before the seven days share one Earlier group. Active only drops the days: it lists the sessions
-/// active in the last day, newest activity first. Each session reads as it does in the phone's list.
+/// The Sessions page: every session of the last seven days under the day it was last active on, a running one under
+/// today, newest first, below the totals of the sessions that started today. Today and any day with a session still
+/// running are open; the other days fold to their totals until clicked. Sessions last active before the named days share
+/// one Earlier group. Active only drops the days: it lists the sessions active in the last day, newest activity first.
+/// Each session reads as it does in the phone's list.
 struct SessionList: View {
     let store: UsageStore
     let theme: Theme
@@ -54,12 +55,12 @@ struct SessionList: View {
         }
     }
 
-    /// The named days, newest first, then Earlier, keyed by the distant past, for the sessions that started before them.
+    /// The named days, newest first, then Earlier, keyed by the distant past, for the sessions last active before them.
     static func groups(_ sessions: [LiveSession], store: UsageStore, today: Date, calendar: Calendar) -> [(day: Date, sessions: [LiveSession])] {
         let first = calendar.date(byAdding: .day, value: -6, to: today)!
-        let earlier = sessions.filter { $0.startedAt < first }
-        return store.sessionsByDay(sessions.filter { $0.startedAt >= first }, calendar: calendar)
-            + (earlier.isEmpty ? [] : [(day: Date.distantPast, sessions: earlier)])
+        let days = store.sessionsByDay(sessions, calendar: calendar)
+        let earlier = days.filter { $0.day < first }.flatMap(\.sessions)
+        return days.filter { $0.day >= first } + (earlier.isEmpty ? [] : [(day: Date.distantPast, sessions: earlier)])
     }
 
     /// How many of a day's sessions are running, and whether the day starts open: today does, and so does any day with a
@@ -129,7 +130,7 @@ struct SessionList: View {
         .accessibilityValue(open ? L10n.text("已展开", "Expanded") : L10n.text("已折叠", "Collapsed"))
     }
 
-    /// Today, yesterday, then the weekday and date; Earlier for the sessions that started before the named days.
+    /// Today, yesterday, then the weekday and date; Earlier for the sessions last active before the named days.
     static func title(_ day: Date, today: Date, calendar: Calendar) -> String {
         if day == today { return L10n.text("今天", "Today") }
         if day == calendar.date(byAdding: .day, value: -1, to: today) { return L10n.text("昨天", "Yesterday") }

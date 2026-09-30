@@ -136,10 +136,11 @@ final class SessionSurfaceTests: XCTestCase {
         }
     }
 
-    /// A day of the list starts open when it is today or has a session running, the Earlier group included; a session in
-    /// flight that the Mac can no longer vouch for opens nothing.
+    /// A day of the list holds the sessions last active on it, and a running session sits under today whenever it
+    /// started; a session in flight that the Mac can no longer vouch for goes with its last event. Today starts open, the
+    /// other days and the Earlier group, for sessions last active before the named days, start folded.
     @MainActor
-    func testADayOfTheListStartsOpenWhenItIsTodayOrHasASessionRunning() throws {
+    func testADayOfTheListHoldsTheSessionsLastActiveOnIt() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let store = try makeStore()
@@ -147,17 +148,20 @@ final class SessionSurfaceTests: XCTestCase {
         show([
             session("today", started: -2 * hour, ended: -hour, observed: -hour),
             session("yesterday-running", started: -20 * hour, observed: -60),
+            session("last-week-running", started: -8 * 24 * hour, observed: -90),
             session("two-days-ago", started: -40 * hour, ended: -39 * hour, observed: -39 * hour),
-            session("three-days-ago-unvouched", started: -60 * hour, observed: -2 * hour),
-            session("earlier-running", started: -8 * 24 * hour, observed: -120),
+            session("three-days-ago-unvouched", started: -60 * hour, observed: -30 * hour),
+            session("seven-days-ago", started: -10 * 24 * hour, ended: -167 * hour, observed: -167 * hour),
         ], in: store)
         let today = calendar.startOfDay(for: now)
         let groups = SessionList.groups(store.listedSessions(source: nil, activeOnly: false), store: store, today: today, calendar: calendar)
-        let days = [0, -1, -2, -3].map { calendar.date(byAdding: .day, value: $0, to: today)! } + [.distantPast]
+        let days = [0, -1, -2].map { calendar.date(byAdding: .day, value: $0, to: today)! } + [.distantPast]
         XCTAssertEqual(groups.map(\.day), days)
+        XCTAssertEqual(groups.map { $0.sessions.map(\.id) },
+                       [["yesterday-running", "last-week-running", "today"], ["three-days-ago-unvouched"], ["two-days-ago"], ["seven-days-ago"]])
         let states = groups.map { SessionList.dayState($0.day, sessions: $0.sessions, today: today, store: store) }
-        XCTAssertEqual(states.map(\.running), [0, 1, 0, 0, 1])
-        XCTAssertEqual(states.map(\.opens), [true, true, false, false, true])
+        XCTAssertEqual(states.map(\.running), [2, 0, 0, 0])
+        XCTAssertEqual(states.map(\.opens), [true, false, false, false])
     }
 
     /// The Sessions page counts the listed sessions that are running, by the source picked and the list shown; the island

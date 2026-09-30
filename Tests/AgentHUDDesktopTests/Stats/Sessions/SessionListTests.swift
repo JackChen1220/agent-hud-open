@@ -4,7 +4,7 @@ import XCTest
 
 final class SessionListTests: XCTestCase {
     @MainActor
-    func testActiveOnlyKeepsTheLastDayAndEarlierHoldsWhatStartedBeforeTheWeek() throws {
+    func testActiveOnlyKeepsTheLastDayAndEachDayHoldsWhatWasLastActiveOnIt() throws {
         let suite = "SessionListTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = UsageStore(provider: DemoUsageProvider(), settings: SettingsStore(defaults: defaults, defaultAgents: []))
@@ -24,9 +24,15 @@ final class SessionListTests: XCTestCase {
         XCTAssertEqual(store.listedSessions(source: nil, activeOnly: true).map(\.id), ["running", "recent", "resumed"])
         let week = store.listedSessions(source: nil, activeOnly: false)
         XCTAssertEqual(week.map(\.id), ["running", "recent", "resumed", "quiet"])
-        let groups = SessionList.groups(week, store: store, today: Calendar.current.startOfDay(for: now), calendar: .current)
-        XCTAssertEqual(groups.last?.day, .distantPast)
-        XCTAssertEqual(groups.last?.sessions.map(\.id), ["running", "resumed"], "sessions that started before the week, newest activity first")
+        let calendar = Calendar.current, today = calendar.startOfDay(for: now)
+        let groups = SessionList.groups(week, store: store, today: today, calendar: calendar)
+        let days = Dictionary(uniqueKeysWithValues: groups.flatMap { group in group.sessions.map { ($0.id, group.day) } })
+        XCTAssertEqual(days["running"], today, "a running session sits under today, however long ago it started")
+        XCTAssertEqual(days["recent"], calendar.startOfDay(for: now.addingTimeInterval(-2 * 3600)))
+        XCTAssertEqual(days["resumed"], calendar.startOfDay(for: now.addingTimeInterval(-20 * 3600)),
+                       "a session that started before the week sits under the day it was last active")
+        XCTAssertEqual(days["quiet"], calendar.startOfDay(for: now.addingTimeInterval(-30 * 3600)))
+        XCTAssertFalse(groups.contains { $0.day == .distantPast }, "nothing active in the named days falls into Earlier")
     }
 
     /// Active only keeps a session whose last event is exactly a day old and drops one a millisecond older. A running

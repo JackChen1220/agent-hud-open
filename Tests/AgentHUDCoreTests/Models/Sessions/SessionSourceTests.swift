@@ -2,25 +2,35 @@ import XCTest
 @testable import AgentHUDCore
 
 final class SessionSourceTests: XCTestCase {
+    /// A session sits under the local day it was last active on, in the order given; one in flight sits under today, even
+    /// when the turn it runs was last heard from before midnight.
     @MainActor
-    func testSessionsGroupUnderTheDayTheyStarted() {
+    func testSessionsGroupUnderTheDayTheyWereLastActive() {
         let defaults = UserDefaults(suiteName: "AgentHUDSessionDayTests.\(UUID())")!
         let store = UsageStore(provider: DemoUsageProvider(), settings: SettingsStore(defaults: defaults))
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
-        let noon = calendar.date(from: DateComponents(year: 2026, month: 9, day: 24, hour: 12))!
+        // Ten past midnight.
+        let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 24, hour: 0, minute: 10))!
+        func at(_ hours: TimeInterval) -> Date { now.addingTimeInterval(hours * 3600) }
         func session(_ id: String, started: TimeInterval, ended: TimeInterval?) -> LiveSession {
-            .init(id: id, agentId: "claude-model:test", task: id, terminal: nil, startedAt: noon.addingTimeInterval(started * 3600),
-                  endedAt: ended.map { noon.addingTimeInterval($0 * 3600) }, pctOfWindow: nil, tokensIn: 1, tokensOut: 1,
-                  observedAt: noon.addingTimeInterval(1800))
+            .init(id: id, agentId: "claude-model:test", task: id, terminal: nil, startedAt: at(started), endedAt: ended.map(at),
+                  pctOfWindow: nil, tokensIn: 1, tokensOut: 1, observedAt: at(ended ?? -0.05))
         }
-        // One still running, one that began last night and ended after midnight, one from yesterday evening.
-        let sessions = [session("running", started: -1, ended: nil), session("overnight", started: -14, ended: -11),
-                        session("yesterday", started: -20, ended: -16)]
+        // One whose running turn was last heard from before midnight, one that began last night and ended after midnight,
+        // one from yesterday evening, and one that began three days ago and was last active yesterday afternoon.
+        let sessions = [session("running", started: -1, ended: nil), session("overnight", started: -2, ended: -0.1),
+                        session("yesterday", started: -5, ended: -3), session("resumed", started: -72, ended: -9)]
+        let heard = Int64(at(-0.25).timeIntervalSince1970 * 1000)
+        store.replace(report: UsageReport(generatedAt: now, snapshots: [], sessions: sessions, turns: [
+            SessionTurn(provider: "claude", sessionID: "running", turnID: "1", state: .running, startedAtMs: heard - 60_000,
+                        observedAtMs: heard),
+        ]))
+        store.now = now
         let days = store.sessionsByDay(sessions, calendar: calendar)
-        XCTAssertEqual(days.map(\.day), [calendar.startOfDay(for: noon), calendar.startOfDay(for: noon.addingTimeInterval(-86400))])
-        XCTAssertEqual(days.map { $0.sessions.map(\.id) }, [["running"], ["overnight", "yesterday"]],
-                       "a session that ran past midnight stays with the day it began")
+        XCTAssertEqual(days.map(\.day), [calendar.startOfDay(for: now), calendar.startOfDay(for: at(-24))])
+        XCTAssertEqual(days.map { $0.sessions.map(\.id) }, [["running", "overnight"], ["yesterday", "resumed"]],
+                       "a running session and one that ended after midnight sit under today, whenever they began")
     }
 
     @MainActor
