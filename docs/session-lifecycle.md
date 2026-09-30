@@ -91,6 +91,8 @@ Antigravity, Cursor, GitHub Copilot CLI, CodeBuddy and Qwen Code do not record f
 | --- | --- |
 | Turn, completion and session models | `Sources/AgentHUDCore/Models/SessionTurn.swift`, `SessionCompletion.swift`, `LiveSession.swift` |
 | Live status preference and desktop liveness | `Sources/AgentHUDCore/Models/Settings.swift`, `Sources/AgentHUDCore/Store/UsageStore.swift` |
+| A session's phase at a given time, a hook turn's phase and when it takes a reading's place, the session limits | `Sources/AgentHUDCore/Logic/SessionPhase.swift` |
+| A report's rows, balances, levels and sessions as the Mac shows them | `Sources/AgentHUDCore/Logic/ReportView.swift` |
 | Completion reminders | `Sources/AgentHUDCore/Logic/IslandEvents.swift`, `Sources/AgentHUDDesktop/App/DesktopApplication.swift` |
 | Adapter setup, the handler command and the settings writer | `Sources/AgentHUDCore/Providers/SessionObservers.swift`, `Shared/HookCommand.swift`, `Shared/HookSettings.swift` |
 | Completion hooks and handler entry | `Sources/AgentHUDCore/Providers/Additional/CompletionHooks.swift`, `Sources/AgentHUDOpenApp/main.swift` |
