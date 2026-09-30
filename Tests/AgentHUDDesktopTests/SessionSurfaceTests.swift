@@ -1,0 +1,237 @@
+import XCTest
+@testable import AgentHUDCore
+@testable import AgentHUDDesktop
+
+/// What the session card, the session page's header, the island and the Sessions page show for the same sessions.
+final class SessionSurfaceTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+    private let hour: TimeInterval = 3600
+    private let consumers = [
+        AgentDescriptor(id: "claude-model:opus", vendor: "Claude", model: "Opus", source: "", enabled: true),
+        AgentDescriptor(id: "codex-model:gpt-5", vendor: "Codex", model: "GPT-5", source: "", enabled: true),
+        AgentDescriptor(id: "grok-model:4", vendor: "Grok", model: "4", source: "", enabled: true),
+    ]
+
+    override func setUp() {
+        super.setUp()
+        L10n.setLanguage(.en)
+    }
+
+    override func tearDown() {
+        L10n.setLanguage(.system)
+        super.tearDown()
+    }
+
+    /// The newest turn reported for the session, after an older finished one.
+    private enum Newest: CaseIterable {
+        case none, running, runningWithoutStart, waiting, completed, ended
+
+        var state: SessionTurn.State? {
+            switch self {
+            case .none: return nil
+            case .running, .runningWithoutStart: return .running
+            case .waiting: return .waitingForApproval
+            case .completed: return .completed
+            case .ended: return .ended
+            }
+        }
+    }
+
+    /// Where a card's elapsed time counts from.
+    private enum Since {
+        case sessionStart, turnStart, turnHeard, reading, end
+    }
+
+    /// What each surface shows for one session.
+    private struct Surfaces: Equatable {
+        var cardDot: SessionDot
+        var headerDot: SessionDot
+        var islandDot: SessionDot
+        var cardState: String?
+        var cardSince: Date
+        var headerLabel: String
+    }
+
+    /// The grid of the store's own tests: a Claude session that started five hours ago, has ended two hours ago unless
+    /// the source still has it in flight, and was last read `age` seconds ago; its newest turn started three hours ago
+    /// and was heard from half an hour later. The three dots always agree; the card and the header word the rest differently.
+    @MainActor
+    func testTheCardHeaderAndIslandForEachSession() throws {
+        let store = try makeStore()
+        let count = Newest.allCases.count
+        func same<T>(_ value: T) -> [T] { Array(repeating: value, count: count) }
+        let heard = [Since.reading] + Array(repeating: Since.turnHeard, count: count - 1)
+        let running = "5h 00m running", ended = "ended 2h ago", off = "Live status off"
+        // Live status, whether the source has the session in flight and how old its reading is; then, with each newest
+        // turn in the order of `Newest.allCases`, the dot, the card's state, where its elapsed time counts from, and the
+        // header's label.
+        let rows: [(liveStatus: Bool, inFlight: Bool, age: TimeInterval, dot: [SessionDot], state: [String?], since: [Since],
+                    header: [String])] = [
+            (true, true, 1799.999, [.running, .running, .running, .waiting, .running, .running],
+             ["Running", "Running", "Running", "Needs approval", "Running", "Running"],
+             [.sessionStart, .turnStart, .turnHeard, .turnStart, .sessionStart, .sessionStart],
+             [running, running, running, "Needs approval", running, running]),
+            (true, true, 1800, same(.ended), same("Waiting for you"), heard, same("Status out of date")),
+            (true, false, 1799.999, same(.ended), same("Waiting for you"), same(.end), same(ended)),
+            (true, false, 1800, same(.ended), same("Waiting for you"), same(.end), same(ended)),
+            (false, true, 1799.999, same(.ended), same(nil), heard, same(off)),
+            (false, true, 1800, same(.ended), same(nil), heard, same(off)),
+            (false, false, 1799.999, same(.ended), same(nil), same(.end), same(off)),
+            (false, false, 1800, same(.ended), same(nil), same(.end), same(off)),
+        ]
+        for row in rows {
+            store.settings.update { $0.setLiveStatus(for: "Claude", enabled: row.liveStatus) }
+            for (index, newest) in Newest.allCases.enumerated() {
+                let session = session("s", ended: row.inFlight ? nil : -2 * hour, observed: -row.age)
+                show([session], turns: gridTurns(of: "s", newest: newest), in: store)
+                let since: Date = switch row.since[index] {
+                case .sessionStart: session.startedAt
+                case .turnStart: now.addingTimeInterval(-3 * hour)
+                case .turnHeard: now.addingTimeInterval(-2.5 * hour)
+                case .reading: session.observedAt
+                case .end: now.addingTimeInterval(-2 * hour)
+                }
+                let expected = Surfaces(cardDot: row.dot[index], headerDot: row.dot[index], islandDot: row.dot[index],
+                                        cardState: row.state[index], cardSince: since, headerLabel: row.header[index])
+                XCTAssertEqual(surfaces(session, in: store), expected, "\(row) with the newest turn \(newest)")
+            }
+        }
+    }
+
+    /// A Stop hook that finishes a turn after the client's log went quiet dates the turn later than the session's end:
+    /// the header counts from the end, the card from the turn.
+    @MainActor
+    func testTheHeaderDatesAnEndedSessionByItsEndAndTheCardByItsLastTurn() throws {
+        let store = try makeStore()
+        let session = session("s", agent: "grok-model:4", ended: -2 * hour, observed: -60)
+        show([session], turns: [turn("s", .completed, provider: "grok", started: -3 * hour, observed: -2 * hour + 10)], in: store)
+        XCTAssertEqual(surfaces(session, in: store), Surfaces(
+            cardDot: .ended, headerDot: .ended, islandDot: .ended, cardState: "Waiting for you",
+            cardSince: now.addingTimeInterval(-2 * hour + 10), headerLabel: "ended 2h ago"))
+    }
+
+    /// The island lists every running session up to three and counts the rest; with none running, the three sessions
+    /// last active take the rows, one still in flight that the Mac can no longer vouch for among them.
+    @MainActor
+    func testTheIslandListsRunningSessionsElseTheMostRecentOnes() throws {
+        let store = try makeStore()
+        let ended = (1...4).map { session("ended-\($0)", ended: -Double($0) * hour, observed: -Double($0) * hour) }
+        let unvouched = session("unvouched", observed: -1800)
+        let running = (1...4).map { session("running-\($0)", observed: -Double($0) * 60) }
+        let waiting = turn("running-2", .waitingForApproval, started: -600, observed: -100)
+        // The sessions shown; the running ones, which the header counts; the rows' dots; how many running ones are left out.
+        let cases: [(String, [LiveSession], shown: [String], running: Int, dots: [SessionDot], more: Int)] = [
+            ("nothing running", ended + [unvouched], ["unvouched", "ended-1", "ended-2"], 0, [.ended, .ended, .ended], 0),
+            ("four running", ended + [unvouched] + running, ["running-1", "running-2", "running-3"], 4, [.running, .waiting, .running], 1),
+            ("two running", ended + Array(running.prefix(2)), ["running-1", "running-2"], 2, [.running, .waiting], 0),
+        ]
+        for (name, sessions, shown, count, dots, more) in cases {
+            show(sessions, turns: [waiting], in: store)
+            let rows = HoverPanelView.sessionRows(store)
+            XCTAssertEqual(rows.shown.map(\.id), shown, name)
+            XCTAssertEqual(rows.running.count, count, name)
+            XCTAssertEqual(rows.shown.map { HoverPanelView.sessionDot($0, store: store) }, dots, name)
+            XCTAssertEqual(rows.more, more, name)
+        }
+    }
+
+    /// A day of the list starts open when it is today or has a session running, the Earlier group included; a session in
+    /// flight that the Mac can no longer vouch for opens nothing.
+    @MainActor
+    func testADayOfTheListStartsOpenWhenItIsTodayOrHasASessionRunning() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let store = try makeStore()
+        // Now is 08:00 UTC.
+        show([
+            session("today", started: -2 * hour, ended: -hour, observed: -hour),
+            session("yesterday-running", started: -20 * hour, observed: -60),
+            session("two-days-ago", started: -40 * hour, ended: -39 * hour, observed: -39 * hour),
+            session("three-days-ago-unvouched", started: -60 * hour, observed: -2 * hour),
+            session("earlier-running", started: -8 * 24 * hour, observed: -120),
+        ], in: store)
+        let today = calendar.startOfDay(for: now)
+        let groups = SessionList.groups(store.listedSessions(source: nil, activeOnly: false), store: store, today: today, calendar: calendar)
+        let days = [0, -1, -2, -3].map { calendar.date(byAdding: .day, value: $0, to: today)! } + [.distantPast]
+        XCTAssertEqual(groups.map(\.day), days)
+        let states = groups.map { SessionList.dayState($0.day, sessions: $0.sessions, today: today, store: store) }
+        XCTAssertEqual(states.map(\.running), [0, 1, 0, 0, 1])
+        XCTAssertEqual(states.map(\.opens), [true, true, false, false, true])
+    }
+
+    /// The Sessions page counts the listed sessions that are running, by the source picked and the list shown; the island
+    /// counts every running session.
+    @MainActor
+    func testThePageCountsTheListedSessionsThatAreRunning() throws {
+        let store = try makeStore()
+        store.settings.update { $0.setLiveStatus(for: "Codex", enabled: false) }
+        show([
+            session("running", observed: -60),
+            session("waiting", observed: -60),
+            session("unvouched", observed: -hour),
+            session("codex-off", agent: "codex-model:gpt-5", observed: -60),
+            session("ended", ended: -2 * hour, observed: -2 * hour),
+            session("old", started: -30 * hour, ended: -26 * hour, observed: -26 * hour),
+        ], turns: [turn("waiting", .waitingForApproval, started: -600, observed: -100)], in: store)
+        let claude = SessionSource(vendor: "Claude", client: nil), codex = SessionSource(vendor: "Codex", client: nil)
+        // The source picked and whether only active sessions are listed; how many are listed and how many run.
+        let cases: [(SessionSource?, activeOnly: Bool, listed: Int, running: Int)] = [
+            (nil, false, 6, 2), (nil, true, 5, 2), (claude, false, 5, 2), (claude, true, 4, 2), (codex, false, 1, 0),
+        ]
+        for (source, activeOnly, listed, running) in cases {
+            let counts = StatsView.sessionCounts(store, source: source, activeOnly: activeOnly)
+            XCTAssertEqual([counts.listed, counts.running], [listed, running], "\(source?.name ?? "all sources"), active only \(activeOnly)")
+        }
+        XCTAssertEqual(HoverPanelView.sessionRows(store).running.count, 2)
+    }
+
+    // MARK: Fixtures
+
+    @MainActor
+    private func surfaces(_ session: LiveSession, in store: UsageStore) -> Surfaces {
+        let dot = SessionCard.dot(session, store: store)
+        return Surfaces(cardDot: dot, headerDot: SessionDetailView.dot(session, store: store),
+                        islandDot: HoverPanelView.sessionDot(session, store: store),
+                        cardState: SessionCard.state(session, dot: dot, store: store),
+                        cardSince: SessionCard.elapsedStart(session, dot: dot, store: store),
+                        headerLabel: SessionDetailView.statusLabel(session, store: store))
+    }
+
+    /// An older finished turn, then the newest.
+    private func gridTurns(of session: String, newest: Newest) -> [SessionTurn] {
+        guard let state = newest.state else { return [] }
+        return [turn(session, .completed, id: "1", started: -5 * hour, observed: -4 * hour),
+                turn(session, state, id: "2", started: newest == .runningWithoutStart ? nil : -3 * hour, observed: -2.5 * hour)]
+    }
+
+    /// Times are seconds from now.
+    private func session(_ id: String, agent: String = "claude-model:opus", started: TimeInterval = -5 * 3600, ended: TimeInterval? = nil,
+                         observed: TimeInterval) -> LiveSession {
+        LiveSession(id: id, agentId: agent, task: id, terminal: nil, startedAt: now.addingTimeInterval(started),
+                    endedAt: ended.map { now.addingTimeInterval($0) }, pctOfWindow: nil, tokensIn: 1, tokensOut: 1,
+                    observedAt: now.addingTimeInterval(observed))
+    }
+
+    private func turn(_ session: String, _ state: SessionTurn.State, id: String = "1", provider: String = "claude", started: TimeInterval?,
+                      observed: TimeInterval) -> SessionTurn {
+        SessionTurn(provider: provider, sessionID: session, turnID: id, state: state, startedAtMs: started.map(milliseconds),
+                    observedAtMs: milliseconds(observed))
+    }
+
+    private func milliseconds(_ offset: TimeInterval) -> Int64 {
+        Int64(((now.timeIntervalSince1970 + offset) * 1000).rounded())
+    }
+
+    @MainActor
+    private func show(_ sessions: [LiveSession], turns: [SessionTurn] = [], in store: UsageStore) {
+        store.replace(report: UsageReport(generatedAt: now, snapshots: [], sessions: sessions, consumers: consumers, turns: turns))
+        store.now = now
+    }
+
+    @MainActor
+    private func makeStore() throws -> UsageStore {
+        let suite = "SessionSurfaceTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        return UsageStore(provider: DemoUsageProvider(), settings: SettingsStore(defaults: defaults))
+    }
+}
