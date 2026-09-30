@@ -115,15 +115,11 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
         var hookCompletions: [SessionCompletion] = [], hookNotice: String?
         do { hookCompletions = try readCompletions(since) }
         catch { hookNotice = L10n.text("完成提醒记录读取失败", "Turn completion records could not be read") }
-        // A stop hook finishes the running turn it follows when the client's own log records no end.
+        // A stop hook finishes the running turns it follows when the client's own log records no end.
         let finished = Dictionary(hookCompletions.map { ($0.sessionID, RecordCoding.milliseconds($0.completedAt)) }, uniquingKeysWith: max)
         for index in local.sessions.indices {
-            guard let done = finished[local.sessions[index].id] else { continue }
-            local.sessions[index].turns = local.sessions[index].turns.map { turn in
-                guard turn.state == .running, done >= turn.observedAtMs else { return turn }
-                return SessionTurn(provider: turn.provider, sessionID: turn.sessionID, turnID: turn.turnID, state: .completed,
-                                   startedAtMs: turn.startedAtMs, observedAtMs: done)
-            }
+            guard let stop = finished[local.sessions[index].id] else { continue }
+            local.sessions[index].turns = local.sessions[index].turns.map { SessionPhase.stopped($0, atMs: stop) }
         }
         let quota: ProviderQuota, quotaNotice: String?
         let observedAt = lastQuota?.at ?? now
@@ -149,12 +145,9 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
             guard let start = item.startedAt ?? item.events.map(\.timestamp).min(),
                   let end = item.lastActivity ?? item.events.map(\.timestamp).max(), end >= since else { return nil }
             let model = item.events.max { $0.timestamp < $1.timestamp }?.model ?? "Unknown"
+            // The newest turn is the one observed last.
             let turn = item.turns.max { $0.observedAtMs < $1.observedAtMs }
-            // A quiet log does not end a turn: one tool call can take minutes without writing a line. Only silence
-            // long enough to mean the client is gone does.
-            let isRunning = turn.map {
-                $0.state == .running && now.timeIntervalSince1970 - Double($0.observedAtMs) / 1000 < UsageRefresh.abandonedTurnTimeout
-            } ?? false
+            let isRunning = SessionPhase.read(.init(turn: turn), rule: .turns, at: now).inFlight
             return LiveSession(id: item.id, agentId: "\(source.rawValue)-model:\(model)", task: item.title,
                                terminal: item.workspace.map { URL(fileURLWithPath: $0).lastPathComponent },
                                startedAt: start, endedAt: isRunning ? nil : end, pctOfWindow: nil,

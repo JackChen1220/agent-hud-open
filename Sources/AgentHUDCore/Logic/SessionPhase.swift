@@ -74,6 +74,10 @@ public struct SessionPhase: Hashable, Sendable {
         /// recorded something is in flight however quiet the log is, unless the process table, when it was read, holds
         /// no process that predates the turn.
         case process
+        /// Turns a client's records report, and nothing else, as the additional clients' and the open agents' do: a
+        /// running newest turn is in flight until it has gone unobserved for `Limits.abandoned`. A session without turns
+        /// is never in flight.
+        case turns
     }
 
     /// A client's request for the user's approval, from its notification hook.
@@ -144,7 +148,19 @@ public struct SessionPhase: Hashable, Sendable {
         case .process:
             return SourceReading(inFlight: evidence.turn?.state == .running && evidence.lastWriteAt != nil
                                      && evidence.processOutlivesTurn != false, turn: evidence.turn)
+        case .turns:
+            guard let turn = evidence.turn else { return SourceReading(inFlight: false, turn: nil) }
+            return SourceReading(inFlight: turn.state == .running
+                                     && readAt.timeIntervalSince1970 - Double(turn.observedAtMs) / 1000 < Limits.abandoned, turn: turn)
         }
+    }
+
+    /// A turn as it stands once its client's Stop hook fired at `stop`, the latest the session's hooks reported: a running
+    /// turn observed at or before it completed then. Nil leaves the turn as it is.
+    public static func stopped(_ turn: SessionTurn, atMs stop: Int64?) -> SessionTurn {
+        guard let stop, turn.state == .running, stop >= turn.observedAtMs else { return turn }
+        return SessionTurn(provider: turn.provider, sessionID: turn.sessionID, turnID: turn.turnID, state: .completed,
+                           startedAtMs: turn.startedAtMs, observedAtMs: stop, message: turn.message)
     }
 
     /// A transcript's turn as its provider reports it. A running turn waits for approval while the client's request is
