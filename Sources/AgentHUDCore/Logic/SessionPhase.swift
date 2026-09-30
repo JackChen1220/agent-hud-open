@@ -163,6 +163,15 @@ public struct SessionPhase: Hashable, Sendable {
                            startedAtMs: turn.startedAtMs, observedAtMs: stop, message: turn.message)
     }
 
+    /// A turn a heartbeat keeps fresh, as Pi's observer does, as it stands at `readAt`: a running turn whose last
+    /// snapshot is `Limits.heartbeat` old ended there, without a completion.
+    public static func lapsed(_ turn: SessionTurn, at readAt: Date) -> SessionTurn {
+        guard turn.state == .running,
+              readAt.timeIntervalSince1970 - Double(turn.observedAtMs) / 1000 >= Limits.heartbeat else { return turn }
+        return SessionTurn(provider: turn.provider, sessionID: turn.sessionID, turnID: turn.turnID, state: .ended,
+                           startedAtMs: turn.startedAtMs, observedAtMs: turn.observedAtMs, message: turn.message)
+    }
+
     /// A transcript's turn as its provider reports it. A running turn waits for approval while the client's request is
     /// newer than the turn's last line, dated by the request and showing its message; then, while sub-agents work, the
     /// turn runs, dated by their newest line. A request is answered by a line of the session's own log, never by a

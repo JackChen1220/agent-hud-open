@@ -169,12 +169,7 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
         var local = await sessions(readFrom)
         // Pi's observer keeps active runs fresh. An expired heartbeat ends activity without claiming success.
         for index in local.sessions.indices where local.sessions[index].client == .pi {
-            local.sessions[index].turns = local.sessions[index].turns.map { turn in
-                guard turn.state == .running,
-                      now.timeIntervalSince1970 - Double(turn.observedAtMs) / 1000 >= SessionPhase.Limits.heartbeat else { return turn }
-                return SessionTurn(provider: turn.provider, sessionID: turn.sessionID, turnID: turn.turnID,
-                    state: .ended, startedAtMs: turn.startedAtMs, observedAtMs: turn.observedAtMs)
-            }
+            local.sessions[index].turns = local.sessions[index].turns.map { SessionPhase.lapsed($0, at: now) }
         }
         let quotas = (cached ?? [:]).values.sorted { $0.credential.pool.id < $1.credential.pool.id }
         // Empty sets explicitly retire expired, removed, rejected, or superseded pools.
@@ -201,11 +196,8 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
                     model: item.currentModel.map { "\($0.name) · \($0.provider)" } ?? "Unknown",
                     source: L10n.text("本地会话", "Local session"), enabled: true)
             }
-            // A quiet log does not end a turn: one tool call can take minutes without writing a line. Only silence
-            // long enough to mean the client is gone does.
-            let running = item.turns.last.map {
-                $0.state == .running && now.timeIntervalSince1970 - Double($0.observedAtMs) / 1000 < UsageRefresh.abandonedTurnTimeout
-            } ?? false
+            // The newest turn is the last one listed.
+            let running = SessionPhase.read(.init(turn: item.turns.last), rule: .turns, at: now).inFlight
             let unique = UsageAggregation.usageUnion([item.events])
             return LiveSession(id: item.id, agentId: agentID, task: item.title,
                 terminal: item.workspace.map { URL(fileURLWithPath: $0).lastPathComponent }, startedAt: start, endedAt: running ? nil : end,
