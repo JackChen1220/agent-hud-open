@@ -31,7 +31,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         item.menu = menu
         item.button?.imagePosition = .imageLeading
         refreshButton()
-        observeChanges({ [weak self] in
+        trackChanges({ [weak self] in
             guard let self else { return }
             _ = self.store.rows
             _ = self.store.pausedUntil

@@ -109,7 +109,7 @@ Reads never run in parallel: the usage store runs one pass of source reads or on
 | Token kinds and dimensions, bar buckets | `Sources/AgentHUDCore/Models/TokenKinds.swift`, `Sources/AgentHUDCore/Logic/ChartData.swift` |
 | List prices, platforms, context windows | `Sources/AgentHUDCore/Models/ModelCatalog.swift`, `ModelPriceList.swift`, `PriceRegions.swift` |
 | Today, seven and thirty days | `Sources/AgentHUDCore/Models/UsagePeriods.swift`, `Store/UsageLedger.swift` |
-| Alert levels, thresholds and reading age, status colors | `Sources/AgentHUDCore/Models/AgentThresholds.swift`, `Sources/AgentHUDCore/Logic/StatusLevel.swift` |
+| Alert levels, thresholds and reading age, status colors | `Sources/AgentHUDCore/Models/AlertPolicy.swift`, `Sources/AgentHUDCore/Logic/StatusLevel.swift` |
 | Reading status and assessment | `Sources/AgentHUDCore/Models/ReadingStatus.swift` |
 | Which rows are present, levels, glow segments, menu figure and hints | `Sources/AgentHUDCore/Logic/ReportView.swift` |
 | Alert tracker, added usage resets, island events, forecast | `Sources/AgentHUDCore/Logic/QuotaAlerts.swift`, `ResetCreditGrants.swift`, `IslandEvents.swift`, `QuotaForecast.swift` |
@@ -117,7 +117,7 @@ Reads never run in parallel: the usage store runs one pass of source reads or on
 | A window's remaining share, insights, outlook, projection and token rate | `Sources/AgentHUDCore/Logic/QuotaMath.swift` |
 | Session liveness and its limits, retained readings | `Sources/AgentHUDCore/Logic/SessionPhase.swift`, `Sources/AgentHUDCore/Models/LiveSession.swift`, `Sources/AgentHUDCore/Providers/RetainedUsageProvider.swift` |
 | Session breakdown | `Sources/AgentHUDCore/Models/SessionUsage.swift`, `Store/UsageLedger.swift`, `Providers/CombinedUsageProvider.swift` |
-| Accounts, current and previous readings, settings migration | `Sources/AgentHUDCore/Models/ProviderAccount.swift`, `Sources/AgentHUDCore/Providers/RetainedUsageProvider.swift`, `Sources/AgentHUDCore/Store/SettingsStore.swift` |
+| Accounts, current and previous readings, settings migration | `Sources/AgentHUDCore/Models/ProviderAccount.swift`, `ClientHome.swift`, `Sources/AgentHUDCore/Providers/RetainedUsageProvider.swift`, `Sources/AgentHUDCore/Store/SettingsStore.swift` |
 
 ## Related
 

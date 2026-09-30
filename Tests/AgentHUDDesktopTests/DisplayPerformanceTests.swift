@@ -189,13 +189,13 @@ final class DisplayPerformanceTests: XCTestCase {
         var languageChanges = 0
         var appearanceChanges = 0
         var loginChanges = 0
-        observeChanges({ [weak settings] in
+        trackChanges({ [weak settings] in
             settings?.settings.language
         }, onChange: { languageChanges += 1 })
-        observeChanges({ [weak settings] in
+        trackChanges({ [weak settings] in
             settings?.settings.appearance
         }, onChange: { appearanceChanges += 1 })
-        observeChanges({ [weak settings] in
+        trackChanges({ [weak settings] in
             settings?.settings.launchAtLogin
         }, onChange: { loginChanges += 1 })
 

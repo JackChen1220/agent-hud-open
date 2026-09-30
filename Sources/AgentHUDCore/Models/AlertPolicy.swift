@@ -36,11 +36,3 @@ public enum AlertPolicy {
         return levels.contains(.critical) ? .critical : levels.contains(.warning) ? .warning : levels.first
     }
 }
-
-public extension APIBilling {
-    func contains(_ model: AgentDescriptor) -> Bool {
-        guard model.isAPIBilled else { return false }
-        if let billingPool { return model.billingPool?.id == billingPool.id }
-        return model.billingPool == nil && model.vendor == vendor
-    }
-}

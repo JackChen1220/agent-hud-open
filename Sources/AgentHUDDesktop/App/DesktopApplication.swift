@@ -56,10 +56,10 @@ public final class DesktopApplication {
         HotKeyCenter.shared.register(id: 1, keyCode: HotKeyCenter.keyH, modifiers: HotKeyCenter.commandOption) { [weak self] in
             self?.toggleGlow()
         }
-        observeChanges({ [weak self] in
+        trackChanges({ [weak self] in
             self?.settings.settings.appearance
         }, onChange: { [weak self] in self?.applyAppearance() })
-        observeChanges({ [weak self] in
+        trackChanges({ [weak self] in
             self?.settings.settings.language
         }, onChange: { [weak self] in
             guard let self else { return }
@@ -67,7 +67,7 @@ public final class DesktopApplication {
             self.notch?.apply(animated: false)
             Task { await self.store.refresh() }
         })
-        observeChanges({ [weak self] in
+        trackChanges({ [weak self] in
             _ = self?.store.lastError
         }, onChange: { [weak self] in
             if let error = self?.store.lastError { NSLog("[AgentHUD] refresh failed: %@", error) }
@@ -76,14 +76,14 @@ public final class DesktopApplication {
         // registers an item that was never registered, and a flip of the switch applies at once. The demo leaves the
         // system's login items alone.
         if !options.demo, settings.settings.launchAtLogin { LoginItem.registerIfNeverRegistered() }
-        observeChanges({ [weak self] in
+        trackChanges({ [weak self] in
             self?.settings.settings.launchAtLogin
         }, onChange: { [weak self] in
             guard let self, !self.options.demo else { return }
             LoginItem.set(self.settings.settings.launchAtLogin)
         })
         PermissionRequests.shared.holdTime = TimeInterval(settings.settings.approvalWaitMinutes * 60)
-        observeChanges({ [weak self] in
+        trackChanges({ [weak self] in
             self?.settings.settings.approvalWaitMinutes
         }, onChange: { [weak self] in
             guard let self else { return }
@@ -91,19 +91,19 @@ public final class DesktopApplication {
         })
         // The host installs the handlers at launch; a change of mind while running applies at once, with the same
         // executable the host gave them.
-        observeChanges({ [weak self] in
+        trackChanges({ [weak self] in
             self?.settings.settings.clientHooks
         }, onChange: { [weak self] in
             guard let self, !self.options.demo, let executable = Bundle.main.executableURL else { return }
             SessionObservers.configure(executable: executable, enabled: self.settings.settings.clientHooks)
         })
-        observeChanges({ [weak self] in
+        trackChanges({ [weak self] in
             _ = self?.store.report
             _ = self?.settings.agents
             _ = self?.settings.settings.disabledLiveStatusSources
         }, onChange: { [weak self] in self?.checkIslandEvents() })
         // The channel is open whenever the app is: a client that asks while it is closed keeps its own prompt.
-        observeChanges({ PermissionRequests.shared.pending.map(\.id) },
+        trackChanges({ PermissionRequests.shared.pending.map(\.id) },
                        onChange: { [weak self] in self?.syncPermissionRequests() })
         // Seeded after the island is listening, so the demo's requests arrive the way a client's would.
         if options.demo { PermissionRequests.shared.seedDemo() } else { PermissionRequests.shared.start() }

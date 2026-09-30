@@ -47,7 +47,7 @@ final class IslandController {
                 self.apply(animated: false)
             }
         })
-        observeChanges({ [weak self] in self?.inputs }, onChange: { [weak self] in
+        trackChanges({ [weak self] in self?.inputs }, onChange: { [weak self] in
             self?.apply(animated: true)
         })
         startPointerMonitors()
@@ -178,11 +178,4 @@ final class IslandController {
 
     /// A withdrawn request is taken off whichever screen ended up showing it.
     func withdraw(requestID: String) { huds.values.forEach { $0.withdraw(requestID: requestID) } }
-}
-
-enum SystemAppearance {
-    /// The menu bar follows the system setting even when the app forces its own appearance.
-    static var isLight: Bool {
-        UserDefaults.standard.string(forKey: "AppleInterfaceStyle")?.lowercased() != "dark"
-    }
 }

@@ -117,15 +117,6 @@ public struct AccountObservation: Hashable, Codable, Sendable, Identifiable {
     }
 }
 
-/// The client home dimension: one client can run from several data directories with different sign-ins.
-public enum ClientHome {
-    /// Empty for the client's default directory, otherwise a hash of the resolved path.
-    public static func key(_ directory: URL, defaultDirectory: URL) -> String {
-        let path = directory.standardizedFileURL.resolvingSymlinksInPath().path
-        return path == defaultDirectory.standardizedFileURL.resolvingSymlinksInPath().path ? "" : RecordCoding.hash([path])
-    }
-}
-
 public extension UsageReport {
     /// The reason of the window's `status(of:)`, kept for hosts that read the notice text.
     func quotaNotice(for agent: AgentDescriptor) -> String? { status(of: .window(agent)).reason }
