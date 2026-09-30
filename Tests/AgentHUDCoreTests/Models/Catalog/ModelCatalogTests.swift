@@ -28,6 +28,22 @@ final class ModelCatalogTests: XCTestCase {
                        Decimal(string: "20.25"))
     }
 
+    /// GPT-6 and GPT-5.6 bill cache writes at 1.25 times the input rate, twice that in a prompt over 272K tokens; Claude
+    /// Sonnet 5.5 is listed at Sonnet 5's rates with a 1M window.
+    func testTheNewestModelsCarryTheirListPrices() {
+        XCTAssertEqual(ModelCatalog.cost(agentId: "codex-model:gpt-6.1-sol",
+                                         kinds: TokenKinds(cacheWrite: 100_000, output: 1_000, cacheRead: 100_000))?.amount, Decimal(string: "0.27"))
+        XCTAssertEqual(ModelCatalog.cost(agentId: "codex-model:gpt-6.1-sol",
+                                         kinds: TokenKinds(cacheWrite: 100_000, input: 100_000, output: 1_000, cacheRead: 100_000))?.amount,
+                       Decimal(string: "0.935"))
+        XCTAssertEqual(ModelCatalog.cost(agentId: "codex-model:gpt-5.4-mini", kinds: TokenKinds(input: 300_000))?.amount, Decimal(string: "0.225"),
+                       "a model without a long-context list keeps its rates")
+        XCTAssertEqual(ModelCatalog.cost(agentId: "claude-model:claude-sonnet-5-5",
+                                         kinds: TokenKinds(cacheWrite: 1_000_000, input: 1_000_000, output: 100_000, cacheRead: 1_000_000))?.amount,
+                       Decimal(string: "7.2"))
+        XCTAssertEqual(ModelCatalog.contextWindow(agentId: "claude-model:claude-sonnet-5-5", reported: nil, largestSeen: nil), 1_000_000)
+    }
+
     func testSummedCountsArePricedAtBaseRatesWithTheUnpricedModelsNamed() throws {
         // Two 200K prompts add up past 272K, yet neither was a long one.
         let astra = TokenKinds(input: 400_000, output: 1_000)

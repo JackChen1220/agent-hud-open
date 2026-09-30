@@ -19,6 +19,7 @@ extension ModelCatalog {
             "claude-opus-4-1": claude("15", "75", window: 200_000),
             "claude-opus-4": claude("15", "75", window: 200_000),
             "claude-opus-4-0": claude("15", "75", window: 200_000),
+            "claude-sonnet-5-5": claude("2", "10", window: 1_000_000),
             "claude-sonnet-5": claude("2", "10", window: 1_000_000),
             "claude-sonnet-4-6": claude("3", "15", window: 1_000_000),
             "claude-sonnet-4-5": claude("3", "15", window: 200_000),
@@ -26,16 +27,36 @@ extension ModelCatalog {
             "claude-sonnet-4-0": claude("3", "15", window: 200_000),
             "claude-haiku-4-5": claude("1", "5", window: 200_000),
             "claude-3-5-haiku": claude("0.80", "4", window: 200_000),
-            "gpt-6-astra": openAI("10", "1", "50"),
-            "gpt-6-sol": openAI("2", "0.20", "10"),
-            "gpt-6-luna": openAI("0.10", "0.01", "0.50"),
+            // OpenAI bills cache writes at 1.25 times the input rate on GPT-6 and GPT-5.6, and not apart from input before
+            // them. The pro models cache nothing, so a cache read costs their input rate.
+            "gpt-6-astra": openAI("10", "1", "50", write: "12.50"),
+            "gpt-6.1-sol": openAI("2", "0.10", "10", write: "2.50"),
+            "gpt-6-sol": openAI("2", "0.20", "10", write: "2.50"),
+            "gpt-6-luna": openAI("0.10", "0.01", "0.50", write: "0.125"),
             // OpenAI sells gpt-5.6-sol for less as a promotion, at least through 2026-11-21.
-            "gpt-5.6-sol": openAI("5", "0.50", "30"),
-            "gpt-5.6-terra": openAI("2", "0.20", "12"),
-            "gpt-5.6-luna": openAI("0.20", "0.02", "1.20"),
+            "gpt-5.6-sol": openAI("5", "0.50", "30", write: "6.25"),
+            "gpt-5.6-terra": openAI("2", "0.20", "12", write: "2.50"),
+            "gpt-5.6-luna": openAI("0.20", "0.02", "1.20", write: "0.25"),
             "gpt-5.5": openAI("5", "0.50", "30"),
+            "gpt-5.5-pro": openAI("30", "30", "180"),
             "gpt-5.4": openAI("2.50", "0.25", "15"),
+            "gpt-5.4-pro": openAI("30", "30", "180"),
+            "gpt-5.4-mini": openAI("0.75", "0.075", "4.50", long: false),
+            "gpt-5.4-nano": openAI("0.20", "0.02", "1.25", long: false),
             "gpt-5.3-codex": openAI("1.75", "0.175", "14", long: false),
+            "gpt-5.2": openAI("1.75", "0.175", "14", long: false),
+            "gpt-5.2-codex": openAI("1.75", "0.175", "14", long: false),
+            "gpt-5.2-pro": openAI("21", "21", "168", long: false),
+            "gpt-5.1": openAI("1.25", "0.125", "10", long: false),
+            "gpt-5.1-codex": openAI("1.25", "0.125", "10", long: false),
+            "gpt-5.1-codex-max": openAI("1.25", "0.125", "10", long: false),
+            "gpt-5.1-codex-mini": openAI("0.25", "0.025", "2", long: false),
+            "gpt-5": openAI("1.25", "0.125", "10", long: false),
+            "gpt-5-codex": openAI("1.25", "0.125", "10", long: false),
+            "gpt-5-mini": openAI("0.25", "0.025", "2", long: false),
+            "gpt-5-nano": openAI("0.05", "0.005", "0.40", long: false),
+            "gpt-5-pro": openAI("15", "15", "120", long: false),
+            "codex-mini-latest": openAI("1.50", "0.375", "6", long: false),
 
             // DeepSeek bills its account's currency at off-peak rates, twice those in peak hours.
             "deepseek-flash": regional("DeepSeek", international: flat("0.15", "0.003", "0.60"), china: flat("1", "0.02", "4"),
@@ -216,8 +237,8 @@ extension ModelCatalog {
 
     /// Prompts over 272K tokens cost twice the input and cache rates and one and a half times the output rate on the
     /// models that accept them.
-    private static func openAI(_ input: String, _ read: String, _ output: String, long: Bool = true) -> Model {
-        let base = rates(input, read, output)
+    private static func openAI(_ input: String, _ read: String, _ output: String, write: String? = nil, long: Bool = true) -> Model {
+        let base = rates(input, read, output, write: write)
         let longRates = Rates(input: base.input * 2, cacheWrite: base.cacheWrite * 2, cacheRead: base.cacheRead * 2,
                               output: base.output * 3 / 2)
         return Model(vendor: "OpenAI", prices: [.international: Price(rates: base, tiers: long ? [.init(from: 272_001, rates: longRates)] : [])],
