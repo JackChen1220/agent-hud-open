@@ -203,7 +203,7 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
                 terminal: item.workspace.map { URL(fileURLWithPath: $0).lastPathComponent }, startedAt: start, endedAt: running ? nil : end,
                 pctOfWindow: nil, tokensIn: unique.reduce(0) { $0 + $1.tokensIn }, tokensOut: unique.reduce(0) { $0 + $1.tokensOut },
                 client: item.client.name, transcriptPath: item.path.isEmpty ? nil : item.path, cacheReadTokens: unique.reduce(0) { $0 + $1.cacheReadTokens }, observedAt: now,
-                workingDirectory: item.workspace)
+                workingDirectory: item.workspace, lastActivityAt: end)
         }
         var snapshots: [UsageSnapshot] = [], descriptors: [AgentDescriptor] = []
         var insights: [String: UsageInsights] = [:]

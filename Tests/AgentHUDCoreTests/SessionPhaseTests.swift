@@ -47,18 +47,18 @@ final class SessionPhaseTests: XCTestCase {
         let store = try makeStore()
         let count = Newest.allCases.count
         func same<T>(_ value: T) -> [T] { Array(repeating: value, count: count) }
-        // Outside the vouched window a phase counts from the newest turn's end when it finished, else from the last event:
-        // the reading or the end without turns, and with them the later of the turn heard and the end.
+        // Outside the vouched window a phase counts from the last event: the reading or the end without turns, and with
+        // them the later of the turn heard and the end.
         let heard = [Since.reading] + Array(repeating: Since.turnHeard, count: count - 1)
-        let endedSince: [Since] = [.end, .end, .end, .end, .turnHeard, .turnHeard]
         // Live status, whether the source has the session in flight and how old its reading is; then, with each newest turn
         // in the order of `Newest.allCases`, the phase's state and what it counts from.
         let rows: [(liveStatus: Bool, inFlight: Bool, age: TimeInterval, states: [SessionPhase.State], since: [Since])] = [
+            // In flight, from the turn's start, else the session's.
             (true, true, 1799.999, [.running, .running, .running, .waitingForApproval, .running, .running],
-             [.sessionStart, .turnStart, .turnHeard, .turnStart, .sessionStart, .sessionStart]),
+             [.sessionStart, .turnStart, .sessionStart, .turnStart, .sessionStart, .sessionStart]),
             (true, true, 1800, same(.unverified), heard),
-            (true, false, 1799.999, same(.idle), endedSince),
-            (true, false, 1800, same(.idle), endedSince),
+            (true, false, 1799.999, same(.idle), same(.end)),
+            (true, false, 1800, same(.idle), same(.end)),
             // With live status off, the last event.
             (false, true, 1799.999, same(.idle), heard),
             (false, true, 1800, same(.idle), heard),
@@ -90,7 +90,7 @@ final class SessionPhaseTests: XCTestCase {
                 XCTAssertEqual(store.isSessionWaiting(session), phase.state == .waitingForApproval, name)
                 XCTAssertEqual(store.sessionState(session), newest.state, name)
                 let label = !row.liveStatus ? "Live status off" : phase.state == .unverified ? "Status out of date"
-                    : phase.state == .waitingForApproval ? "Needs approval" : Countdown.sessionLabel(session, now: now)
+                    : phase.state == .waitingForApproval ? "Needs approval" : Countdown.sessionLabel(phase, now: now)
                 XCTAssertEqual(store.sessionStatusLabel(session), label, name)
             }
         }

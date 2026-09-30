@@ -22,6 +22,9 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
     public let workingDirectory: String?
     /// Logs of the sub-agents this session started that do not lie under its own log's directory, such as Codex's.
     public let subagentTranscripts: [String]?
+    /// When the session's source last recorded anything for it, a log's last line or newest event, where the provider
+    /// reads that. Unlike `observedAt`, reading the log again does not move it.
+    public let lastActivityAt: Date?
 
     public init(
         id: String,
@@ -39,7 +42,8 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
         accountWide: Bool = false,
         observedAt: Date? = nil,
         workingDirectory: String? = nil,
-        subagentTranscripts: [String]? = nil
+        subagentTranscripts: [String]? = nil,
+        lastActivityAt: Date? = nil
     ) {
         self.id = id
         self.agentId = agentId
@@ -57,6 +61,7 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
         self.accountWide = accountWide
         self.workingDirectory = workingDirectory
         self.subagentTranscripts = subagentTranscripts.flatMap { $0.isEmpty ? nil : $0 }
+        self.lastActivityAt = lastActivityAt
     }
 
     /// Whether the source that read this session said a turn was still in flight. The log's own silence does not end
@@ -72,7 +77,7 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, agentId, task, terminal, startedAt, endedAt, observedAt, pctOfWindow, tokensIn, tokensOut, client, transcriptPath, cacheReadTokens, accountWide
-        case workingDirectory, subagentTranscripts
+        case workingDirectory, subagentTranscripts, lastActivityAt
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -86,7 +91,8 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
             accountWide: try c.decodeIfPresent(Bool.self, forKey: .accountWide) ?? false,
             observedAt: try c.decodeIfPresent(Date.self, forKey: .observedAt),
             workingDirectory: try c.decodeIfPresent(String.self, forKey: .workingDirectory),
-            subagentTranscripts: try c.decodeIfPresent([String].self, forKey: .subagentTranscripts))
+            subagentTranscripts: try c.decodeIfPresent([String].self, forKey: .subagentTranscripts),
+            lastActivityAt: try c.decodeIfPresent(Date.self, forKey: .lastActivityAt))
     }
 
     /// The working directory with the home folder written as `~`, or the project's name where only that is known.
@@ -98,9 +104,10 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
     }
 
     /// When this session last did something, given the newest turn event its source reported for it. A source that
-    /// reports no turns leaves the session's own end, or — while it runs — the reading that last saw it running.
+    /// reports no turns leaves the session's own end, or — while it runs — when its log last recorded anything, else the
+    /// reading that last saw it running.
     public func lastEvent(turnAt: Date?) -> Date {
-        guard let turnAt else { return endedAt ?? observedAt }
+        guard let turnAt else { return endedAt ?? lastActivityAt ?? observedAt }
         return max(turnAt, endedAt ?? startedAt)
     }
 

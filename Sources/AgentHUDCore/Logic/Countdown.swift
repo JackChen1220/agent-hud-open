@@ -45,13 +45,20 @@ public enum Countdown {
         return format(interval)
     }
 
-    /// Session duration labels: "27m 进行中" / "27m running", "结束于 51m 前" / "ended 51m ago".
-    public static func sessionLabel(_ session: LiveSession, now: Date) -> String {
-        if session.isLive {
-            let duration = format(session.duration(now: now))
+    /// Session labels: "27m 进行中" / "27m running" in flight, counted from when the phase started; "结束于 51m 前" /
+    /// "ended 51m ago" otherwise, counted from the session's last event.
+    public static func sessionLabel(_ phase: SessionPhase, now: Date) -> String {
+        if phase.isInFlight {
+            let duration = format(now.timeIntervalSince(phase.since))
             return L10n.text("\(duration) 进行中", "\(duration) running")
         }
-        let ago = formatRough(now.timeIntervalSince(session.endedAt ?? now))
+        let ago = formatRough(now.timeIntervalSince(phase.since))
         return L10n.text("结束于 \(ago) 前", "ended \(ago) ago")
+    }
+
+    /// The label of a session counted from its own start while its source has it in flight, else from its end.
+    public static func sessionLabel(_ session: LiveSession, now: Date) -> String {
+        sessionLabel(SessionPhase(state: session.isLive ? .running : .idle, since: session.isLive ? session.startedAt : session.endedAt ?? now,
+                                  validUntil: nil), now: now)
     }
 }

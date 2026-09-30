@@ -361,8 +361,7 @@ public final class UsageStore {
         switch shown.phase.state {
         case .unverified: return L10n.text("状态待更新", "Status out of date")
         case .waitingForApproval: return L10n.text("等待批准", "Needs approval")
-        // Counts a running session from its own start, not its turn's, and an ended one from its end.
-        case .running, .idle: return Countdown.sessionLabel(session, now: now)
+        case .running, .idle: return Countdown.sessionLabel(shown.phase, now: now)
         }
     }
 

@@ -67,7 +67,8 @@ public actor DeepSeekUsageProvider: UsageProvider, LedgerRecording {
                                    ? nil : (t.lastActivityAt ?? t.startedAt ?? session.modifiedAt),
                                pctOfWindow: nil, tokensIn: t.inputTokens, tokensOut: t.outputTokens,
                                client: "DeepSeek Harness", transcriptPath: session.path,
-                               cacheReadTokens: t.cachedInputTokens, observedAt: now, workingDirectory: t.cwd)
+                               cacheReadTokens: t.cachedInputTokens, observedAt: now, workingDirectory: t.cwd,
+                               lastActivityAt: t.lastActivityAt)
         }.sorted { a, b in
             if a.isLive != b.isLive { return a.isLive }
             return (a.endedAt ?? a.startedAt) > (b.endedAt ?? b.startedAt)

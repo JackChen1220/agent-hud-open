@@ -54,8 +54,8 @@ final class SessionSurfaceTests: XCTestCase {
 
     /// The grid of the store's own tests: a Claude session that started five hours ago, has ended two hours ago unless
     /// the source still has it in flight, and was last read `age` seconds ago; its newest turn started three hours ago
-    /// and was heard from half an hour later. The three dots always agree, and a session the Mac can no longer vouch for
-    /// is out of date on the card as on the header.
+    /// and was heard from half an hour later. The three dots always agree, the card and the header count from the same
+    /// time, and a session the Mac can no longer vouch for is out of date on the card as on the header.
     @MainActor
     func testTheCardHeaderAndIslandForEachSession() throws {
         let store = try makeStore()
@@ -70,8 +70,8 @@ final class SessionSurfaceTests: XCTestCase {
                     header: [String])] = [
             (true, true, 1799.999, [.running, .running, .running, .waiting, .running, .running],
              ["Running", "Running", "Running", "Needs approval", "Running", "Running"],
-             [.sessionStart, .turnStart, .turnHeard, .turnStart, .sessionStart, .sessionStart],
-             [running, running, running, "Needs approval", running, running]),
+             [.sessionStart, .turnStart, .sessionStart, .turnStart, .sessionStart, .sessionStart],
+             [running, "3h 00m running", running, "Needs approval", running, running]),
             (true, true, 1800, same(.ended), same("Status out of date"), heard, same("Status out of date")),
             (true, false, 1799.999, same(.ended), same("Waiting for you"), same(.end), same(ended)),
             (true, false, 1800, same(.ended), same("Waiting for you"), same(.end), same(ended)),
@@ -100,15 +100,15 @@ final class SessionSurfaceTests: XCTestCase {
     }
 
     /// A Stop hook that finishes a turn after the client's log went quiet dates the turn later than the session's end:
-    /// the header counts from the end, the card from the turn.
+    /// the header and the card both count from that last event.
     @MainActor
-    func testTheHeaderDatesAnEndedSessionByItsEndAndTheCardByItsLastTurn() throws {
+    func testTheHeaderAndTheCardDateAnEndedSessionByItsLastEvent() throws {
         let store = try makeStore()
         let session = session("s", agent: "grok-model:4", ended: -2 * hour, observed: -60)
         show([session], turns: [turn("s", .completed, provider: "grok", started: -3 * hour, observed: -2 * hour + 10)], in: store)
         XCTAssertEqual(surfaces(session, in: store), Surfaces(
             cardDot: .ended, headerDot: .ended, islandDot: .ended, cardState: "Waiting for you",
-            cardSince: now.addingTimeInterval(-2 * hour + 10), headerLabel: "ended 2h ago"))
+            cardSince: now.addingTimeInterval(-2 * hour + 10), headerLabel: "ended 1h 59m ago"))
     }
 
     /// The island lists every running session up to three and counts the rest; with none running, the three sessions
@@ -210,7 +210,7 @@ final class SessionSurfaceTests: XCTestCase {
         return Surfaces(cardDot: dot, headerDot: SessionDetailView.dot(session, store: store),
                         islandDot: HoverPanelView.sessionDot(session, store: store),
                         cardState: SessionCard.state(session, dot: dot, store: store),
-                        cardSince: SessionCard.elapsedStart(session, dot: dot, store: store),
+                        cardSince: SessionCard.elapsedStart(session, store: store),
                         headerLabel: SessionDetailView.statusLabel(session, store: store))
     }
 

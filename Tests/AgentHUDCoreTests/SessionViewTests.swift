@@ -64,9 +64,10 @@ final class SessionViewTests: XCTestCase {
         let running = "5h 00m running", ended = "ended 2h ago", off = "Live status off"
         func same(_ label: String) -> [String] { Array(repeating: label, count: Newest.allCases.count) }
         // Live status, whether the source has the session in flight and how old its reading is; then whether the session
-        // is live, and its label with each newest turn in the order of `Newest.allCases`.
+        // is live, and its label with each newest turn in the order of `Newest.allCases`. In flight, the label counts from
+        // the turn's start, else from the session's.
         let rows: [(liveStatus: Bool, inFlight: Bool, age: TimeInterval, live: Bool, labels: [String])] = [
-            (true, true, 1799.999, true, [running, running, running, "Needs approval", running, running]),
+            (true, true, 1799.999, true, [running, "3h 00m running", running, "Needs approval", running, running]),
             (true, true, 1800, false, same("Status out of date")),
             (true, false, 1799.999, false, same(ended)),
             (true, false, 1800, false, same(ended)),
@@ -255,6 +256,21 @@ final class SessionViewTests: XCTestCase {
         store.settings.update { $0.setLiveStatus(for: "Claude", enabled: false) }
         XCTAssertEqual(store.view.session("prompted")?.phase.state, .idle)
         XCTAssertEqual(store.view.session("prompted")?.lastEventAt, now.addingTimeInterval(-600))
+    }
+
+    /// A session in flight without turns is dated by when its log last recorded anything, which a read does not move, and
+    /// a copy of the session keeps that date.
+    @MainActor
+    func testATurnlessSessionInFlightIsDatedByItsLogsLastWrite() throws {
+        let store = try makeStore()
+        let written = LiveSession(id: "written", agentId: "claude-model:opus", task: "written", terminal: nil,
+                                  startedAt: now.addingTimeInterval(-hour), pctOfWindow: nil, tokensIn: 1, tokensOut: 1,
+                                  observedAt: now.addingTimeInterval(-5), lastActivityAt: now.addingTimeInterval(-90))
+        show([written, session("ended", ended: -60, observed: -60)], in: store)
+        XCTAssertEqual(store.view.session("written")?.lastEventAt, now.addingTimeInterval(-90))
+        XCTAssertEqual(store.sessions.map(\.id), ["ended", "written"], "the latest read does not lift it above a session that ended since")
+        XCTAssertEqual(store.sessionStatusLabel(written), "1h 00m running")
+        XCTAssertEqual(try JSONDecoder().decode(LiveSession.self, from: JSONEncoder().encode(written)).lastActivityAt, written.lastActivityAt)
     }
 
     // MARK: Fixtures

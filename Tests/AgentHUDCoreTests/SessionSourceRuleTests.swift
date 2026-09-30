@@ -227,6 +227,19 @@ final class SessionSourceRuleTests: XCTestCase, @unchecked Sendable {
         let report = try await provider.fetchUsage(agents: [], historyHours: 24)
         XCTAssertEqual(report.sessions.map(\.endedAt), [at(-1800)],
                        "a file written a second ago does not keep a turn last heard from half an hour ago running")
+        XCTAssertEqual(report.sessions.map(\.lastActivityAt), [at(-1800)])
+    }
+
+    func testAClaudeLogWithoutATurnIsDatedByItsLastLine() async throws {
+        let root = try directory().appendingPathComponent("projects", isDirectory: true)
+        let result = #"{"sessionId":"turnless","cwd":"/p","type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]},"timestamp":"\#(stamp(-30))"}"#
+        try write([result], to: root.appendingPathComponent("-p/turnless.jsonl"), modified: at(-30))
+        let now = base
+        let report = try await ClaudeCodeProvider(engine: nil, transcripts: ClaudeTranscriptStore(roots: [root]), history: QuotaHistoryStore(),
+                                                  clock: { now }).fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(report.turns, [])
+        XCTAssertEqual(report.sessions.map(\.endedAt), [nil], "a log without a turn is in flight while it is fresh")
+        XCTAssertEqual(report.sessions.map(\.lastActivityAt), [at(-30)])
     }
 
     func testACodexTurnWithoutAnIdKeepsTheSessionInFlightBehindAFinishedReportedTurn() async throws {

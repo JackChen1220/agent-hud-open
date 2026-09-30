@@ -154,7 +154,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
                                tokensIn: item.events.reduce(0) { $0 + $1.input }, tokensOut: item.events.reduce(0) { $0 + $1.output },
                                client: item.client, transcriptPath: item.path,
                                cacheReadTokens: item.events.reduce(0) { $0 + $1.cacheRead }, accountWide: item.accountWide, observedAt: now,
-                               workingDirectory: item.workspace)
+                               workingDirectory: item.workspace, lastActivityAt: end)
         }
         let snapshots = windows.map {
             UsageSnapshot(agentId: $0.id, remainingPct: $0.remaining, resetAt: $0.reset, windowDuration: $0.duration, updatedAt: observedAt)

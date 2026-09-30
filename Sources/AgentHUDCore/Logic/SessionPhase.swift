@@ -19,8 +19,7 @@ public struct SessionPhase: Hashable, Sendable {
     }
 
     public let state: State
-    /// In flight: when the turn started, or the session while no turn in flight is known. Otherwise: when the newest turn
-    /// finished, else the session's last event.
+    /// In flight: when the turn in flight started, else when the session did. Otherwise: the session's last event.
     public let since: Date
     /// In flight: when the Mac stops vouching for the state without a newer reading or hook. Nil otherwise, and for a
     /// client waiting for an answer to a permission request, which lasts as long as it waits.
@@ -198,10 +197,9 @@ public struct SessionPhase: Hashable, Sendable {
     /// The phase the Mac shows at `now` for a session its source reported, given its newest turn, when it last did
     /// something and whether its vendor's live status is on:
     /// - live status off: idle since the last event;
-    /// - in flight by a reading less than `Limits.vouched` old: the newest turn's state while it runs or waits for approval,
-    ///   since the turn's start, or its observation without one; with no such turn, running since the session's start;
-    /// - in flight by an older reading, unverified; ended, idle; both since the newest turn's end when it finished, else the
-    ///   last event.
+    /// - in flight by a reading less than `Limits.vouched` old: waiting for approval while the newest turn does, else
+    ///   running; since the turn's start, else the session's;
+    /// - in flight by an older reading, unverified; ended, idle; both since the last event.
     public init(session: LiveSession, turn: SessionTurn?, lastEventAt: Date, liveStatus: Bool, now: Date) {
         guard liveStatus else {
             self.init(state: .idle, since: lastEventAt, validUntil: nil)
@@ -212,15 +210,13 @@ public struct SessionPhase: Hashable, Sendable {
                       since: Self.inFlightSince(session, turn: turn), validUntil: session.observedAt.addingTimeInterval(Limits.vouched))
             return
         }
-        let finishedAt = turn.flatMap { $0.state == .completed || $0.state == .ended ? RecordCoding.date($0.observedAtMs) : nil }
-        self.init(state: session.endedAt == nil ? .unverified : .idle, since: finishedAt ?? lastEventAt, validUntil: nil)
+        self.init(state: session.endedAt == nil ? .unverified : .idle, since: lastEventAt, validUntil: nil)
     }
 
-    /// When the work in flight started: the newest turn's start while it runs or waits for approval, or its observation
-    /// without one; with no such turn, the session's start.
+    /// When the work in flight started: the newest turn's start while it runs or waits for approval, else the session's.
     static func inFlightSince(_ session: LiveSession, turn: SessionTurn?) -> Date {
-        guard let turn, turn.state.isInFlight else { return session.startedAt }
-        return RecordCoding.date(turn.startedAtMs ?? turn.observedAtMs)
+        guard let turn, turn.state.isInFlight, let start = turn.startedAtMs else { return session.startedAt }
+        return RecordCoding.date(start)
     }
 
     /// The phase of a session whose client waits for an answer to a permission request, given the phase it has otherwise:

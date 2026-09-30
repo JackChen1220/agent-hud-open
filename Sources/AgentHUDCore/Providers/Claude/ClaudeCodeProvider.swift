@@ -166,7 +166,8 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
                 tokensOut: session.tokensOut,
                 client: ClaudeEntrypoint.clientLabel(session.entrypoint),
                 transcriptPath: session.path,
-                cacheReadTokens: session.cacheReadTokens, observedAt: now, workingDirectory: session.cwd
+                cacheReadTokens: session.cacheReadTokens, observedAt: now, workingDirectory: session.cwd,
+                lastActivityAt: session.lastActivityAt
             )
         }
 

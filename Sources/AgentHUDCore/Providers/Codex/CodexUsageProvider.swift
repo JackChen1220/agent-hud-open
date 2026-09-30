@@ -186,7 +186,7 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
                                pctOfWindow: nil, tokensIn: t.inputTokens,
                                tokensOut: t.outputTokens, client: t.client, transcriptPath: session.path,
                                cacheReadTokens: t.cachedInputTokens, observedAt: now, workingDirectory: t.cwd,
-                               subagentTranscripts: descendants(of: t.id!))
+                               subagentTranscripts: descendants(of: t.id!), lastActivityAt: t.lastEventAt)
         }
         var notices = Dictionary(uniqueKeysWithValues: selected.compactMap { source, reading -> (String, String)? in
             failures[source].map { (reading.limits.providerAccount(home: source).id, $0) }

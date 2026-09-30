@@ -213,17 +213,18 @@ public struct CodexTranscript: Codable, Sendable {
         SessionPhase.read(evidence, rule: .rollout, at: now).inFlight
     }
 
-    /// What this rollout says about its session: its newest turn, one without an id included, and its newest event: the
-    /// latest of its counted activity and that turn's last event. A guardian's rollout, and one without any activity,
-    /// recorded nothing that counts.
+    /// What this rollout says about its session: its newest turn, one without an id included, and its newest event. A
+    /// guardian's rollout, and one without any activity, recorded nothing that counts.
     var evidence: SessionPhase.SourceEvidence {
-        let newest = turns?.last
-        return SessionPhase.SourceEvidence(turn: newest.map { turn in
+        SessionPhase.SourceEvidence(turn: turns?.last.map { turn in
             SessionTurn(provider: "codex", sessionID: id ?? "", turnID: turn.id ?? "", state: turn.state,
                         startedAtMs: turn.startedAt.map(RecordCoding.milliseconds),
                         observedAtMs: RecordCoding.milliseconds(turn.observedAt), message: turn.message)
-        }, lastWriteAt: isInternal ? nil : lastActivityAt.map { max($0, newest?.observedAt ?? $0) })
+        }, lastWriteAt: isInternal ? nil : lastEventAt)
     }
+
+    /// The rollout's newest event: the latest of its counted activity and its newest turn's last event.
+    var lastEventAt: Date? { lastActivityAt.map { max($0, turns?.last?.observedAt ?? $0) } }
 
     public var sessionTurns: [SessionTurn] {
         guard let id, !isSubagent, !isInternal else { return [] }
