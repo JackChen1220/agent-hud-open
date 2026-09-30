@@ -83,8 +83,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                         title: [account.displayName, account.planLabel].compactMap { $0 }.joined(separator: " · "),
                         value: store.accountLabel(for: account), image: nil, font: .menuFont(ofSize: 11),
                         titleColor: .secondaryLabelColor, minimumWidth: Self.menuWidth)
-                    // The menu gives the account's own reason alone; the island adds its client's notices.
-                    header.toolTip = store.accountNotice(for: section, clientNotices: false)
+                    header.toolTip = store.accountNotice(for: section)
                     menu.addItem(header)
                 }
                 for row in section.rows {

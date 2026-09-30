@@ -36,7 +36,8 @@ final class IslandStoreTests: XCTestCase {
 
         let sections = store.rowGroups.flatMap { store.accountSections($0.rows) }
         XCTAssertEqual(sections.map(\.id), [failed.id, fine.id] + pools.map(\.id) + [""])
-        XCTAssertEqual(sections.map { store.accountNotice(for: $0) }, ["Quota read failed", "Codex hooks could not be read", "read failed", nil, nil],
+        XCTAssertEqual(sections.map { store.accountNotice(for: $0) },
+                       ["Quota read failed · Codex hooks could not be read", "Codex hooks could not be read", "read failed", nil, nil],
                        "a notice that holds nothing back still shows above a fine account; a pool never shows its vendor's")
     }
 

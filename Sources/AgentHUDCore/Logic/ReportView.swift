@@ -171,13 +171,18 @@ public struct ReportView: Sendable {
         return failure.map(reading.failing) ?? reading
     }
 
-    /// What the header of an account's section says about its readings: the reason of the account's status, else, with
-    /// `clientNotices`, its client's notices. A billing pool speaks only for itself: its vendor's notices can be about
-    /// another of its pools.
-    public func accountNotice(for section: AccountSection, clientNotices: Bool = true) -> String? {
+    /// What the header of an account's section says about its readings, on the island and in the menu alike: the reason
+    /// of the account's status, then its client's notices, which also name what holds nothing back, such as a notice about
+    /// local logs or hooks. A client's notices that already carry the reason do not repeat it. A billing pool speaks only
+    /// for itself: its vendor's notices can be about another of its pools.
+    public func accountNotice(for section: AccountSection) -> String? {
         guard let account = section.account else { return nil }
-        let pooled = section.rows.first?.agent.billingPool != nil
-        return assessment(of: account).status.reason ?? (pooled || !clientNotices ? nil : report?.sourceNotices[account.account.provider])
+        let reason = assessment(of: account).status.reason
+        let client = account.account.isBillingPool ? nil : report?.sourceNotices[account.account.provider]
+        var parts: [String] = []
+        if let reason, !(client?.contains(reason) ?? false) { parts.append(reason) }
+        if let client { parts.append(client) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     /// Tokens per hour over the observed part of this quota window's current cycle. Token history before the local ledger

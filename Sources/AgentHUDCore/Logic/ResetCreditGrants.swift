@@ -55,9 +55,7 @@ public struct ResetCreditTracker: Sendable {
             let reading = report.assess(.account(account), now: now)
             // Signing back in to an account is a new baseline, not a grant observed while it was away.
             guard reading.isCurrentAccount else { previous[id] = nil; continue }
-            // Any notice filed under the account's provider holds the credits back too, one about its logs included.
-            let providerNoticeFree = report.sourceNotices[account.account.provider] == nil
-            guard let credits = account.resetCredits, reading.confirmsEvents, providerNoticeFree else { continue }
+            guard let credits = account.resetCredits, reading.confirmsEvents else { continue }
             let old = previous[id]
             guard old == nil || account.observedAt > old!.observedAt else { continue }
             previous[id] = Observation(observedAt: account.observedAt, count: credits.availableCount,

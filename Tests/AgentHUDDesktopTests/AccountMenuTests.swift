@@ -40,8 +40,9 @@ final class AccountMenuTests: XCTestCase {
     }
 
     /// The menu bar figure counts only windows whose readings show a level, and only such a row has the hover hint as its
-    /// tooltip. A header says its account is current unless the account's own read failed, however old the reading and
-    /// whatever the vendor says, and only the account's own notice becomes its tooltip.
+    /// tooltip. A header says its account is current only while its readings are sound, however old: the account's own
+    /// failed read and its vendor's both make it say when it was last read. Its tooltip is what the island shows above the
+    /// account: the account's reason, then its client's notices.
     @MainActor
     func testMenuFigureHeadersAndTooltipsFollowEachAccountsOwnReading() throws {
         let suite = "AccountMenuTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -84,18 +85,18 @@ final class AccountMenuTests: XCTestCase {
         XCTAssertNil(store.maxUsedPct, "no window counts: the account's or the vendor's failed read, a passed reset or a signed-out account holds each back")
         XCTAssertEqual(menu.items.prefix(9).map { [$0.view?.accessibilityLabel() ?? "", $0.toolTip ?? "—"] }, [
             ["Codex", "—"],
-            ["failed@example.com, Last read 5m ago", "Quota read failed"],
+            ["failed@example.com, Last read 5m ago", "Quota read failed · Codex login failed"],
             ["Weekly, 90% · <1m", "—"],
             ["Credits, 30% · —", "—"],
-            ["stale@example.com, Current account", "—"],
+            ["stale@example.com, Last read 2h ago", "Codex login failed"],
             ["Weekly, 60% · Pending update", "—"],
             ["5h, 80% · 2h05m", "—"],
-            ["old@example.com, Last read 3h ago", "—"],
+            ["old@example.com, Last read 3h ago", "Codex login failed"],
             ["Weekly, 98% · —", "—"],
         ])
         XCTAssertEqual(store.accountSections(store.rows).map { store.accountNotice(for: $0) },
-                       ["Quota read failed", "Codex login failed", "Codex login failed"],
-                       "the island shows the vendor's notice above accounts whose menu headers carry none")
+                       ["Quota read failed · Codex login failed", "Codex login failed", "Codex login failed"],
+                       "the island shows above each account what its menu header's tooltip says")
     }
 
     /// A balance's figure turns red only when its service says the account cannot be used: not at zero or below it,

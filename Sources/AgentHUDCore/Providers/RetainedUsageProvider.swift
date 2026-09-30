@@ -90,10 +90,10 @@ extension UsageReport {
         let cutoff = generatedAt.addingTimeInterval(-QuotaHistoryStore.retention)
         let currentIDs = Set(snapshots.map(\.agentId))
         // A successful Codex response is the complete window inventory for that account.
-        // Omitted buckets are retired; a failed read or an account switched away keeps its last readings, and so does
-        // any notice filed under Codex, one about its logs included.
-        let codexNoticeFree = sourceNotices["Codex"] == nil
-        let confirmedCodex = Set((self.accounts?["Codex"] ?? []).filter { $0.confirmsCompleteInventory && codexNoticeFree }.map(\.account.id))
+        // Omitted buckets are retired; a failed read, the vendor's failed read or an account switched away keeps its last
+        // readings. A notice about Codex's logs or hooks keeps none.
+        let codexRead = vendorStatus("Codex").isNormal
+        let confirmedCodex = Set((self.accounts?["Codex"] ?? []).filter { $0.confirmsCompleteInventory && codexRead }.map(\.account.id))
         let accounts = mergedAccounts(from: previous, retiredPoolIDs: retiredPoolIDs, cutoff: cutoff)
         let knownAccountIDs = Set(accounts?.values.flatMap { $0.map(\.account.id) } ?? [])
         // Rows of an account unseen for the retention period retire with its readings and settings.

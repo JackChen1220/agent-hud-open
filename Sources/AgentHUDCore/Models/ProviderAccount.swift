@@ -48,6 +48,9 @@ public struct ProviderAccount: Hashable, Codable, Sendable, Identifiable {
 
     /// Row id of one provider window within this account, e.g. `account:<hash>/codex`.
     public func windowID(_ window: String) -> String { id + "/" + window }
+
+    /// A billing pool's account, which keeps its pool's id.
+    public var isBillingPool: Bool { id.hasPrefix("pool:") }
 }
 
 /// One account as seen from one client home. A provider's list in `UsageReport.accounts` is authoritative:

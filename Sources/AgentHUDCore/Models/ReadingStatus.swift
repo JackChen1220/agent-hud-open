@@ -112,9 +112,9 @@ public struct ReadingAssessment: Hashable, Sendable {
 }
 
 public extension UsageReport {
-    /// A reading's status. A window answers to its account's issue, else its vendor's; a billing pool's window answers to
-    /// its pool's account alone, since a vendor with several pools reads each on its own. An account answers to its own
-    /// issue, and a balance to its billing entry's.
+    /// A reading's status. A window and an account answer to the account's issue, else its vendor's; a billing pool and
+    /// its windows answer to the pool's account alone, since a vendor with several pools reads each on its own. A balance
+    /// answers to its billing entry's issue. A notice about a client's local logs or hooks is no issue.
     func status(of subject: ReadingSubject) -> ReadingStatus {
         switch subject {
         case .window(let agent):
@@ -122,7 +122,9 @@ public extension UsageReport {
             if agent.billingPool != nil || !account.isNormal { return account }
             return vendorStatus(agent.vendor)
         case .account(let observation):
-            return observation.ownStatus
+            let own = observation.ownStatus
+            if observation.account.isBillingPool || !own.isNormal { return own }
+            return vendorStatus(observation.account.provider)
         case .balance(let billing):
             return billing.ownStatus
         }

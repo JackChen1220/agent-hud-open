@@ -42,14 +42,15 @@ final class ReadingStatusTests: XCTestCase {
                             let alerts = report.isCurrent(agent) && quotaNotice == nil && snapshot.updatedAt <= now
                                 && now.timeIntervalSince(snapshot.updatedAt) < 1800 && !(snapshot.resetAt.map { $0 <= now } ?? false)
                             XCTAssertEqual(window.confirmsEvents, alerts, name)
-                            // The reset credits' baseline, before their own check of the provider's notices.
-                            let credits = observation.isCurrent && observation.quotaNotice == nil && observation.observedAt <= now
+                            // The reset credits' baseline and the account header: an account answers to its own issue, else,
+                            // unless it is a billing pool, its vendor's, as its windows do.
+                            let credits = observation.isCurrent && quotaNotice == nil && observation.observedAt <= now
                                 && now.timeIntervalSince(observation.observedAt) < 1800
                             let accountReading = report.assess(.account(observation), now: now)
+                            XCTAssertEqual(accountReading.status.reason, quotaNotice, name)
                             XCTAssertEqual(accountReading.confirmsEvents, credits, name)
-                            // The account header.
                             XCTAssertEqual(accountReading.isCurrentAccount && accountReading.status.isNormal,
-                                           observation.isCurrent && observation.quotaNotice == nil, name)
+                                           observation.isCurrent && quotaNotice == nil, name)
                             checked += 1
                         }
                     }

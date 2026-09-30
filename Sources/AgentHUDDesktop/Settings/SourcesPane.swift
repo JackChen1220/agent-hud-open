@@ -22,7 +22,7 @@ struct SourcesPane: View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(groups) { group in
-                    AgentSettingsCard(group: group, settings: settings, theme: theme,
+                    AgentSettingsCard(group: group, settings: settings, theme: theme, accountLabel: store.accountLabel(for:),
                         isExpanded: Binding(get: { expanded.contains(group.id) }, set: { value in
                             if value { expanded.insert(group.id) } else { expanded.remove(group.id) }
                         }), dragging: $dragging)
@@ -38,6 +38,8 @@ struct AgentSettingsCard: View {
     let group: AgentSettingsGroup
     let settings: SettingsStore
     let theme: Theme
+    /// Whether an account is current or when it was last read, as its header in the panel says.
+    let accountLabel: (AccountObservation) -> String
     @Binding var isExpanded: Bool
     @Binding var dragging: AgentOrderDrag?
     private var canExpand: Bool { !group.agents.isEmpty || group.hasLiveStatus }
@@ -102,7 +104,7 @@ struct AgentSettingsCard: View {
                             PlanBadge(plan: plan, theme: theme)
                         }
                         ForEach(group.accounts) { account in
-                            AccountSummary(account: account, theme: theme)
+                            AccountSummary(account: account, label: accountLabel(account), theme: theme)
                         }
                         if !group.apiProviders.isEmpty {
                             Text("API · " + group.apiProviders.joined(separator: ", "))
@@ -143,6 +145,7 @@ struct AgentSettingsCard: View {
 /// One signed-in or previously seen account: its plan badge, name and whether it is the current login.
 private struct AccountSummary: View {
     let account: AccountObservation
+    let label: String
     let theme: Theme
 
     var body: some View {
@@ -153,7 +156,7 @@ private struct AccountSummary: View {
             Text(account.displayName)
                 .font(.ui(11)).foregroundStyle(account.isCurrent ? theme.secondary : theme.tertiary)
                 .lineLimit(1).truncationMode(.middle)
-            Text(account.statusLabel(now: Date()))
+            Text(label)
                 .font(.ui(10)).foregroundStyle(theme.tertiary)
                 .fixedSize()
         }

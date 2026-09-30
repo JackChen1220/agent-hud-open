@@ -96,27 +96,28 @@ final class RowPresenceTests: XCTestCase {
     }
 
     /// What a pass makes of a Codex read that leaves one of the current account's windows out while a notice stands for
-    /// Codex. ReadingGateTests pins each rule on its own: a kept report holds on to such a window's reading, and the
-    /// settings drop its row from a list without it. A pass hands the settings the kept report's rows, so the two agree
-    /// while there is an earlier report to keep from. The first pass of a run without a restart copy has none, and the row
-    /// goes whatever the notice says.
+    /// Codex. ReadingGateTests pins each rule on its own: a kept report holds on to such a window's reading while Codex's
+    /// read failed, and the settings drop its row from a list without it. A pass hands the settings the kept report's rows,
+    /// so the two agree while there is an earlier report to keep from. A notice about Codex's logs holds nothing back, and
+    /// the first pass of a run without a restart copy has nothing to keep from, so the row goes.
     @MainActor
     func testACodexWindowLeftOutOfAReadKeepsItsRowOnlyWhenAnEarlierReportIsKept() async throws {
         let window = AgentDescriptor(id: current.windowID("codex"), vendor: "Codex", model: "5h", source: "", enabled: true, account: current)
         let spark = AgentDescriptor(id: current.windowID("codex:spark:primary"), vendor: "Codex", model: "Spark", source: "",
                                     enabled: true, account: current)
-        func read(_ rows: [AgentDescriptor], at date: Date, notice: String? = nil) -> UsageReport {
+        func read(_ rows: [AgentDescriptor], at date: Date, notice: String? = nil, failed: String? = nil) -> UsageReport {
             UsageReport(generatedAt: date, snapshots: rows.map { UsageSnapshot(agentId: $0.id, remainingPct: 50, updatedAt: date) },
-                        sessions: [], discoveredAgents: rows, sourceNotices: notice.map { ["Codex": $0] } ?? [:], quotaNotices: [:],
-                        accounts: ["Codex": [AccountObservation(account: current, observedAt: date)]])
+                        sessions: [], discoveredAgents: rows, sourceNotices: (notice ?? failed).map { ["Codex": $0] } ?? [:],
+                        quotaNotices: failed.map { ["Codex": $0] } ?? [:], accounts: ["Codex": [AccountObservation(account: current, observedAt: date)]])
         }
         let earlier = read([window, spark], at: now.addingTimeInterval(-600))
         // The reads a run makes in turn, and whether the left-out window keeps its row, its place among the rows shown and
         // its reading after the last of them.
         let cases: [(String, [UsageReport], keeps: Bool)] = [
-            ("an earlier read, then one with a notice", [earlier, read([window], at: now, notice: "Codex logs could not be read")], true),
+            ("an earlier read, then one whose Codex read failed", [earlier, read([window], at: now, failed: "Codex could not be read")], true),
+            ("an earlier read, then one with a notice about logs", [earlier, read([window], at: now, notice: "Codex logs could not be read")], false),
             ("an earlier read, then one without", [earlier, read([window], at: now)], false),
-            ("a first read with a notice and no restart copy", [read([window], at: now, notice: "Codex logs could not be read")], false),
+            ("a first read whose Codex read failed and no restart copy", [read([window], at: now, failed: "Codex could not be read")], false),
         ]
         for (name, reads, keeps) in cases {
             let store = UsageStore(provider: RetainedUsageProvider(provider: Reads(reads)), settings: try makeSettings([window, spark]))

@@ -67,17 +67,16 @@ final class ReadingGateTests: XCTestCase {
                                                quotaNotice: "offline")
         let cases: [(String, Reading, Gates)] = [
             ("a fresh reading", Reading(), Gates()),
-            // The account header, the reset column and the settings row pass over the vendor's notice. A reading without a
-            // level enters neither the menu figure nor a hint.
+            // The reset column and the settings row pass over the vendor's notice. A reading without a level enters neither
+            // the menu figure nor a hint.
             ("the vendor's read failed", Reading(sourceNotices: ["Codex": "offline"], quotaNotices: ["Codex": "offline"]),
-             Gates(notice: "offline", level: nil, startsAlerts: false, startsCredits: false, menuFigure: nil, hint: nil, keepsLeftOutWindow: true,
-                   keptSessions: ["Codex"])),
-            // Reset credits and the kept windows count every notice of the vendor, about its logs as well.
-            ("only the vendor's logs could not be read", Reading(sourceNotices: ["Codex": "logs unreadable"]),
-             Gates(startsCredits: false, keepsLeftOutWindow: true)),
+             Gates(notice: "offline", level: nil, startsAlerts: false, startsCredits: false, menuFigure: nil, status: "Last read 1m ago",
+                   hint: nil, keepsLeftOutWindow: true, keptSessions: ["Codex"])),
+            // A notice about the vendor's logs holds nothing back.
+            ("only the vendor's logs could not be read", Reading(sourceNotices: ["Codex": "logs unreadable"]), Gates()),
             ("a report that does not tell quota notices apart", Reading(sourceNotices: ["Codex": "offline"], quotaNotices: nil),
-             Gates(notice: "offline", level: nil, startsAlerts: false, startsCredits: false, menuFigure: nil, hint: nil, keepsLeftOutWindow: true,
-                   keptSessions: ["Codex"])),
+             Gates(notice: "offline", level: nil, startsAlerts: false, startsCredits: false, menuFigure: nil, status: "Last read 1m ago",
+                   hint: nil, keepsLeftOutWindow: true, keptSessions: ["Codex"])),
             ("the account's read failed", Reading(accountNotice: "offline"),
              Gates(notice: "offline", level: nil, startsAlerts: false, startsCredits: false, menuFigure: nil, status: "Last read 1m ago",
                    hint: nil, keepsLeftOutWindow: true, keepsLeftOutRow: true)),
@@ -147,7 +146,7 @@ final class ReadingGateTests: XCTestCase {
             XCTAssertEqual(report.quotaNotice(vendor: "Kimi"), vendorNotice, name)
             XCTAssertEqual(store.rows.map(\.level), [nil, .warning], name)
             XCTAssertEqual(rows.map { crossed.contains($0.id) }, [false, true], name)
-            XCTAssertEqual(store.rows.map { $0.account?.statusLabel(now: now) }, ["Last read 1m ago", "Current account"], name)
+            XCTAssertEqual(store.rows.map { $0.account.map(store.accountLabel(for:)) }, ["Last read 1m ago", "Current account"], name)
         }
     }
 
@@ -252,7 +251,7 @@ final class ReadingGateTests: XCTestCase {
         return Gates(notice: report.quotaNotice(for: window), level: row.level,
                      startsAlerts: !alerts.update(report: next, agents: [window], now: later).criticalAgentIDs.isEmpty,
                      startsCredits: !resets.update(report: next, now: later).isEmpty,
-                     menuFigure: store.maxUsedPct, status: row.account?.statusLabel(now: now) ?? "no account",
+                     menuFigure: store.maxUsedPct, status: row.account.map(store.accountLabel(for:)) ?? "no account",
                      reset: row.resetLabel(now: now), hint: store.quotaForecastHint(for: window.id),
                      keepsLeftOutWindow: retained.snapshot(for: spark.id) != nil,
                      keepsLeftOutRow: settings.agents.contains { $0.id == spark.id },

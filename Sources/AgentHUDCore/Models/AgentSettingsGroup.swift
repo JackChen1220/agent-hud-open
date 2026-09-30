@@ -30,7 +30,7 @@ public struct AgentSettingsGroup: Identifiable, Equatable, Sendable {
             // Observations retain client-home history; display one summary per account, as quota rows do.
             let accountIDs = Set((report?.accounts?[id] ?? []).map(\.account.id))
             let accounts = accountIDs.compactMap { report?.observation(accountID: $0) }
-                .filter { !$0.account.id.hasPrefix("pool:") }
+                .filter { !$0.account.isBillingPool }
                 .sorted { ($0.isCurrent ? 1 : 0, $0.observedAt) > ($1.isCurrent ? 1 : 0, $1.observedAt) }
             var plans = accounts.isEmpty ? source?.planLabel.map { [$0] } ?? [] : []
             for service in services where service.product == .plan {
