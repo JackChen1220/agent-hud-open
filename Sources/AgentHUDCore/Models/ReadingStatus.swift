@@ -137,6 +137,10 @@ public extension UsageReport {
 extension AccountObservation {
     /// The account's own status.
     var ownStatus: ReadingStatus { quotaNotice.map { .readFailed(reason: $0) } ?? .normal }
+
+    /// Whether this reading lists every window of its account, so that a window it leaves out has ended: the client is
+    /// signed in to the account and its own read succeeded.
+    public var confirmsCompleteInventory: Bool { isCurrent && ownStatus.isNormal }
 }
 
 extension APIBilling {

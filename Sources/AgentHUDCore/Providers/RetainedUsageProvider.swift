@@ -89,10 +89,10 @@ extension UsageReport {
         let cutoff = generatedAt.addingTimeInterval(-QuotaHistoryStore.retention)
         let currentIDs = Set(snapshots.map(\.agentId))
         // A successful Codex response is the complete window inventory for that account.
-        // Omitted buckets are retired; a failed read or an account switched away keeps its last readings.
-        let confirmedCodex = Set((self.accounts?["Codex"] ?? []).filter {
-            $0.isCurrent && $0.quotaNotice == nil && sourceNotices["Codex"] == nil
-        }.map(\.account.id))
+        // Omitted buckets are retired; a failed read or an account switched away keeps its last readings, and so does
+        // any notice filed under Codex, one about its logs included.
+        let codexNoticeFree = sourceNotices["Codex"] == nil
+        let confirmedCodex = Set((self.accounts?["Codex"] ?? []).filter { $0.confirmsCompleteInventory && codexNoticeFree }.map(\.account.id))
         let accounts = mergedAccounts(from: previous, retiredPoolIDs: retiredPoolIDs, cutoff: cutoff)
         let knownAccountIDs = Set(accounts?.values.flatMap { $0.map(\.account.id) } ?? [])
         // Rows of an account unseen for the retention period retire with its readings and settings.
@@ -121,7 +121,7 @@ extension UsageReport {
         } + previous.billing.filter { !billingIDs.contains($0.id) }
         let knownAgents = UsageAggregation.consumersUnion([discoveredAgents, consumers, previous.discoveredAgents, previous.consumers])
         // A source whose read or quota reading failed keeps its last sessions; a notice about its local logs or hooks does not.
-        let failedIDs = Set(knownAgents.filter { quotaNotice(vendor: $0.vendor) != nil }.map(\.id))
+        let failedIDs = Set(knownAgents.filter { !vendorStatus($0.vendor).isNormal }.map(\.id))
         let retainedSessions = UsageAggregation.sessionsUnion([sessions, previous.sessions.filter { failedIDs.contains($0.agentId) }])
         let rows = UsageAggregation.consumersUnion([discoveredAgents, previous.discoveredAgents.filter(isRetained)])
         return UsageReport(generatedAt: generatedAt,

@@ -95,7 +95,7 @@ public final class SettingsStore {
             var list = agents.filter { agent in
                 if let account = agent.account, agent.billingPool == nil, let known = accounts?[account.provider] {
                     // Only the account's own notice keeps the windows a read left out; a notice for the whole vendor does not.
-                    if replaceQuotaWindows, account.provider == "Codex", known.contains(where: { $0.account.id == account.id && $0.isCurrent && $0.quotaNotice == nil }) {
+                    if replaceQuotaWindows, account.provider == "Codex", known.contains(where: { $0.account.id == account.id && $0.confirmsCompleteInventory }) {
                         return discovered.contains { $0.id == agent.id }
                     }
                     return known.contains { $0.account.id == account.id }
