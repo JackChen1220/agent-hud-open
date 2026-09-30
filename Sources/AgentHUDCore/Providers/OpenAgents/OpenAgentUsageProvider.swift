@@ -170,7 +170,8 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
         // Pi's observer keeps active runs fresh. An expired heartbeat ends activity without claiming success.
         for index in local.sessions.indices where local.sessions[index].client == .pi {
             local.sessions[index].turns = local.sessions[index].turns.map { turn in
-                guard turn.state == .running, now.timeIntervalSince1970 - Double(turn.observedAtMs) / 1000 >= 120 else { return turn }
+                guard turn.state == .running,
+                      now.timeIntervalSince1970 - Double(turn.observedAtMs) / 1000 >= SessionPhase.Limits.heartbeat else { return turn }
                 return SessionTurn(provider: turn.provider, sessionID: turn.sessionID, turnID: turn.turnID,
                     state: .ended, startedAtMs: turn.startedAtMs, observedAtMs: turn.observedAtMs)
             }

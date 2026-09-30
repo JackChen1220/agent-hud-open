@@ -5,7 +5,8 @@ import Foundation
 /// Quota: the Claude Code engine's SDK control protocol (`get_usage`). Sessions and tokens: local transcripts.
 /// Burn rate and caps: persisted quota samples.
 public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
-    public static let liveThreshold: TimeInterval = 120
+    /// How long a quiet log keeps a session in flight: `SessionPhase.Limits.quiet`.
+    public static let liveThreshold: TimeInterval = SessionPhase.Limits.quiet
 
     /// Engine queries spawn a process, so they run at most this often regardless of the poll interval.
     public static let engineMinimumInterval = UsageRefresh.accountRequestSpacing

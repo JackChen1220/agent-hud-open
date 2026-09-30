@@ -97,10 +97,10 @@ public actor DeepSeekUsageProvider: UsageProvider, LedgerRecording {
     private func processStarts(for sessions: [DeepSeekTranscriptStore.Session], now: Date) async -> [Date]? {
         let quiet = sessions.contains { session in
             !session.transcript.isSubagent && session.transcript.sessionTurns.last?.state == .running
-                && now.timeIntervalSince(session.modifiedAt) >= 120
+                && now.timeIntervalSince(session.modifiedAt) >= SessionPhase.Limits.processCheck
         }
         guard quiet else { lastProcessStarts = nil; return nil }
-        if let last = lastProcessStarts, now.timeIntervalSince(last.at) < 30 { return last.starts }
+        if let last = lastProcessStarts, now.timeIntervalSince(last.at) < SessionPhase.Limits.processRecheck { return last.starts }
         let starts = await readProcessStarts()
         lastProcessStarts = (now, starts)
         return starts
