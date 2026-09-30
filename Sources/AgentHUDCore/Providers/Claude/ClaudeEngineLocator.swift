@@ -1,9 +1,11 @@
 import Foundation
 
 /// Finds the Claude Code engine binary. GUI apps get a minimal PATH, so well-known install locations are checked
-/// directly; the desktop app's Code tab installs the same engine under `~/.local/share/claude/versions`.
+/// directly; the desktop app's Code tab installs the same engine under `~/.local/share/claude/versions`. `PATH` comes
+/// last, as for every client's executable (`Executables`).
 public enum ClaudeEngineLocator {
-    public static func candidates(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [URL] {
+    public static func candidates(home: URL = FileManager.default.homeDirectoryForCurrentUser,
+                                  path: String = ProcessInfo.processInfo.environment["PATH"] ?? "") -> [URL] {
         var list = [
             home.appendingPathComponent(".local/bin/claude"),
             home.appendingPathComponent(".claude/local/claude"),
@@ -17,10 +19,11 @@ public enum ClaudeEngineLocator {
             }
             list += sorted.map { versions.appendingPathComponent($0) }
         }
-        return list
+        return list + Executables.onPath("claude", path: path)
     }
 
-    public static func find(home: URL = FileManager.default.homeDirectoryForCurrentUser, fileManager: FileManager = .default) -> URL? {
-        candidates(home: home).first { fileManager.isExecutableFile(atPath: $0.path) }
+    public static func find(home: URL = FileManager.default.homeDirectoryForCurrentUser, fileManager: FileManager = .default,
+                            path: String = ProcessInfo.processInfo.environment["PATH"] ?? "") -> URL? {
+        Executables.first(candidates(home: home, path: path), fileManager: fileManager)
     }
 }

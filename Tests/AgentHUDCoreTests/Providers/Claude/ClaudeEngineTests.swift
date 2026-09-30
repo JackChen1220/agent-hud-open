@@ -73,13 +73,20 @@ final class ClaudeEngineTests: XCTestCase {
             try "#!/bin/sh\n".write(to: url, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
         }
-        XCTAssertEqual(ClaudeEngineLocator.find(home: home)?.lastPathComponent, "2.1.245")
+        XCTAssertEqual(ClaudeEngineLocator.find(home: home, path: "")?.lastPathComponent, "2.1.245")
         let bin = home.appendingPathComponent(".local/bin/claude")
         try FileManager.default.createDirectory(at: bin.deletingLastPathComponent(), withIntermediateDirectories: true)
         try "#!/bin/sh\n".write(to: bin, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bin.path)
-        XCTAssertEqual(ClaudeEngineLocator.find(home: home), bin, "the user-facing symlink wins when present")
-        XCTAssertNil(ClaudeEngineLocator.find(home: home.appendingPathComponent("missing")))
+        XCTAssertEqual(ClaudeEngineLocator.find(home: home, path: ""), bin, "the user-facing symlink wins when present")
+        XCTAssertNil(ClaudeEngineLocator.find(home: home.appendingPathComponent("missing"), path: ""))
+        // PATH comes after every install place, as for the other clients' executables.
+        let elsewhere = home.appendingPathComponent("elsewhere", isDirectory: true)
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: bin, to: elsewhere.appendingPathComponent("claude"))
+        XCTAssertEqual(ClaudeEngineLocator.find(home: home.appendingPathComponent("missing"), path: "/nonexistent:" + elsewhere.path),
+                       elsewhere.appendingPathComponent("claude"))
+        XCTAssertEqual(ClaudeEngineLocator.find(home: home, path: elsewhere.path), bin)
     }
 
     func testClientRunsAFakeEngine() async throws {

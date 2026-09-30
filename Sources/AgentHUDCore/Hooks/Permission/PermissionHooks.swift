@@ -121,7 +121,8 @@ public enum PermissionHooks {
                                 fileManager: FileManager = .default) -> Bool {
             switch self {
             case .claude:
-                return ClaudeEngineLocator.find(home: home, fileManager: fileManager) != nil
+                // The engine where its installers put it for this home; this process's PATH says nothing about the home.
+                return ClaudeEngineLocator.find(home: home, fileManager: fileManager, path: "") != nil
                     || fileManager.fileExists(atPath: self.home(home).appendingPathComponent("projects").path)
             case .codex, .qoder, .qoderCN, .qoderWork, .zcode, .qwen:
                 return fileManager.fileExists(atPath: self.home(home).path)

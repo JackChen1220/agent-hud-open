@@ -26,10 +26,9 @@ public enum CodexLocator {
                             applications: URL = URL(fileURLWithPath: "/Applications"),
                             path: String = ProcessInfo.processInfo.environment["PATH"] ?? "",
                             registered: @autoclosure () -> [URL] = VendorCatalog.applications("Codex")) -> URL? {
-        let runnable = { (url: URL) in FileManager.default.isExecutableFile(atPath: url.path) }
-        return desktop(home: home, applications: applications).first(where: runnable)
-            ?? registered().flatMap(engines(in:)).first(where: runnable)
-            ?? cli(home: home, path: path).first(where: runnable)
+        Executables.first(desktop(home: home, applications: applications))
+            ?? Executables.first(registered().flatMap(engines(in:)))
+            ?? Executables.first(cli(home: home, path: path))
     }
 
     /// Current builds keep the engine in `codex-cli`, older ones beside the app's other resources.
@@ -46,6 +45,6 @@ public enum CodexLocator {
     private static func cli(home: URL, path: String) -> [URL] {
         [home.appendingPathComponent(".bun/bin/codex"), home.appendingPathComponent(".local/bin/codex"),
          URL(fileURLWithPath: "/opt/homebrew/bin/codex"), URL(fileURLWithPath: "/usr/local/bin/codex")]
-            + path.split(separator: ":").map { URL(fileURLWithPath: String($0)).appendingPathComponent("codex") }
+            + Executables.onPath("codex", path: path)
     }
 }
