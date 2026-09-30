@@ -296,4 +296,46 @@ public enum DemoData {
             weeklyWaitLongestAt: tuesday
         )
     }
+
+    /// The sources the demo's first-launch screen lists.
+    public static var sources: [SourceStatus] {
+        [
+            SourceStatus(id: "claude-code", name: "Claude", detail: L10n.text("额度、会话与用量统计", "Quota, sessions and usage"), state: .ready(plan: "max_20x")),
+            SourceStatus(id: "codex-cli", name: "Codex", detail: L10n.text("额度、会话与用量统计", "Quota, sessions and usage"), state: .ready(plan: "prolite")),
+            SourceStatus(id: "antigravity", name: "Antigravity", detail: L10n.text("安装后自动出现", "Appears once installed"), state: .notDetected),
+            SourceStatus(id: "deepseek", name: "DeepSeek", detail: L10n.text("安装后自动出现", "Appears once installed"), state: .notDetected),
+        ]
+    }
+
+    /// The requests the demo shows: four clients caught mid-task, the way a working morning actually looks — one
+    /// edit worth reading, one build, one ticket and one file. No client is waiting behind them, so answering one
+    /// only takes it off the HUD.
+    public static func permissionRequests(now: Date = Date()) -> [PermissionRequest] {
+        [
+            PermissionRequest(
+                id: "demo-edit", source: .claude, sessionID: "demo-1", toolName: "Edit",
+                summary: "Avatar.tsx", detail: "~/Projects/acme-web/src/components/Avatar.tsx", cwd: "~/Projects/acme-web",
+                path: "~/Projects/acme-web/src/components/Avatar.tsx",
+                removed: "  const initials = user.name.slice(0, 2)", added: "  const initials = user?.name?.slice(0, 2) ?? '?'",
+                suggestions: [.object([
+                    "type": .string("addRules"), "behavior": .string("allow"),
+                    "destination": .string("localSettings"),
+                    "rules": .array([.object(["toolName": .string("Edit"), "ruleContent": .string("src/**")])]),
+                ])],
+                at: now.addingTimeInterval(-38)),
+            PermissionRequest(
+                id: "demo-build", source: .codex, sessionID: "demo-2", toolName: "Bash",
+                summary: L10n.text("构建生产版本", "Build for production"), detail: "npm run build",
+                cwd: "~/Projects/acme-api", at: now.addingTimeInterval(-124)),
+            PermissionRequest(
+                id: "demo-ticket", source: .codebuddy, sessionID: "demo-3",
+                toolName: "mcp__linear__create_issue", summary: "linear · create_issue",
+                detail: "team: Mobile\ntitle: Settings screen crashes when offline",
+                cwd: "~/Projects/acme-mobile", at: now.addingTimeInterval(-71)),
+            PermissionRequest(
+                id: "demo-read", source: .claude, sessionID: "demo-4", toolName: "Read",
+                summary: "tsconfig.base.json", detail: "~/Projects/acme-shared/tsconfig.base.json", cwd: "~/Projects/acme-web",
+                path: "~/Projects/acme-shared/tsconfig.base.json", at: now.addingTimeInterval(-9)),
+        ]
+    }
 }

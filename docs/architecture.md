@@ -110,7 +110,7 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 | `HookEntry.handle(arguments:)` | AgentHUDCore | Runs the hook or adapter command the process arguments name and returns its exit status; nil starts the application |
 | `UnixSocket`, `UnixSocketListener(path:requestLimit:category:onRequest:)` | AgentHUDCore | The hook process's `connect(to:)`, `send(_:_:)` and `readToEnd(_:limit:)`; the application's `start()` and `stop()`, with each request handed over on the main actor |
 | `ChildProcess` | AgentHUDCore | A child whose pipes are drained up to their caps and whose reads end when it exits: `run(_:_:environment:timeout:stdoutLimit:)`, or `write(_:)`, `line(before:)`, `waitForExit(before:)` and `stop()` |
-| `UsageAssembly.settings(defaults:defaultAgents:language:)`, `store(settings:ledger:hooks:)` | AgentHUDCore | The settings and the store as the standalone application builds them; a nil ledger is the demo |
+| `UsageAssembly.settings(defaults:defaultAgents:language:)`, `store(settings:ledger:hooks:)` | AgentHUDCore | The settings and the store as the standalone application builds them; a nil ledger is the demo, with the demo's turn calls in `UsageStore.sampleTurnCalls` |
 | `UsageProbe.run(settings:)` | AgentHUDCore | Prints the `--probe` diagnostics and returns the exit status |
 | `AgentHUDDataDirectory` | Host `Info.plist` | Name of the data directory under `~/Library/Application Support`; default `Agent HUD Open` |
 | Launch switches and probes | Standalone executable | [Command line](command-line.md) |

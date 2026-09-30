@@ -43,14 +43,3 @@ public struct SourceStatus: Hashable, Sendable, Identifiable {
         }
     }
 }
-
-public extension DemoData {
-    static var sources: [SourceStatus] {
-        [
-            SourceStatus(id: "claude-code", name: "Claude", detail: L10n.text("额度、会话与用量统计", "Quota, sessions and usage"), state: .ready(plan: "max_20x")),
-            SourceStatus(id: "codex-cli", name: "Codex", detail: L10n.text("额度、会话与用量统计", "Quota, sessions and usage"), state: .ready(plan: "prolite")),
-            SourceStatus(id: "antigravity", name: "Antigravity", detail: L10n.text("安装后自动出现", "Appears once installed"), state: .notDetected),
-            SourceStatus(id: "deepseek", name: "DeepSeek", detail: L10n.text("安装后自动出现", "Appears once installed"), state: .notDetected),
-        ]
-    }
-}

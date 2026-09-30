@@ -124,6 +124,6 @@ public final class PermissionRequests {
     /// Fills the queue for the demo. Nothing is listening on the channel in that mode, and nothing is answered
     /// on any client's behalf.
     public func seedDemo(now: Date = Date()) {
-        pending = PermissionRequest.demo(now: now)
+        pending = DemoData.permissionRequests(now: now)
     }
 }

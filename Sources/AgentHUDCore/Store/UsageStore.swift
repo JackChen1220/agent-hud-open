@@ -128,8 +128,11 @@ public final class UsageStore {
     public var focusedTurn: Int? { didSet { if focusedTurn != oldValue { focusedTurnCalls = nil } } }
     /// The focused turn's calls once read, with the tools their logs name.
     public internal(set) var focusedTurnCalls: [TurnCall]?
-    /// Where turns' calls are read from; without a ledger (the demo) the demo's calls stand in.
+    /// Where turns' calls are read from: the ledger a host's providers write.
     @ObservationIgnored public var ledger: UsageLedger?
+    /// The calls a turn shows where there is no ledger to read them from, such as the demo's
+    /// (`DemoData.turnCalls(session:turn:)`); without either, a turn shows none.
+    @ObservationIgnored public var sampleTurnCalls: (@MainActor (LiveSession, SessionUsage.Turn) -> [TurnCall])?
     public var glowHidden = false
     /// Advances every few seconds so countdowns re-render.
     public internal(set) var now = Date()
@@ -388,7 +391,7 @@ public final class UsageStore {
             let read = (try? await ledger.turnCalls(SessionUsageRequest(session), from: turn.start, through: turn.end)) ?? []
             calls = await Task.detached(priority: .userInitiated) { CallTools.attach(to: read) }.value
         } else {
-            calls = DemoData.turnCalls(session: session.id, turn: turn)
+            calls = sampleTurnCalls?(session, turn) ?? []
         }
         // The focus may have moved while the calls were read.
         guard focusedSession?.id == session.id, focusedTurn == index else { return }

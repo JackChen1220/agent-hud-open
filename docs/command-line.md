@@ -15,7 +15,7 @@ Launch options, read-only probes and adapter commands of the standalone applicat
 | `--open-panel` | Start with the notch panel expanded. |
 | `--show-onboarding` | Show the first-launch window even when onboarding is complete. |
 | `--reset-defaults` | Remove the application's stored preferences before starting. |
-| `--snapshot <dir>` | Render every screen at 2× to PNG files in `<dir>` from sample data, then quit. `AGENTHUD_SNAPSHOT_PREFIX=<name>` limits rendering to snapshots whose name starts with the prefix, for example `settings-`. |
+| `--snapshot <dir>` | Render every screen at 2× to PNG files in `<dir>` from sample data, then quit; only a debug build renders, and a release build says so and quits. `AGENTHUD_SNAPSHOT_PREFIX=<name>` limits rendering to snapshots whose name starts with the prefix, for example `settings-`. |
 
 `make demo` runs `--demo --show-settings`; `make snapshot` runs `--snapshot build/snapshots` (override the directory with `SNAPSHOT_DIR=…`).
 

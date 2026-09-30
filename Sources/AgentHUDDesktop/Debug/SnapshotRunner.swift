@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 import AgentHUDCore
 
+// Rendering every screen is a development tool; release builds carry none of it.
+#if DEBUG
 /// `--snapshot <dir>`: renders every screen at 2× to PNG for visual verification against the design.
 /// Views are hosted in a real (off-screen) window so AppKit-backed controls such as sliders render too.
 @MainActor
@@ -16,6 +18,7 @@ public enum SnapshotRunner {
             L10n.setLanguage(language)
         }
         let store = UsageStore(provider: DemoUsageProvider(), settings: settings)
+        store.sampleTurnCalls = { DemoData.turnCalls(session: $0.id, turn: $1) }
         store.replace(report: DemoUsageProvider.report(agents: settings.agents, historyHours: UsageStore.historyHours, now: Date()))
 
         let folder = URL(fileURLWithPath: directory, isDirectory: true)
@@ -66,7 +69,7 @@ public enum SnapshotRunner {
             save("alert-permission-\(name)-detail", IslandScene(store: store, settings: settings, open: true, light: false, alert: alert, showsAlertDetails: true), folder: folder, scheme: .dark)
             save("alert-permission-\(name)-inline", IslandScene(store: store, settings: settings, open: true, light: false, alert: alert), folder: folder, scheme: .dark)
             guard name == "bash" else { continue }
-            let queue = PermissionRequest.demo()
+            let queue = DemoData.permissionRequests()
             let queued = IslandAlert.permission(queue[0])
             save("alert-permission-queued-compact", IslandScene(store: store, settings: settings, open: false, light: false, alert: queued, waitingRequests: queue), folder: folder, scheme: .dark)
             save("alert-permission-queued-detail", IslandScene(store: store, settings: settings, open: true, light: false, alert: queued, showsAlertDetails: true, waitingRequests: queue), folder: folder, scheme: .dark)
@@ -755,3 +758,12 @@ struct LogoQueueScene: View {
             .background(Color(white: 0.10))
     }
 }
+#else
+/// `--snapshot <dir>` renders the screens in debug builds only; a release build renders nothing and says so.
+@MainActor
+public enum SnapshotRunner {
+    public static func run(language: AppLanguage? = nil, into directory: String) async {
+        FileHandle.standardError.write(Data("Snapshots are rendered by debug builds, such as make snapshot.\n".utf8))
+    }
+}
+#endif
