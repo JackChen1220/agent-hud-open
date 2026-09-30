@@ -13,6 +13,10 @@ public struct AgentDescriptor: Hashable, Codable, Sendable, Identifiable {
     public let billingPool: BillingPool?
     /// The account whose quota this row shows. Nil for token consumers, API rows and placeholders.
     public let account: ProviderAccount?
+    /// False for a quota window that limits one model family or product, such as Claude's weekly window of one family or a
+    /// Codex bucket other than `codex`; true for a window over all of the account's models, for every other row, and for
+    /// rows saved before the flag existed.
+    public let allModels: Bool
 
     public init(
         id: String,
@@ -22,7 +26,8 @@ public struct AgentDescriptor: Hashable, Codable, Sendable, Identifiable {
         enabled: Bool,
         connected: Bool = true,
         billingPool: BillingPool? = nil,
-        account: ProviderAccount? = nil
+        account: ProviderAccount? = nil,
+        allModels: Bool = true
     ) {
         self.id = id
         self.vendor = vendor
@@ -32,6 +37,35 @@ public struct AgentDescriptor: Hashable, Codable, Sendable, Identifiable {
         self.connected = connected
         self.billingPool = billingPool
         self.account = account
+        self.allModels = allModels
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, vendor, model, source, enabled, connected, billingPool, account, allModels
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: try c.decode(String.self, forKey: .id), vendor: try c.decode(String.self, forKey: .vendor),
+                  model: try c.decode(String.self, forKey: .model), source: try c.decode(String.self, forKey: .source),
+                  enabled: try c.decode(Bool.self, forKey: .enabled), connected: try c.decode(Bool.self, forKey: .connected),
+                  billingPool: try c.decodeIfPresent(BillingPool.self, forKey: .billingPool),
+                  account: try c.decodeIfPresent(ProviderAccount.self, forKey: .account),
+                  allModels: try c.decodeIfPresent(Bool.self, forKey: .allModels) ?? true)
+    }
+
+    /// A row over every model, the usual case, is stored without the flag.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(vendor, forKey: .vendor)
+        try c.encode(model, forKey: .model)
+        try c.encode(source, forKey: .source)
+        try c.encode(enabled, forKey: .enabled)
+        try c.encode(connected, forKey: .connected)
+        try c.encodeIfPresent(billingPool, forKey: .billingPool)
+        try c.encodeIfPresent(account, forKey: .account)
+        if !allModels { try c.encode(false, forKey: .allModels) }
     }
 
     /// The provider's own window name inside the account-scoped id (`codex`, `claude-session`, `weekly`).
@@ -74,7 +108,8 @@ public struct AgentDescriptor: Hashable, Codable, Sendable, Identifiable {
             enabled: enabled ?? self.enabled,
             connected: connected ?? self.connected,
             billingPool: billingPool,
-            account: account
+            account: account,
+            allModels: allModels
         )
     }
 

@@ -2,6 +2,11 @@
 
 Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the same number. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
+## Unreleased
+
+- Host API:
+  - `AgentDescriptor.allModels` is false for a quota window that limits one model family or product, Claude's weekly window of one family and every Codex window outside the `codex` bucket, as `ClaudeQuotaWindowRow.allModels` and `CodexRateLimits.Row.allModels` set it, and true for every other row. A row saved without it reads as true, only a false one is saved with it, and `SettingsStore.mergeDiscovered` refreshes it with a row's name.
+
 ## 0.4.29 — 2026-10-01
 
 - Agent HUD Open is unchanged from 0.4.28. This version carries the release of the Agent HUD app built on it.

@@ -797,6 +797,7 @@ final class ClaudeCodeProviderTests: XCTestCase {
 
         XCTAssertEqual(report.snapshots.map(\.agentId), ["claude-session", "claude-weekly", "claude-weekly-opus"].map(account.windowID), "one row per quota window")
         XCTAssertEqual(report.discoveredAgents.map(\.model), ["window.session", "window.weekly", "window.weekly.Opus"])
+        XCTAssertEqual(report.discoveredAgents.map(\.allModels), [true, true, false], "the account's rows keep the flag")
         XCTAssertEqual(report.discoveredAgents.map { L10n.modelLabel($0.model) }, ["当前会话 · 5h", "本周 · 全部模型", "本周 · Opus"])
         XCTAssertEqual(report.snapshot(for: account.windowID("claude-session"))?.remainingPct, 72)
         XCTAssertEqual(report.snapshot(for: account.windowID("claude-session"))?.windowDuration, 5 * 3600)

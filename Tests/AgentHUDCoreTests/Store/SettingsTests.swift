@@ -97,6 +97,19 @@ final class AgentDescriptorTests: XCTestCase {
         XCTAssertEqual(DemoData.agents.moving(id: "codex", to: 99), DemoData.agents)
     }
 
+    func testAllModelsIsSavedOnlyWhereFalse() throws {
+        let scoped = AgentDescriptor(id: "claude-weekly-fable", vendor: "Claude", model: L10n.windowWeeklyPrefix + "Fable", source: "",
+                                     enabled: true, allModels: false)
+        let every = AgentDescriptor(id: "claude-weekly", vendor: "Claude", model: L10n.windowWeekly, source: "", enabled: true)
+        func keys(_ agent: AgentDescriptor) throws -> Set<String> {
+            Set((try JSONSerialization.jsonObject(with: JSONEncoder().encode(agent)) as! [String: Any]).keys)
+        }
+        XCTAssertTrue(try keys(scoped).contains("allModels"))
+        XCTAssertFalse(try keys(every).contains("allModels"))
+        XCTAssertEqual(try JSONDecoder().decode([AgentDescriptor].self, from: JSONEncoder().encode([scoped, every])), [scoped, every])
+        XCTAssertFalse(scoped.with(enabled: false).allModels)
+    }
+
     func testWithKeepsOtherFields() {
         let a = DemoData.agents[0].with(enabled: false)
         XCTAssertFalse(a.enabled)
@@ -297,6 +310,20 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.agents.map(\.id), ["codex", "claude-sonnet", "claude-opus", "chatgpt", "antigravity", "deepseek"])
         XCTAssertEqual(reloaded.agents[1], models[1].with(enabled: false))
         XCTAssertEqual(reloaded.enabledAgents.map(\.id), ["codex", "claude-opus", "chatgpt"])
+    }
+
+    func testMergeDiscoveredRefreshesWhetherARowCoversEveryModel() throws {
+        let defaults = makeDefaults()
+        // Saved before the flag existed, with its switch off.
+        defaults.set(Data(#"[{"id":"claude-weekly-fable","vendor":"Claude","model":"window.weekly.Fable","source":"","enabled":false,"connected":true}]"#.utf8),
+                     forKey: SettingsStore.Keys.agents)
+        let store = SettingsStore(defaults: defaults)
+        XCTAssertEqual(store.agents.map(\.allModels), [true], "a row saved without the flag reads as covering every model")
+        store.mergeDiscovered([AgentDescriptor(id: "claude-weekly-fable", vendor: "Claude", model: "window.weekly.Fable", source: "",
+                                               enabled: true, allModels: false)])
+        XCTAssertEqual(store.agents.map(\.allModels), [false])
+        XCTAssertEqual(store.agents.map(\.enabled), [false], "the switch survives")
+        XCTAssertEqual(SettingsStore(defaults: defaults).agents.map(\.allModels), [false], "the flag is saved")
     }
 
     func testMergeDiscoveredInsertsByVendorAndUpdatesNames() {

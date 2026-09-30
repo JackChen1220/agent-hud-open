@@ -27,13 +27,16 @@ public struct CodexRateLimits: Decodable, Sendable {
         public let window: Window
         public let weekly: Window?
         public var account: ProviderAccount? = nil
+        /// Only the `codex` bucket limits every model; another bucket limits its own model.
+        public var allModels = true
 
         public var descriptor: AgentDescriptor {
-            AgentDescriptor(id: id, vendor: "Codex", model: label, source: L10n.sourceCodexAppServer, enabled: true, account: account)
+            AgentDescriptor(id: id, vendor: "Codex", model: label, source: L10n.sourceCodexAppServer, enabled: true, account: account,
+                            allModels: allModels)
         }
 
         func scoped(to account: ProviderAccount) -> Row {
-            Row(id: account.windowID(id), label: label, window: window, weekly: weekly, account: account)
+            Row(id: account.windowID(id), label: label, window: window, weekly: weekly, account: account, allModels: allModels)
         }
     }
 
@@ -112,7 +115,8 @@ public struct CodexRateLimits: Decodable, Sendable {
                 let name = id == "codex" ? nil : VendorCatalog.window(bucket.limitName ?? id, vendor: "Codex")
                 // The shared primary window keeps the old placeholder's id as its window key, preserving preferences.
                 let rowId = id == "codex" && slot == "primary" ? "codex" : "codex:\(id):\(slot)"
-                return Row(id: rowId, label: name.map { "\($0) · \(period)" } ?? period, window: window, weekly: weekly)
+                return Row(id: rowId, label: name.map { "\($0) · \(period)" } ?? period, window: window, weekly: weekly,
+                           allModels: id == "codex")
             }
         }
     }

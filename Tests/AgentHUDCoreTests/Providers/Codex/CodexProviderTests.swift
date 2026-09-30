@@ -351,6 +351,13 @@ final class CodexProviderTests: XCTestCase {
         XCTAssertEqual(labels["codex:codex_next:primary"], "Next Model · Weekly", "a window the catalog does not name keeps the service's name")
     }
 
+    func testOnlyTheCodexBucketCoversEveryModel() throws {
+        let limits = try decode(#"{"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":3,"windowDurationMins":300},"secondary":{"usedPercent":9,"windowDurationMins":10080}},"base_model_inference":{"limitName":"gpt-reserve","primary":{"usedPercent":0,"windowDurationMins":10080}}}}"#)
+        XCTAssertEqual(limits.rows.map(\.id), ["codex", "codex:codex:secondary", "codex:base_model_inference:primary"])
+        XCTAssertEqual(limits.rows.map(\.descriptor.allModels), [true, true, false])
+        XCTAssertEqual(limits.rows(home: "").map(\.descriptor.allModels), [true, true, false], "an account's rows keep the flag")
+    }
+
     func testLocatorWorksWithoutDesktopOrWithoutCLI() throws {
         let dir = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
