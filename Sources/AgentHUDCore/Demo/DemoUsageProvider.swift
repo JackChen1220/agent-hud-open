@@ -11,9 +11,8 @@ public struct DemoUsageProvider: UsageProvider {
 
     public static func report(agents: [AgentDescriptor], historyHours: Int, now: Date) -> UsageReport {
         let consumers = agents.filter { DemoData.quota[$0.id] != nil }
-        let hourStart = Calendar.current.date(bySetting: .minute, value: 0, of: now).map {
-            Calendar.current.date(bySetting: .second, value: 0, of: $0) ?? $0
-        } ?? now
+        // The series' last hour is the one after the current hour; its quarters, all still ahead, stay empty.
+        let lastHour = Calendar.current.dateInterval(of: .hour, for: now)?.end ?? now
         let tokens = DemoSeries.hourlyTokens(agentCount: max(1, consumers.count), hours: historyHours)
         var usage: [UsageBucket] = []
         // The weeks before the history fill the month the charts can show, an hour to a bucket, from a series of their own
@@ -23,11 +22,11 @@ public struct DemoUsageProvider: UsageProvider {
         for (index, agent) in consumers.enumerated() {
             for hour in 0..<earlier {
                 let total = older[hour][index] * 1_000
-                usage.append(.init(start: hourStart.addingTimeInterval(TimeInterval(hour - earlier - historyHours + 1) * 3600), agentId: agent.id,
+                usage.append(.init(start: lastHour.addingTimeInterval(TimeInterval(hour - earlier - historyHours + 1) * 3600), agentId: agent.id,
                                    tokensIn: total * 4 / 5, tokensOut: total - total * 4 / 5, cacheReadTokens: total * 2))
             }
             for hour in 0..<historyHours {
-                let start = hourStart.addingTimeInterval(TimeInterval(hour - historyHours + 1) * 3600)
+                let start = lastHour.addingTimeInterval(TimeInterval(hour - historyHours + 1) * 3600)
                 // Demo usage fills every quarter hour so every chart granularity is populated.
                 for quarter in 0..<4 {
                     let bucket = start.addingTimeInterval(Double(quarter) * 900)
