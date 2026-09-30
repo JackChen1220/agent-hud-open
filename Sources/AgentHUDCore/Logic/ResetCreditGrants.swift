@@ -52,12 +52,12 @@ public struct ResetCreditTracker: Sendable {
         var result: [ResetCreditGrant] = []
         for id in accountIDs.sorted() {
             guard let account = report.observation(accountID: id) else { continue }
+            let reading = report.assess(.account(account), now: now)
             // Signing back in to an account is a new baseline, not a grant observed while it was away.
-            guard account.isCurrent else { previous[id] = nil; continue }
-            guard let credits = account.resetCredits,
-                  account.quotaNotice == nil, report.sourceNotices[account.account.provider] == nil,
-                  account.observedAt <= now,
-                  now.timeIntervalSince(account.observedAt) < AlertPolicy.maximumReadingAge else { continue }
+            guard reading.isCurrentAccount else { previous[id] = nil; continue }
+            // Any notice filed under the account's provider holds the credits back too, one about its logs included.
+            let providerNoticeFree = report.sourceNotices[account.account.provider] == nil
+            guard let credits = account.resetCredits, reading.confirmsEvents, providerNoticeFree else { continue }
             let old = previous[id]
             guard old == nil || account.observedAt > old!.observedAt else { continue }
             previous[id] = Observation(observedAt: account.observedAt, count: credits.availableCount,
