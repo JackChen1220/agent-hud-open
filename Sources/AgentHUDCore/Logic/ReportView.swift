@@ -11,11 +11,13 @@ public struct ReportView: Sendable {
         public let session: LiveSession
         /// The session's vendor, from the consumer its model is, a settings row, a report row or its id, and its client.
         public let source: SessionSource
-        /// The newest turn from the session's vendor, or from any provider without a vendor (`ReportView.newest(_:)`).
+        /// The newest turn from the session's vendor, or from any provider without a vendor: the one that started last, a
+        /// turn without a start counting from when it was observed, then the one observed last, the later listed of equals.
         public let turn: SessionTurn?
         /// When the session last did something: its newest turn event from any provider, or its end when that is later;
-        /// without turns, its end, or while in flight the reading that last saw it. A permission request waiting for an
-        /// answer is an event too, and so are the prompt and the Stop hook of a hook turn that takes the reading's place.
+        /// without turns, its end, or while in flight when its log last recorded anything, else the reading that last saw
+        /// it. A permission request waiting for an answer is an event too, and so are the prompt and the Stop hook of a
+        /// hook turn that takes the reading's place.
         public let lastEventAt: Date
         /// What the agent last said: the message of the newest turn that carries one, from the providers `turn` comes
         /// from, or what it said at the Stop hook of a hook turn that takes the reading's place. Nil while live status is
