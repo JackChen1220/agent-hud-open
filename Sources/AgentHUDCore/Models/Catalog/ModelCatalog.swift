@@ -73,6 +73,15 @@ public enum ModelCatalog {
         }
     }
 
+    /// What each kind of some tokens would cost at list price, all in the currency of the list that priced them.
+    public struct KindCosts: Hashable, Sendable {
+        public let currency: String
+        /// The kinds that had tokens; a kind without tokens is absent.
+        public let amounts: [TokenKind: Decimal]
+
+        public var total: Decimal { amounts.values.reduce(0, +) }
+    }
+
     /// The catalog name of a consumer id: the model its client called, after the client's `<source>-model:` prefix and
     /// before a `#` that names the provider the call went through, without a dated snapshot suffix or Claude Code's 1M
     /// marker. Whichever client made the call, the same model has the same list price, so Claude Code pointed at
@@ -129,6 +138,26 @@ public enum ModelCatalog {
         }
         cost.unpriced.sort()
         return priced ? cost : nil
+    }
+
+    /// What a usage bucket's tokens would cost at list price, kind by kind, on the platform `regions` finds its client on:
+    /// the China list in yuan for a client on the China platform, the international list in US dollars otherwise, and
+    /// DeepSeek's peak rates for a bucket that starts in its peak hours. A bucket sums calls, so it is priced at the base
+    /// rates, as the Tokens page prices its buckets. nil when the model has no list price on that platform.
+    public static func cost(of bucket: UsageBucket, regions: PriceRegions) -> KindCosts? {
+        guard let model = model(for: bucket.agentId), let list = model.price(in: regions.region(for: bucket.agentId)) else { return nil }
+        let rates = list.price.rates, kinds = bucket.kinds, factor = factor(model, at: bucket.start)
+        var amounts: [TokenKind: Decimal] = [:]
+        for kind in TokenKind.allCases where kinds[kind] > 0 {
+            let rate: Decimal = switch kind {
+            case .input: rates.input
+            case .cacheWrite: rates.cacheWrite
+            case .cacheRead: rates.cacheRead
+            case .output, .reasoning: rates.output
+            }
+            amounts[kind] = Decimal(kinds[kind]) * rate * factor / 1_000_000
+        }
+        return KindCosts(currency: list.region.currency, amounts: amounts)
     }
 
     private static func amount(_ kinds: TokenKinds, at rates: Rates) -> Decimal {
