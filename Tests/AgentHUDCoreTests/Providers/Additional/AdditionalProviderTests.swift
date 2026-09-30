@@ -50,6 +50,15 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(quota.windows[0].duration, 604800)
     }
 
+    /// The bucket names of Antigravity's usage panel, as its models page shows them; the fixture is derived from that page,
+    /// not captured from an account.
+    func testAntigravityReadsItsOwnBucketNamesAsTheirPeriods() throws {
+        let quota = try AntigravityClient.summary(json(#"{"groups":[{"displayName":"Gemini Models","buckets":[{"bucketId":"gemini-5h","displayName":"Five Hour Limit","remainingFraction":0.5},{"bucketId":"gemini-7d","displayName":"Weekly Limit","remainingFraction":0.75}]},{"displayName":"Claude and GPT models","buckets":[{"bucketId":"third-party-5h","displayName":"FIVE HOUR LIMIT","remainingFraction":1},{"bucketId":"third_party_five_hour","remainingFraction":1}]}]}"#))
+        XCTAssertEqual(quota.windows.map(\.label), ["Gemini Models · Five Hour Limit", "Gemini Models · Weekly Limit",
+                                                    "Claude and GPT models · FIVE HOUR LIMIT", "Claude and GPT models · third_party_five_hour"])
+        XCTAssertEqual(quota.windows.map(\.duration), [18000, 604800, 18000, 18000])
+    }
+
     func testAntigravityOnlyDiscoversItsOwnServersAndQuotedFlags() {
         let rows = AntigravityClient.candidates("""
         11 /Applications/Antigravity.app/Contents/Resources/language_server --csrf_token 'fixture csrf' --extension_server_port=42111

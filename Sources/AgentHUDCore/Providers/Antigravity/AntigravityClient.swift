@@ -106,9 +106,11 @@ struct AntigravityClient: Sendable {
                 guard let fraction, (0...1).contains(fraction) else { continue }
                 guard ids.insert(id).inserted else { throw ProviderFailure.format }
                 let label = [group["displayName"].stringValue, bucket["displayName"].stringValue ?? id].compactMap { $0 }.joined(separator: " · ")
+                // Antigravity names its buckets Weekly Limit and Five Hour Limit; ids write the period with an underscore.
                 let cadence = (id + " " + (bucket["displayName"].stringValue ?? "")).lowercased()
+                    .replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ")
                 let duration: TimeInterval? = cadence.contains("weekly") ? 604800
-                    : cadence.contains("five_hour") || cadence.contains("5-hour") || cadence.contains("5 hour") ? 18000 : nil
+                    : cadence.contains("five hour") || cadence.contains("5 hour") ? 18000 : nil
                 result.windows.append(.init(id: "antigravity:\(id)", label: label, remaining: fraction * 100,
                     reset: DateParsing.internet(bucket["resetTime"].stringValue), duration: duration))
             }
