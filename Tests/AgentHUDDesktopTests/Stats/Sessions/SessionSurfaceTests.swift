@@ -164,6 +164,29 @@ final class SessionSurfaceTests: XCTestCase {
         XCTAssertEqual(states.map(\.opens), [true, false, false, false])
     }
 
+    /// The card above the list sums the sessions filed under today in either arrangement: last active today or in flight,
+    /// one begun on an earlier day included, and one last active yesterday evening, though within the last 24 hours, not.
+    @MainActor
+    func testTheTodayCardSumsTheSessionsFiledUnderTodayInEitherArrangement() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let store = try makeStore()
+        // Now is 08:00 UTC.
+        show([
+            session("today", started: -2 * hour, ended: -hour, observed: -hour),
+            session("yesterday-running", started: -20 * hour, observed: -60),
+            session("last-week-active-today", started: -8 * 24 * hour, ended: -3 * hour, observed: -3 * hour),
+            session("yesterday-evening", started: -12 * hour, ended: -10 * hour, observed: -10 * hour),
+        ], in: store)
+        let today = calendar.startOfDay(for: now)
+        for activeOnly in [false, true] {
+            let listed = store.listedSessions(source: nil, activeOnly: activeOnly)
+            XCTAssertTrue(listed.contains { $0.id == "yesterday-evening" })
+            XCTAssertEqual(SessionList.filedToday(listed, store: store, today: today, calendar: calendar).map(\.id),
+                           ["yesterday-running", "today", "last-week-active-today"], "active only: \(activeOnly)")
+        }
+    }
+
     /// The Sessions page counts the listed sessions that are running, by the source picked and the list shown; the island
     /// counts every running session.
     @MainActor
