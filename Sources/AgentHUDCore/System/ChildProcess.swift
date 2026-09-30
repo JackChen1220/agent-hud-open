@@ -88,7 +88,8 @@ public final class ChildProcess: @unchecked Sendable {
         }
     }
 
-    /// The next complete stdout line; nil at the deadline, or once the child has exited and no complete line is left.
+    /// The next complete stdout line; nil at the deadline, or once the child has exited, or stdout outgrew its cap, and no
+    /// complete line is left.
     public func line(before deadline: Date) async throws -> String? {
         try await wait(until: deadline, for: .line)
         return queue.sync {
@@ -144,10 +145,11 @@ public final class ChildProcess: @unchecked Sendable {
     }
 
     /// Resumes the waiter when its condition holds, its deadline passed (`expired`) or it was cancelled, even before it was registered.
+    /// A line waiter also wakes once stdout outgrew its cap: the lines after the bytes it lost cannot be trusted.
     private func wake(expired id: Int? = nil) {
         guard let current = waiter else { return }
         let ready = collected.status != nil
-            || current.condition == .line && collected.stdout[lineStart...].contains(0x0A)
+            || current.condition == .line && (collected.truncated || collected.stdout[lineStart...].contains(0x0A))
         guard ready || current.id == id || current.id == cancelledWait else { return }
         waiter = nil
         current.continuation.resume()

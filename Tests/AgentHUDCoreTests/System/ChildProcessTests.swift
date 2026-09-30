@@ -63,6 +63,17 @@ final class ChildProcessTests: XCTestCase {
         XCTAssertEqual(short.output.status, 0)
     }
 
+    func testALineWaiterReturnsOnceStdoutPassesItsCap() async throws {
+        let child = try ChildProcess(shell, ["-c", "head -c 4096 /dev/zero; exec sleep 30"], stdoutLimit: 1024)
+        defer { child.stop() }
+        let started = Date()
+        let line = try await child.line(before: Date().addingTimeInterval(10))
+        XCTAssertNil(line, "no whole line is left once bytes were lost")
+        XCTAssertTrue(child.output.truncated)
+        XCTAssertNil(child.output.status, "the child still runs")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2, "the waiter does not sit out its deadline")
+    }
+
     func testCancellationStopsTheChild() async throws {
         let child = try ChildProcess(URL(fileURLWithPath: "/bin/sleep"), ["30"], stdoutLimit: 1024)
         let waiting = Task { try await child.waitForExit(before: Date().addingTimeInterval(30)) }
