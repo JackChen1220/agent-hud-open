@@ -51,12 +51,8 @@ public struct ReportView: Sendable {
     /// - agents: the settings' rows, in their order.
     public init(report: UsageReport?, agents: [AgentDescriptor], settings: Settings, now: Date) {
         let visible = report?.visibleRows(agents) ?? agents
-        let enabled = visible.filter { agent in
-            guard agent.enabled else { return false }
-            guard let pool = agent.billingPool, pool.product == .plan else { return true }
-            guard let report else { return false }
-            return report.activeQuotaPoolIDs?[pool.provider]?.contains(pool.id) ?? true
-        }
+        // Without a report, a plan pool's rows stay hidden.
+        let enabled = visible.filter { $0.enabled && Self.isPoolActive($0, in: report, withoutReport: false) }
         let rows = enabled.filter { !$0.isAPIBilled }.enumerated().map { index, agent in
             let snapshot = report?.snapshot(for: agent.id)
             let isCurrent = report?.isCurrent(agent) ?? true
@@ -110,6 +106,14 @@ public struct ReportView: Sendable {
     }
 
     // MARK: Quota
+
+    /// Whether a row's plan pool is active: a row without one always is, and a plan pool is unless the report's inventory
+    /// for its provider leaves it out. Without a report, `withoutReport` answers.
+    static func isPoolActive(_ agent: AgentDescriptor, in report: UsageReport?, withoutReport: Bool) -> Bool {
+        guard let pool = agent.billingPool, pool.product == .plan else { return true }
+        guard let report else { return withoutReport }
+        return report.activeQuotaPoolIDs?[pool.provider]?.contains(pool.id) ?? true
+    }
 
     /// The vendor of each quota row that shows a status level, in row order. An alert's pulse lights the part of the glow
     /// its vendor's entries take in this list.

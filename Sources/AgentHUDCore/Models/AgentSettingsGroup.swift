@@ -16,11 +16,8 @@ public struct AgentSettingsGroup: Identifiable, Equatable, Sendable {
     /// One group per vendor with something to set: rows a provider reported within the retention period, a service,
     /// or a client found on this Mac. A client that is neither installed nor reporting has no group.
     public static func make(sources: [SourceStatus], agents: [AgentDescriptor], report: UsageReport? = nil) -> [Self] {
-        let agents = (report?.visibleRows(agents) ?? agents).filter { agent in
-            guard let pool = agent.billingPool, pool.product == .plan,
-                  let active = report?.activeQuotaPoolIDs?[pool.provider] else { return true }
-            return active.contains(pool.id)
-        }
+        // Without a report, a plan pool's rows are listed.
+        let agents = (report?.visibleRows(agents) ?? agents).filter { ReportView.isPoolActive($0, in: report, withoutReport: true) }
         let existing = agents.agentGroups
         var ids = existing.map(\.id)
         let found = sources.filter { $0.state != .notDetected }.map(\.name)
