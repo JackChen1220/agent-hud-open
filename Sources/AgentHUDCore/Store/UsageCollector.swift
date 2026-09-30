@@ -1,3 +1,4 @@
+import AgentHUDSupport
 import Foundation
 
 /// A host's extension points in the collection pipeline. Every hook runs on the main actor inside the pass that fetched
@@ -32,6 +33,8 @@ final class UsageCollector {
     private let settings: SettingsStore
     private let hooks: UsageCollectionHooks
     private var pollTask: Task<Void, Never>?
+    /// Moves the store's clock on, so countdowns re-render, and confirms a quiet stretch as current data.
+    private var clockTask: Task<Void, Never>?
     /// Wakes the waiting loop: a file change, a timer, a refresh, a settings change that needs a read.
     private var wake: AsyncStream<Void>.Continuation?
     /// One pass of the pipeline runs at a time; a request during a pass is served by the next one.
@@ -90,11 +93,21 @@ final class UsageCollector {
                 timer.cancel()
             }
         }
+        clockTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(10))
+                guard let self, let store = self.store else { return }
+                store.now = Date()
+                self.confirmQuiet(at: store.now)
+            }
+        }
     }
 
     func stop() {
         pollTask?.cancel()
         pollTask = nil
+        clockTask?.cancel()
+        clockTask = nil
         wake?.finish()
         wake = nil
         changes = nil
@@ -324,5 +337,49 @@ final class UsageCollector {
             store.lastError = error.localizedDescription
         }
         store.now = Date()
+    }
+}
+
+extension UsageReport {
+    /// The times at which this report's activity changes with time alone: when a running turn reaches the age at which
+    /// it no longer counts as current, and when a session whose source never said what its turn is doing reaches the
+    /// age at which a quiet log ends it. A source is read again at these times instead of being polled.
+    var activityChecks: [Date] {
+        let margin: TimeInterval = 1
+        var times = sessions.filter(\.isLive).map { $0.observedAt.addingTimeInterval(SessionPhase.Limits.quiet + margin) }
+        for turn in turns where turn.state == .running {
+            let observed = RecordCoding.date(turn.observedAtMs)
+            times.append(observed.addingTimeInterval(SessionPhase.Limits.quiet + margin))
+            times.append(observed.addingTimeInterval(UsageRefresh.activeTurnFreshness + margin))
+            times.append(observed.addingTimeInterval(SessionPhase.Limits.abandoned + margin))
+        }
+        return times
+    }
+
+    /// When an account reading of this source is next worth taking, counted from `since`, when its steps last ran.
+    /// A window moves only while work runs, so a running turn is read often, a session between turns slowly, and work
+    /// that finished after the last reading once more. An idle source's windows change only when they reset, and a
+    /// source that cannot see this Mac's work keeps the account interval.
+    func accountCheck(since: Date, now: Date, seesLocalWork: Bool) -> Date {
+        // A deadline remains due until an account request has actually run at or after it.
+        // Comparing with `now` loses the scheduled refresh as soon as the deadline arrives.
+        let reset = snapshots.filter { snapshot in
+            discoveredAgents.first(where: { $0.id == snapshot.agentId }).map(isCurrent) ?? true
+        }.compactMap(\.resetAt).filter { $0 > since }.min()
+        let regular: Date
+        let stale = now.addingTimeInterval(-UsageRefresh.activeTurnFreshness)
+        if turns.contains(where: { $0.state == .running && RecordCoding.date($0.observedAtMs) > stale }) {
+            regular = since.addingTimeInterval(UsageRefresh.runningAccountInterval)
+        } else if sessions.contains(where: { $0.isLive(at: now) }) {
+            regular = since.addingTimeInterval(UsageRefresh.liveAccountInterval)
+        } else if !seesLocalWork {
+            regular = since.addingTimeInterval(UsageRefresh.accountInterval)
+        } else if sessions.contains(where: { ($0.endedAt ?? .distantPast) > since }) {
+            regular = now
+        } else {
+            regular = reset == nil || snapshots.contains(where: { ($0.resetAt ?? .distantFuture) <= since })
+                ? since.addingTimeInterval(UsageRefresh.accountInterval) : .distantFuture
+        }
+        return min(regular, reset ?? .distantFuture)
     }
 }

@@ -1,86 +1,5 @@
-import AgentHUDSupport
 import Foundation
 import Observation
-
-/// One agent as shown in the hover panel / menu: descriptor + latest reading.
-public struct AgentRow: Hashable, Sendable, Identifiable {
-    public let agent: AgentDescriptor
-    public let remainingPct: Double?
-    public let level: StatusLevel?
-    public let resetAt: Date?
-    public let weeklyRemainingPct: Double?
-    /// Index into `AgentPalette` (position among enabled agents).
-    public let paletteIndex: Int
-    /// The account this window belongs to, when the provider identifies accounts.
-    public let account: AccountObservation?
-    /// What the surfaces weigh about the window's reading at the time the row was made; `level` follows its `showsLevel`.
-    public let assessment: ReadingAssessment
-
-    public var id: String { agent.id }
-
-    /// Other accounts show their last reading without a status level, so they stay out of the glow and alerts.
-    public var isCurrentAccount: Bool { assessment.isCurrentAccount }
-
-    /// Share of the window already consumed; the UI shows usage, not what is left.
-    public var usedPct: Double? { remainingPct.map { max(0, min(100, 100 - $0)) } }
-
-    public var missingQuotaLabel: String {
-        "—"
-    }
-
-    public func resetLabel(now: Date, compact: Bool = false) -> String {
-        guard isCurrentAccount else { return "—" }
-        if let resetAt {
-            if resetAt <= now { return L10n.text("等待更新", "Pending update") }
-            if resetAt.timeIntervalSince(now) < 60 { return "<1m" }
-        }
-        return compact ? Countdown.resetLabelCompact(resetAt, now: now) : Countdown.resetLabel(resetAt, now: now)
-    }
-}
-
-extension UsageReport {
-    /// The times at which this report's activity changes with time alone: when a running turn reaches the age at which
-    /// it no longer counts as current, and when a session whose source never said what its turn is doing reaches the
-    /// age at which a quiet log ends it. A source is read again at these times instead of being polled.
-    var activityChecks: [Date] {
-        let margin: TimeInterval = 1
-        var times = sessions.filter(\.isLive).map { $0.observedAt.addingTimeInterval(SessionPhase.Limits.quiet + margin) }
-        for turn in turns where turn.state == .running {
-            let observed = RecordCoding.date(turn.observedAtMs)
-            times.append(observed.addingTimeInterval(SessionPhase.Limits.quiet + margin))
-            times.append(observed.addingTimeInterval(UsageRefresh.activeTurnFreshness + margin))
-            times.append(observed.addingTimeInterval(SessionPhase.Limits.abandoned + margin))
-        }
-        return times
-    }
-
-    /// When an account reading of this source is next worth taking, counted from `since`, when its steps last ran.
-    /// A window moves only while work runs, so a running turn is read often, a session between turns slowly, and work
-    /// that finished after the last reading once more. An idle source's windows change only when they reset, and a
-    /// source that cannot see this Mac's work keeps the account interval.
-    func accountCheck(since: Date, now: Date, seesLocalWork: Bool) -> Date {
-        // A deadline remains due until an account request has actually run at or after it.
-        // Comparing with `now` loses the scheduled refresh as soon as the deadline arrives.
-        let reset = snapshots.filter { snapshot in
-            discoveredAgents.first(where: { $0.id == snapshot.agentId }).map(isCurrent) ?? true
-        }.compactMap(\.resetAt).filter { $0 > since }.min()
-        let regular: Date
-        let stale = now.addingTimeInterval(-UsageRefresh.activeTurnFreshness)
-        if turns.contains(where: { $0.state == .running && RecordCoding.date($0.observedAtMs) > stale }) {
-            regular = since.addingTimeInterval(UsageRefresh.runningAccountInterval)
-        } else if sessions.contains(where: { $0.isLive(at: now) }) {
-            regular = since.addingTimeInterval(UsageRefresh.liveAccountInterval)
-        } else if !seesLocalWork {
-            regular = since.addingTimeInterval(UsageRefresh.accountInterval)
-        } else if sessions.contains(where: { ($0.endedAt ?? .distantPast) > since }) {
-            regular = now
-        } else {
-            regular = reset == nil || snapshots.contains(where: { ($0.resetAt ?? .distantFuture) <= since })
-                ? since.addingTimeInterval(UsageRefresh.accountInterval) : .distantFuture
-        }
-        return min(regular, reset ?? .distantFuture)
-    }
-}
 
 /// Keeps a change handler registered with `UsageStore.observeChanges(_:)`; releasing it unregisters the handler.
 public final class UsageChangeObservation {
@@ -88,14 +7,6 @@ public final class UsageChangeObservation {
     init(_ cancellation: @escaping () -> Void) { self.cancellation = cancellation }
     public func cancel() { cancellation?(); cancellation = nil }
     deinit { cancellation?() }
-}
-
-/// Rows of one account inside a vendor group.
-public struct AccountSection: Identifiable, Sendable {
-    public let id: String
-    public let account: AccountObservation?
-    public let isCurrent: Bool
-    public let rows: [AgentRow]
 }
 
 /// Observable app state: the collected report, derived rows, glow appearance and stats selections.
@@ -106,7 +17,7 @@ public final class UsageStore {
     public internal(set) var lastError: String?
     public internal(set) var pausedUntil: Date?
     public internal(set) var isRefreshing = false
-    public private(set) var statsRange: StatsRange = .hours24
+    public internal(set) var statsRange: StatsRange = .hours24
     public var tokenBucketSize: TokenBucketSize = .hour1
     public var tokenDimensions: TokenDimensions = .fresh
     /// The agents whose cards the Tokens page shows, once picked there; until then the ones Settings shows that this Mac has.
@@ -144,7 +55,6 @@ public final class UsageStore {
     public let settings: SettingsStore
     private let accessAllowed: () -> Bool
     private let collector: UsageCollector
-    private var clockTask: Task<Void, Never>?
     /// A later poll that found nothing changed extends the report's coverage.
     var checkedAt: Date?
     @ObservationIgnored private var changeObservers: [UUID: @MainActor (UsageChanges) -> Void] = [:]
@@ -168,22 +78,11 @@ public final class UsageStore {
     // MARK: Lifecycle
 
     public func start() {
-        stop()
         collector.start()
-        clockTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(10))
-                guard let self else { return }
-                self.now = Date()
-                self.collector.confirmQuiet(at: self.now)
-            }
-        }
     }
 
     public func stop() {
         collector.stop()
-        clockTask?.cancel()
-        clockTask = nil
     }
 
     /// Reads local data now unless a pass is already running, in which case the next pass reads it.
@@ -257,14 +156,6 @@ public final class UsageStore {
     public var isPaused: Bool {
         guard let pausedUntil else { return false }
         return pausedUntil > now
-    }
-
-    // MARK: Stats selections
-
-    public func setStatsRange(_ range: StatsRange) {
-        guard range != statsRange else { return }
-        statsRange = range
-        if !range.bucketSizes.contains(tokenBucketSize) { tokenBucketSize = range.bucketSizes.last ?? .day1 }
     }
 
     // MARK: Derived
@@ -347,10 +238,7 @@ public final class UsageStore {
 
     /// The end of the data on screen: the report's time, or the latest poll that confirmed nothing changed.
     public var dataDate: Date { max(report?.generatedAt ?? now, checkedAt ?? .distantPast) }
-    public var statsInterval: DateInterval { statsRange.interval(endingAt: dataDate) }
 
-    /// `view.recentSessions`: the sessions whose last event is at most seven days old, whatever range the charts show.
-    public var statsSessions: [LiveSession] { view.recentSessions.map(\.session) }
 
     /// Whether live status is on for the session's vendor.
     public func liveStatusEnabled(for session: LiveSession) -> Bool { view.session(for: session).liveStatus }
@@ -376,129 +264,12 @@ public final class UsageStore {
     /// `view.liveSessions`.
     public var liveSessions: [LiveSession] { view.liveSessions.map(\.session) }
 
-    /// The focused session while this Mac still reports it.
-    public var focusedSession: LiveSession? { focusedSessionID.flatMap { view.session($0)?.session } }
-
-    public func sessionUsage(_ session: LiveSession) -> SessionUsage? { report?.sessionUsage?[session.id] }
-
-    /// Reads the focused turn's calls from the ledger, and the tools they asked for from their logs, once per focus.
-    public func loadFocusedTurnCalls() async {
-        guard focusedTurnCalls == nil, let session = focusedSession, let index = focusedTurn,
-              let turns = sessionUsage(session)?.turns, turns.indices.contains(index) else { return }
-        let turn = turns[index]
-        let calls: [TurnCall]
-        if let ledger {
-            let read = (try? await ledger.turnCalls(SessionUsageRequest(session), from: turn.start, through: turn.end)) ?? []
-            calls = await Task.detached(priority: .userInitiated) { CallTools.attach(to: read) }.value
-        } else {
-            calls = sampleTurnCalls?(session, turn) ?? []
-        }
-        // The focus may have moved while the calls were read.
-        guard focusedSession?.id == session.id, focusedTurn == index else { return }
-        focusedTurnCalls = calls
-    }
-
     /// What the agent last said in the session's newest turn that carries a message; nothing while live status is off.
     public func sessionMessage(_ session: LiveSession) -> String? { view.session(for: session).message }
-
-    /// Every token the session and its sub-agents spent, by kind: its breakdown, or its log's counts, which do not split
-    /// cache writes and reasoning apart.
-    public func sessionTokens(_ session: LiveSession) -> TokenKinds {
-        sessionUsage(session)?.total.kinds
-            ?? TokenKinds(tokensIn: session.tokensIn, tokensOut: session.tokensOut, cacheRead: session.cacheReadTokens)
-    }
-
-    /// Sessions under the local day they started on, in the order given; the newest day first. A session keeps its day
-    /// however long it runs, so a day's sessions and their totals do not move as they carry on.
-    public func sessionsByDay(_ sessions: [LiveSession], calendar: Calendar = .current) -> [(day: Date, sessions: [LiveSession])] {
-        var days: [(day: Date, sessions: [LiveSession])] = []
-        for session in sessions {
-            let day = calendar.startOfDay(for: session.startedAt)
-            if let index = days.firstIndex(where: { $0.day == day }) { days[index].sessions.append(session) }
-            else { days.append((day, [session])) }
-        }
-        return days.sorted { $0.day > $1.day }
-    }
 
     public var hasLiveSession: Bool { view.sessions.contains { $0.phase.isInFlight } }
 
     public var updatedAt: Date? { report?.generatedAt }
-
-    // MARK: Consumers (token spenders, e.g. model families)
-
-    /// Token spend is independent of which remaining-quota windows the user monitors.
-    public var consumers: [AgentDescriptor] { report?.consumers ?? [] }
-
-    /// Both surfaces show every model's token spend.
-    public var tokenColumns: [TokenColumn] {
-        ChartData.tokenBars(usage: report?.usage ?? [], agentIds: consumers.map(\.id), range: statsRange, bucketSize: tokenBucketSize,
-                            now: dataDate, dimensions: tokenDimensions)
-    }
-
-    public var statsActivity: ActivityGrid {
-        UsageAnalytics.activityGrid(usage: (report?.usage ?? []).filter { $0.start < dataDate },
-            since: dataDate.addingTimeInterval(-7 * 86400), calendar: .current, dimensions: tokenDimensions)
-    }
-
-    /// The platform each model's calls are priced on: the one its client reaches.
-    public var priceRegions: PriceRegions { PriceRegions(report: report) }
-
-    /// What each agent spent in the charted range, the most tokens of the selected kinds first.
-    public var agentUsage: [AgentUsage] {
-        AgentUsage.build(usage: report?.usage ?? [], consumers: consumers, sessions: sessions, breakdowns: report?.sessionUsage ?? [:],
-                         vendor: { self.sessionSource($0).vendor }, interval: statsInterval, dimensions: tokenDimensions,
-                         region: priceRegions.region(for:))
-    }
-
-    /// An agent's tokens of the selected kinds in each of the chart's buckets.
-    public func agentSeries(_ vendor: String) -> [Int] {
-        ChartData.tokenBars(usage: report?.usage ?? [], agentIds: consumers.filter { $0.vendor == vendor }.map(\.id), range: statsRange,
-                            bucketSize: tokenBucketSize, now: dataDate, dimensions: tokenDimensions).map(\.total)
-    }
-
-    /// The agents the Tokens page shows cards for: the ones picked there, or the vendors Settings shows that this Mac has.
-    public var shownAgents: Set<String> { pickedAgents ?? Set(enabledAgents.filter(\.connected).map(\.vendor)) }
-
-    /// What the charted tokens of the selected kinds would cost at list price, counted as the chart counts them, each
-    /// model on its client's platform and DeepSeek's peak hours at its peak rates.
-    public var statsListCost: ModelCatalog.ListCost? {
-        let interval = statsInterval, ids = Set(consumers.map(\.id)), dimensions = tokenDimensions
-        var tokens: [String: TokenKinds] = [:], peak: [String: TokenKinds] = [:], peakRated: [String: Bool] = [:]
-        for bucket in report?.usage ?? [] where ids.contains(bucket.agentId) && bucket.overlaps(interval) {
-            let kinds = dimensions.masking(bucket.kinds)
-            tokens[bucket.agentId, default: TokenKinds()] += kinds
-            let rated = peakRated[bucket.agentId] ?? (ModelCatalog.model(for: bucket.agentId)?.peakHours == true)
-            peakRated[bucket.agentId] = rated
-            if rated, ModelCatalog.isPeak(bucket.start) { peak[bucket.agentId, default: TokenKinds()] += kinds }
-        }
-        return ModelCatalog.cost(of: tokens, peak: peak, region: priceRegions.region)
-    }
-
-    /// What a period's tokens of the selected kinds would cost at list price.
-    public func periodListCost(_ period: UsagePeriods.Period) -> ModelCatalog.ListCost? {
-        let dimensions = tokenDimensions
-        return ModelCatalog.cost(of: periodTokens(period).mapValues(dimensions.masking),
-                                 peak: (report?.periods?.peak[period] ?? [:]).mapValues(dimensions.masking), region: priceRegions.region)
-    }
-
-    /// Each model's tokens in a period, for the models the charts show.
-    public func periodTokens(_ period: UsagePeriods.Period) -> [String: TokenKinds] {
-        let ids = Set(consumers.map(\.id))
-        return (report?.periods?.tokens[period] ?? [:]).filter { ids.contains($0.key) && !$0.value.isEmpty }
-    }
-
-    /// Quota switches do not change token-chart colors.
-    public func consumerPaletteIndex(_ id: String) -> Int {
-        consumers.firstIndex { $0.id == id } ?? 0
-    }
-
-    public func consumerName(_ id: String) -> String {
-        guard let consumer = consumers.first(where: { $0.id == id }) else {
-            guard let row = rows.first(where: { $0.id == id }) else { return id }
-            return L10n.modelLabel(row.agent.model)
-        }
-        return L10n.modelLabel(consumer.model)
-    }
 
     /// `view.rowGroups`.
     public var rowGroups: [(vendor: String, rows: [AgentRow])] { view.rowGroups }

@@ -126,7 +126,7 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 | Durations, token counts, dates and languages as written | `Sources/AgentHUDCore/Formatting/` |
 | Vendor names, client and window names, app bundle IDs | `Sources/AgentHUDCore/Models/Catalog/VendorCatalog.swift` |
 | Collection pipeline, signals and hooks; change sets | `Sources/AgentHUDCore/Store/UsageCollector.swift`, `System/FileChangeMonitor.swift`, `Models/Usage/UsageChanges.swift` |
-| Stores and data directory | `Sources/AgentHUDCore/Store/UsageStore.swift`, `SettingsStore.swift`, `Ledger/QuotaHistoryStore.swift`, `System/AppSupport.swift`; the usage ledger in `Sources/AgentHUDCore/Ledger/` |
+| Stores and data directory; the statistics window's selections and what they chart | `Sources/AgentHUDCore/Store/UsageStore.swift`, `SettingsStore.swift`, `UsageStore+Stats.swift`, `Ledger/QuotaHistoryStore.swift`, `System/AppSupport.swift`; the usage ledger in `Sources/AgentHUDCore/Ledger/` |
 | Application object, launch options, host pages | `Sources/AgentHUDDesktop/App/DesktopApplication.swift`, `LaunchOptions.swift`, `Settings/DesktopSettingsPage.swift` |
 | One copy at a time | `Sources/AgentHUDCore/System/InstanceLock.swift`, `Sources/AgentHUDDesktop/App/SingleInstance.swift` |
 | Island alerts: decision and presentation | `Sources/AgentHUDCore/Logic/Alerts/IslandEvents.swift`, `QuotaAlerts.swift`; `Sources/AgentHUDDesktop/Notch/Island/IslandController.swift`, `Notch/Alerts/IslandAlert.swift` |
