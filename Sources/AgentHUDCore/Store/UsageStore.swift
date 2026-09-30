@@ -99,7 +99,7 @@ public struct AccountSection: Identifiable, Sendable {
 @MainActor
 @Observable
 public final class UsageStore {
-    public internal(set) var report: UsageReport?
+    public internal(set) var report: UsageReport? { didSet { reportGeneration += 1 } }
     public internal(set) var lastError: String?
     public internal(set) var pausedUntil: Date?
     public internal(set) var isRefreshing = false
@@ -138,6 +138,10 @@ public final class UsageStore {
     /// A later poll that found nothing changed extends the report's coverage.
     var checkedAt: Date?
     @ObservationIgnored private var changeObservers: [UUID: @MainActor (UsageChanges) -> Void] = [:]
+    /// Counts the reports shown, so that a new one is told from the last without comparing them.
+    @ObservationIgnored private var reportGeneration = 0
+    /// The last view built, and what it was built from.
+    @ObservationIgnored private var built: (generation: Int, agents: [AgentDescriptor], settings: Settings, view: ReportView)?
 
     /// `hooks` let a host choose the history window, publish each provider report and merge it into the displayed report.
     public init(provider: any UsageProvider, settings: SettingsStore, accessAllowed: @escaping () -> Bool = { true },
@@ -254,91 +258,55 @@ public final class UsageStore {
 
     // MARK: Derived
 
-    /// Rows a provider reported within the retention period, in the user's order. Settings keep the switch and place
-    /// of a row that stopped being reported, so it comes back as it was; until then it is not shown anywhere.
-    public var visibleAgents: [AgentDescriptor] { report?.visibleRows(settings.agents) ?? settings.agents }
-
-    public var enabledAgents: [AgentDescriptor] {
-        visibleAgents.filter { agent in
-            guard agent.enabled else { return false }
-            guard let pool = agent.billingPool, pool.product == .plan else { return true }
-            guard let report else { return false }
-            return report.activeQuotaPoolIDs?[pool.provider]?.contains(pool.id) ?? true
-        }
+    /// What the Mac shows of the report now: its rows, balances, levels and sessions. It is built again only when the
+    /// report, the agent list, the settings or the time changed, and reading it tracks all four.
+    public var view: ReportView {
+        let report = self.report, agents = settings.agents, preferences = settings.settings, now = self.now
+        if let built, built.generation == reportGeneration, built.view.now == now, built.agents == agents,
+           built.settings == preferences { return built.view }
+        let view = ReportView(report: report, agents: agents, settings: preferences, now: now)
+        built = (reportGeneration, agents, preferences, view)
+        return view
     }
 
-    public var rows: [AgentRow] {
-        enabledAgents.filter { !$0.isAPIBilled }.enumerated().map { index, agent in
-            let snapshot = report?.snapshot(for: agent.id)
-            let isCurrent = report?.isCurrent(agent) ?? true
-            return AgentRow(
-                agent: agent,
-                remainingPct: snapshot?.remainingPct,
-                level: isCurrent && report?.quotaNotice(for: agent) == nil ? snapshot.flatMap {
-                    ($0.resetAt ?? .distantFuture) > now && now.timeIntervalSince($0.updatedAt) < AlertPolicy.maximumReadingAge
-                        ? AlertPolicy.quotaLevel(remaining: $0.remainingPct) : nil
-                } : nil,
-                resetAt: snapshot?.resetAt,
-                weeklyRemainingPct: snapshot?.weeklyRemainingPct,
-                paletteIndex: index,
-                account: agent.account.flatMap { report?.observation(accountID: $0.id) },
-                isCurrentAccount: isCurrent
-            )
-        }
-    }
+    /// `view.visibleAgents`.
+    public var visibleAgents: [AgentDescriptor] { view.visibleAgents }
 
-    public func row(for agentId: String) -> AgentRow? { rows.first { $0.id == agentId } }
+    /// `view.enabledAgents`.
+    public var enabledAgents: [AgentDescriptor] { view.enabledAgents }
 
-    public func quotaForecastHint(for agentId: String) -> String? {
-        guard let report, let snapshot = report.snapshot(for: agentId) else { return nil }
-        return QuotaForecast.hint(snapshot: snapshot, insights: report.insightsByAgent[agentId], now: now)
-    }
+    /// `view.rows`.
+    public var rows: [AgentRow] { view.rows }
 
-    /// Tokens per hour over the observed part of this quota window's current cycle. This is the same reading sent to
-    /// the phone: token history before the local ledger begins is not guessed at.
-    public func quotaTokensPerHour(for agentId: String) -> Double? {
-        guard let report, let snapshot = report.snapshot(for: agentId),
-              let consumers = report.consumerIdsByQuota[agentId] else { return nil }
-        return QuotaMath.tokensPerHour(snapshot: snapshot, consumers: consumers, usage: report.usage, now: now)
-    }
+    public func row(for agentId: String) -> AgentRow? { view.rows.first { $0.id == agentId } }
 
-    /// Account cards shown in the island and menu follow the agent switches.
-    public var enabledBilling: [APIBilling] {
-        let vendors = Set(enabledAgents.map(\.vendor))
-        return (report?.billing ?? []).filter { billing in
-            billing.billingPool.map { pool in enabledAgents.contains { $0.billingPool?.id == pool.id } } ?? vendors.contains(billing.vendor)
-        }
-    }
+    /// `view.forecastHint(for:)`.
+    public func quotaForecastHint(for agentId: String) -> String? { view.forecastHint(for: agentId) }
+
+    /// `view.tokensPerHour(for:)`, the same reading sent to the phone.
+    public func quotaTokensPerHour(for agentId: String) -> Double? { view.tokensPerHour(for: agentId) }
+
+    /// `view.billing`.
+    public var enabledBilling: [APIBilling] { view.billing }
 
     public func balanceLevel(_ balance: AccountBalance, billing: APIBilling) -> StatusLevel? {
         guard !balance.total.isNaN else { return nil }
         return AlertPolicy.balanceLevel([balance], isAvailable: billing.isAvailable)
     }
 
-    /// Status per enabled agent that has data, in glow order. Agents without a reading stay out of the glow.
-    public var levels: [StatusLevel] {
-        let quota = Dictionary(uniqueKeysWithValues: rows.compactMap { row in row.level.map { (row.id, $0) } })
-        let accounts = enabledBilling
-        var seenAccounts: Set<String> = []
-        return enabledAgents.flatMap { model -> [StatusLevel] in
-            if !model.isAPIBilled { return quota[model.id].map { [$0] } ?? [] }
-            return accounts.filter { $0.contains(model) && seenAccounts.insert($0.id).inserted }.compactMap {
-                AlertPolicy.balanceLevel($0.balances, isAvailable: $0.isAvailable)
-            }
-        }
-    }
+    /// `view.levels`.
+    public var levels: [StatusLevel] { view.levels }
 
-    /// The vendor of each quota row that shows a status level, in row order. An alert's pulse lights the part of the glow
-    /// its vendor's entries take in this list.
-    public var alertPulseVendors: [String] { rows.filter { $0.level != nil }.map { $0.agent.vendor } }
+    /// `view.alertPulseVendors`.
+    public var alertPulseVendors: [String] { view.alertPulseVendors }
 
     public var isIndexing: Bool { report?.indexing != nil }
 
     /// Includes the brief interval before the first refresh starts; a failed fetch ends loading.
     public var isLoading: Bool { isAccessAllowed && report == nil && !isPaused && (isRefreshing || lastError == nil) }
 
-    /// The most consumed window of a signed-in account, shown in the menu bar.
-    public var maxUsedPct: Double? { rows.filter(\.isCurrentAccount).compactMap(\.usedPct).max() }
+    /// `view.maxUsedPct`.
+    public var maxUsedPct: Double? { view.maxUsedPct }
 
     /// Newest first, by the last event each source reported: a prompt, a reply, a tool result or an approval request.
     /// A running session nothing has been heard from for half an hour sits below one that just answered.
@@ -394,10 +362,8 @@ public final class UsageStore {
         return SessionSource(vendor: vendor, client: session.client)
     }
 
-    public var subscriptions: [String: String] {
-        let vendors = Set(enabledAgents.map(\.vendor))
-        return (report?.subscriptions ?? [:]).filter { vendors.contains($0.key) }
-    }
+    /// `view.subscriptions`.
+    public var subscriptions: [String: String] { view.subscriptions }
 
     /// The end of the data on screen: the report's time, or the latest poll that confirmed nothing changed.
     public var dataDate: Date { max(report?.generatedAt ?? now, checkedAt ?? .distantPast) }
@@ -586,38 +552,12 @@ public final class UsageStore {
         return L10n.modelLabel(consumer.model)
     }
 
-    /// Rows grouped by vendor, preserving order.
-    public var rowGroups: [(vendor: String, rows: [AgentRow])] {
-        var order: [String] = []
-        var groups: [String: [AgentRow]] = [:]
-        for row in rows {
-            let vendor = row.agent.displayVendor
-            if groups[vendor] == nil { order.append(vendor) }
-            groups[vendor, default: []].append(row)
-        }
-        return order.map { ($0, groups[$0] ?? []) }
-    }
+    /// `view.rowGroups`.
+    public var rowGroups: [(vendor: String, rows: [AgentRow])] { view.rowGroups }
 
-    /// A vendor group's rows split by account, in row order. One section without an account when nothing is identified.
-    public func accountSections(_ rows: [AgentRow]) -> [AccountSection] {
-        var order: [String] = []
-        var sections: [String: [AgentRow]] = [:]
-        for row in rows {
-            let key = row.agent.account?.id ?? ""
-            if sections[key] == nil { order.append(key) }
-            sections[key, default: []].append(row)
-        }
-        return order.map { key in
-            let rows = sections[key] ?? []
-            return AccountSection(id: key, account: rows.first?.account, isCurrent: rows.first?.isCurrentAccount ?? true, rows: rows)
-        }
-    }
+    /// `view.accountSections(_:)`.
+    public func accountSections(_ rows: [AgentRow]) -> [AccountSection] { view.accountSections(rows) }
 
-    /// What the header of an account's section says about its readings: the account's own notice, else its client's.
-    /// A billing pool speaks only for itself: its vendor's notices can be about another of its pools.
-    public func accountNotice(for section: AccountSection) -> String? {
-        guard let account = section.account else { return nil }
-        let pooled = section.rows.first?.agent.billingPool != nil
-        return account.quotaNotice ?? (pooled ? nil : report?.sourceNotices[account.account.provider])
-    }
+    /// `view.accountNotice(for:)`.
+    public func accountNotice(for section: AccountSection) -> String? { view.accountNotice(for: section) }
 }
