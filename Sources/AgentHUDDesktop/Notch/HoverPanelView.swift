@@ -567,9 +567,7 @@ struct QuotaRowMetrics {
             guard row.assessment.showsLevel else { return "—" }
             if let remaining = row.remainingPct, remaining <= AlertPolicy.exhaustedRemaining { return L10n.text("已耗尽", "Exhausted") }
             if let exhaustionTimeLabel { return exhaustionTimeLabel }
-            if let projected = projectedAtReset {
-                return L10n.text("重置时 \(Int(projected.rounded()))%", "\(Int(projected.rounded()))% by reset")
-            }
+            if let projected = projectedAtReset { return QuotaForecast.byReset(projected) }
             if insights?.burnRatePctPerHour == 0 { return L10n.text("暂无消耗", "No usage") }
             return L10n.text("记录不足", "Insufficient data")
         case .tokens:

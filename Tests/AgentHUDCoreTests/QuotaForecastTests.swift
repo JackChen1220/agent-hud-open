@@ -29,16 +29,16 @@ final class QuotaForecastTests: XCTestCase {
                        "Exhausts ~2h 14m")
     }
 
-    func testHoverKeepsExhaustionEstimateEvenWhenResetComesFirst() throws {
+    /// A window that runs out only after its reset says what it will have used by then, as its island row does.
+    func testAWindowThatRunsOutAfterItsResetSaysWhatItWillHaveUsedBy() throws {
         let forecast = insights(rate: BurnRate(pctPerHour: 30), remaining: 60)
-        for resetIn in [3600.0, 7200.0] {
+        for (resetIn, zh, en) in [(3600.0, "重置时 70%", "70% by reset"), (7200.0, "重置时 100%", "100% by reset")] {
             L10n.setLanguage(.zhHans)
             let hint = try XCTUnwrap(QuotaForecast.hint(snapshot: snapshot(remaining: 60, resetIn: resetIn),
                                                       insights: forecast, now: now))
-            XCTAssertEqual(hint, "耗尽 ~2小时")
+            XCTAssertEqual(hint, zh)
             L10n.setLanguage(.en)
-            XCTAssertEqual(QuotaForecast.hint(snapshot: snapshot(remaining: 60, resetIn: resetIn), insights: forecast, now: now),
-                           "Exhausts ~2h")
+            XCTAssertEqual(QuotaForecast.hint(snapshot: snapshot(remaining: 60, resetIn: resetIn), insights: forecast, now: now), en)
         }
     }
 
@@ -58,7 +58,8 @@ final class QuotaForecastTests: XCTestCase {
         }
     }
 
-    func testOlderReadingsAndPassedResetKeepTheLastEstimate() throws {
+    /// An older reading keeps the last estimate; one whose reset passed has no share to give by it.
+    func testOlderReadingsKeepTheLastEstimateAndAPassedResetHasNone() throws {
         let forecast = insights(rate: BurnRate(pctPerHour: 30), remaining: 60)
         let stale = UsageSnapshot(agentId: "window", remainingPct: 60, resetAt: now.addingTimeInterval(5 * 3600), windowDuration: 5 * 3600,
                                   updatedAt: now.addingTimeInterval(-QuotaForecast.maximumReadingAge))
@@ -66,7 +67,7 @@ final class QuotaForecastTests: XCTestCase {
         XCTAssertEqual(staleHint, "耗尽 ~2小时")
         let resetHint = try XCTUnwrap(QuotaForecast.hint(snapshot: snapshot(remaining: 60, resetIn: -1),
                                                        insights: forecast, now: now))
-        XCTAssertEqual(resetHint, "耗尽 ~2小时")
+        XCTAssertEqual(resetHint, "记录不足")
     }
 
     func testExhaustedQuotaDoesNotRequireABurnRate() {
@@ -80,10 +81,10 @@ final class QuotaForecastTests: XCTestCase {
                        "耗尽 ~1分")
     }
 
-    func testNearlyFlatPaceCapsTheDurationInsteadOfOverflowing() {
-        // Readings a floating-point step apart give a pace whose minutes a whole number cannot hold.
+    func testANearlyFlatPaceRunsOutOnlyAfterTheReset() {
+        // Readings a floating-point step apart give a pace whose end lies far beyond any reset.
         let forecast = insights(rate: BurnRate(pctPerHour: 1e-16), remaining: 50)
-        XCTAssertEqual(QuotaForecast.hint(snapshot: snapshot(remaining: 50), insights: forecast, now: now), "耗尽 ~35791394小时7分")
+        XCTAssertEqual(QuotaForecast.hint(snapshot: snapshot(remaining: 50), insights: forecast, now: now), "重置时 50%")
     }
 
     func testUnknownPeriodDoesNotReuseAnOldForecast() throws {

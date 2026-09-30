@@ -76,9 +76,9 @@ final class QuotaOutlookTests: XCTestCase {
             ("zeroTimeToExhaust", .init(hint: "Insufficient data", exhaustsIn: nil, projected: 70, detail: "70% by reset", tokensPerHour: 1000)),
             ("infiniteTime", .init(hint: "Insufficient data", exhaustsIn: nil, projected: 70, detail: "70% by reset", tokensPerHour: 1000)),
             ("exhaustsBeforeReset", .init(hint: "Exhausts ~1h", exhaustsIn: hour, projected: 100, detail: at(hour), tokensPerHour: 1000)),
-            ("exhaustsAfterReset", .init(hint: "Exhausts ~5h", exhaustsIn: nil, projected: 70, detail: "70% by reset", tokensPerHour: 1000)),
+            ("exhaustsAfterReset", .init(hint: "70% by reset", exhaustsIn: nil, projected: 70, detail: "70% by reset", tokensPerHour: 1000)),
             // A reading whose reset passed shows no level, so the row gives it no burn rate or token rate.
-            ("resetPassed", .init(hint: "Exhausts ~5h", exhaustsIn: nil, projected: nil, detail: "—", tokensPerHour: nil)),
+            ("resetPassed", .init(hint: "Insufficient data", exhaustsIn: nil, projected: nil, detail: "—", tokensPerHour: nil)),
             ("weekly", .init(hint: "Exhausts ~50h", exhaustsIn: 50 * hour, projected: 100, detail: at(50 * hour), tokensPerHour: 1167)),
             ("fullWindow", .init(hint: "Insufficient data", exhaustsIn: nil, projected: nil, detail: "Insufficient data", tokensPerHour: 1000)),
         ]

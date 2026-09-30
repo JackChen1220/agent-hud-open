@@ -100,7 +100,8 @@ final class ReadingGateTests: XCTestCase {
              Gates(level: nil, startsAlerts: false, startsCredits: false, menuFigure: nil, hint: nil)),
             ("a reset that has passed", Reading(resetIn: -60), Gates(level: nil, startsAlerts: false, menuFigure: nil, reset: "Pending update",
                                                                      hint: nil)),
-            ("a reset under a minute away", Reading(resetIn: 30), Gates(reset: "<1m")),
+            // Running out after the reset, the hint gives the share used by then.
+            ("a reset under a minute away", Reading(resetIn: 30), Gates(reset: "<1m", hint: "75% by reset")),
             ("no reset and a full window", Reading(remaining: 100, resetIn: nil),
              Gates(level: .ok, menuFigure: 0, reset: "—", hint: nil)),
             // Without a reset, only a full window is an alert baseline.
