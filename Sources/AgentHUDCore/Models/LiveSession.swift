@@ -63,10 +63,11 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
     /// it: an agent can spend minutes in one tool call.
     public var isLive: Bool { endedAt == nil }
 
-    /// Running, as far as this Mac can still vouch for it. A source that has not been read for longer than a turn may
-    /// stay quiet — a retained result, a Mac that stopped collecting — no longer speaks for the session.
+    /// Running, as far as this Mac can still vouch for it: for `SessionPhase.Limits.vouched` after the reading that had
+    /// it in flight. A source that has not been read for longer than a turn may stay quiet — a retained result, a Mac
+    /// that stopped collecting — no longer speaks for the session.
     public func isLive(at now: Date) -> Bool {
-        isLive && now.timeIntervalSince(observedAt) < UsageRefresh.abandonedTurnTimeout
+        isLive && now.timeIntervalSince(observedAt) < SessionPhase.Limits.vouched
     }
 
     private enum CodingKeys: String, CodingKey {

@@ -205,7 +205,7 @@ public struct SessionPhase: Hashable, Sendable {
             self.init(state: .idle, since: lastEventAt, validUntil: nil)
             return
         }
-        if session.endedAt == nil, now.timeIntervalSince(session.observedAt) < Limits.vouched {
+        if session.isLive(at: now) {
             let validUntil = session.observedAt.addingTimeInterval(Limits.vouched)
             if let turn, turn.state == .running || turn.state == .waitingForApproval {
                 self.init(state: turn.state == .running ? .running : .waitingForApproval,

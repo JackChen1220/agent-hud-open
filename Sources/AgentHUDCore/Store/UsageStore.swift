@@ -41,12 +41,12 @@ extension UsageReport {
     /// age at which a quiet log ends it. A source is read again at these times instead of being polled.
     var activityChecks: [Date] {
         let margin: TimeInterval = 1
-        var times = sessions.filter(\.isLive).map { $0.observedAt.addingTimeInterval(UsageRefresh.liveThreshold + margin) }
+        var times = sessions.filter(\.isLive).map { $0.observedAt.addingTimeInterval(SessionPhase.Limits.quiet + margin) }
         for turn in turns where turn.state == .running {
             let observed = RecordCoding.date(turn.observedAtMs)
-            times.append(observed.addingTimeInterval(UsageRefresh.liveThreshold + margin))
+            times.append(observed.addingTimeInterval(SessionPhase.Limits.quiet + margin))
             times.append(observed.addingTimeInterval(UsageRefresh.activeTurnFreshness + margin))
-            times.append(observed.addingTimeInterval(UsageRefresh.abandonedTurnTimeout + margin))
+            times.append(observed.addingTimeInterval(SessionPhase.Limits.abandoned + margin))
         }
         return times
     }
