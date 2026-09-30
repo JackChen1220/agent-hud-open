@@ -64,4 +64,4 @@ Normal start-up already runs `SessionObservers.configure(executable:enabled:)` f
 
 ## Related
 
-[session-lifecycle.md](session-lifecycle.md) completion hooks and the Pi observer · [providers.md](providers.md) per-client environment variables · [architecture.md](architecture.md) host integration
+[session-lifecycle.md](session-lifecycle.md) completion hooks and the observers · [providers.md](providers.md) per-client environment variables · [architecture.md](architecture.md) host integration

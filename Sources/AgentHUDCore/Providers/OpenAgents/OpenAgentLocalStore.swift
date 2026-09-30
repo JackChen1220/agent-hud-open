@@ -35,6 +35,10 @@ actor OpenAgentLocalStore {
                 guard let id = value["id"].stringValue, let sid = value["sessionID"].stringValue else { throw ProviderFailure.format }
                 return try OpenAgentParser.openCodeMessage(value, id: id, sessionID: sid, path: url.path).map { [$0] } ?? []
             },
+            // Completed turns of the OpenCode plugin.
+            listing(.opencode, [paths.openCodeTurns], accepts: { $0.pathExtension == "json" }) { data, _ in
+                [try OpenCodeSessionObserver.read(data).session]
+            },
             // The session's title lives in `state.json`, which a rename changes without touching the wire log.
             listing(.kimi, paths.roots(for: .kimi), accepts: { $0.lastPathComponent == "wire.jsonl" },
                     related: { [OpenAgentParser.kimiSession($0).folder.appendingPathComponent("state.json")] }) { data, url in

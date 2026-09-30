@@ -22,7 +22,8 @@ struct SourcesPane: View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(groups) { group in
-                    AgentSettingsCard(group: group, settings: settings, theme: theme, accountLabel: { store.accountLabel(for: $0) },
+                    AgentSettingsCard(group: group, settings: settings, report: store.report, theme: theme,
+                        accountLabel: { store.accountLabel(for: $0) },
                         isExpanded: Binding(get: { expanded.contains(group.id) }, set: { value in
                             if value { expanded.insert(group.id) } else { expanded.remove(group.id) }
                         }), dragging: $dragging)
@@ -37,6 +38,7 @@ struct SourcesPane: View {
 struct AgentSettingsCard: View {
     let group: AgentSettingsGroup
     let settings: SettingsStore
+    var report: UsageReport? = nil
     let theme: Theme
     /// Whether an account is current or when it was last read, as its header in the panel says.
     let accountLabel: @MainActor (AccountObservation) -> String
@@ -50,6 +52,10 @@ struct AgentSettingsCard: View {
             if isExpanded && group.hasLiveStatus {
                 SettingsDivider(theme: theme)
                 AgentLiveStatusSettings(vendor: group.id, settings: settings)
+            }
+            if isExpanded, let observer = ClientObserverStatus(vendor: group.id, clientHooks: settings.settings.clientHooks, report: report) {
+                SettingsDivider(theme: theme)
+                ClientObserverSettings(status: observer, theme: theme)
             }
             if isExpanded && group.id == AdditionalSource.copilot.vendor {
                 SettingsDivider(theme: theme)
@@ -181,6 +187,75 @@ private struct AgentLiveStatusSettings: View {
         }
         .padding(.leading, 28)
         .help(L10n.text("历史会话和 Token 统计持续更新。", "Session history and token usage keep updating."))
+    }
+}
+
+/// Pi and OpenCode report finished turns only through the file Agent HUD keeps in them, and a client reads that file only
+/// when it starts, so the row says whether the file is in place, when it last reported, and what an open client needs.
+struct ClientObserverStatus {
+    let label: String
+    let state: String
+    let detail: String
+    let isWorking: Bool
+
+    init?(vendor: String, clientHooks: Bool, report: UsageReport?, now: Date = Date()) {
+        let file: ClientObserverFile, last: Date?, taken: String, open: String, unsupported: String?
+        switch vendor {
+        case "Pi":
+            label = L10n.text("Pi 扩展", "Pi extension")
+            file = PiSessionObserver.fileState()
+            last = report?.turns.filter { $0.provider == "Pi" }.map { Date(timeIntervalSince1970: Double($0.observedAtMs) / 1000) }.max()
+            taken = L10n.text("agent-hud.ts 已被其他扩展使用，Agent HUD 不会动它。", "agent-hud.ts belongs to another extension, which Agent HUD leaves alone.")
+            open = L10n.text("已经开着的 Pi 输入一次 /reload 后开始报告", "Pi sessions already open report after /reload")
+            unsupported = PiSessionObserver.unsupportedVersion().map {
+                let first = PiSessionObserver.firstSettlingRelease
+                return L10n.text("Pi \(first) 起才会报告完成，这里的 Pi 是 \($0)。", "Pi \(first) and later report finished turns; this Pi is \($0).")
+            }
+        case "OpenCode":
+            label = L10n.text("OpenCode 插件", "OpenCode plugin")
+            file = OpenCodeSessionObserver.fileState()
+            last = report?.completions.filter { $0.vendor == "OpenCode" }.map(\.completedAt).max()
+            taken = L10n.text("agent-hud.js 已被其他插件使用，Agent HUD 不会动它。", "agent-hud.js belongs to another plugin, which Agent HUD leaves alone.")
+            open = L10n.text("已经开着的 OpenCode 重开后开始报告", "OpenCode already open reports once restarted")
+            unsupported = nil
+        default: return nil
+        }
+        switch file {
+        case _ where !clientHooks:
+            state = L10n.text("已关闭", "Off")
+            detail = L10n.text("在「通用」中打开「客户端回调」后安装。", "Installed once Client hooks is on in General.")
+        case .foreign:
+            state = L10n.text("未安装", "Not installed")
+            detail = taken
+        case .missing:
+            state = L10n.text("未安装", "Not installed")
+            detail = L10n.text("Agent HUD 下次启动时安装。", "Installed when Agent HUD next starts.")
+        case .installed:
+            state = L10n.text("已安装", "Installed")
+            if let unsupported {
+                detail = unsupported
+            } else if let last {
+                let ago = Countdown.formatRough(max(0, now.timeIntervalSince(last)))
+                detail = L10n.text("上次报告 \(ago) 前。", "Last report \(ago) ago. ") + open + L10n.text("。", ".")
+            } else {
+                detail = L10n.text("还没有报告。", "No reports yet. ") + open + L10n.text("，新开的会自动加载。", "; new ones load it on their own.")
+            }
+        }
+        isWorking = clientHooks && file == .installed && unsupported == nil
+    }
+}
+
+private struct ClientObserverSettings: View {
+    let status: ClientObserverStatus
+    let theme: Theme
+
+    var body: some View {
+        SettingRow(label: status.label, subtitle: status.detail) {
+            Text(status.state).font(.ui(12))
+                .foregroundStyle(status.isWorking ? theme.secondary : theme.statusText(.warning))
+        }
+        .padding(.leading, 28)
+        .accessibilityElement(children: .combine)
     }
 }
 

@@ -95,7 +95,7 @@ The libraries can also be consumed through Swift Package Manager. `DesktopApplic
 - [Data access](docs/data-access.md) — provider queries, credentials, and local storage.
 - [Usage semantics](docs/usage-semantics.md) — token dimensions, percentages, alert levels, request intervals, and reading retention.
 - [Providers](docs/providers.md) — per-client data sources, credentials, endpoints, counting, billing pools, caches, tests, and upstream references.
-- [Session lifecycle](docs/session-lifecycle.md) — running and terminal turn evidence, live status, the Pi observer, and completion hooks.
+- [Session lifecycle](docs/session-lifecycle.md) — running and terminal turn evidence, live status, the Pi and OpenCode observers, and completion hooks.
 - [Command line](docs/command-line.md) — launch options, read-only probes, adapter commands, and environment variables.
 - [Brand assets](docs/brand-assets.md) — bundled client logos, their sources, rendering, and licenses.
 - [Changelog](CHANGELOG.md) — released versions and host-visible API changes.

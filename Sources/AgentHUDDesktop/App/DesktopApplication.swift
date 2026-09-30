@@ -12,6 +12,8 @@ public final class DesktopApplication {
     private var islandEvents = IslandEventTracker()
     /// The requests already on the island, so a change to the waiting list says which ones arrived and which left.
     private var shownRequests: [String] = []
+    /// The clients whose observer directory existed at the last look, so one that appears later is noticed.
+    private var observedClients: Set<String> = []
     private var notch: IslandController?
     private var statusItem: StatusItemController?
     private lazy var settingsWindow = SettingsWindowController(
@@ -97,6 +99,12 @@ public final class DesktopApplication {
             guard let self, !self.options.demo, let executable = Bundle.main.executableURL else { return }
             SessionObservers.configure(executable: executable, enabled: self.settings.settings.clientHooks)
         })
+        // A client run for the first time creates its directory, and its observer goes in with the next report
+        // rather than at the next launch.
+        if !options.demo { observedClients = SessionObservers.observedClients() }
+        trackChanges({ [weak self] in
+            _ = self?.store.report
+        }, onChange: { [weak self] in self?.installObserversForNewClients() })
         trackChanges({ [weak self] in
             _ = self?.store.report
             _ = self?.settings.agents
@@ -146,6 +154,15 @@ public final class DesktopApplication {
     }
     public func showOnboarding() { onboardingWindow.show() }
     public func toggleGlow() { store.glowHidden.toggle() }
+
+    /// Start-up installs observers only where a client's directory already exists. A client that already runs loads its
+    /// observer when it next starts or reloads.
+    private func installObserversForNewClients() {
+        guard !options.demo else { return }
+        let present = SessionObservers.observedClients()
+        if settings.settings.clientHooks, !present.subtracting(observedClients).isEmpty { SessionObservers.installObservers() }
+        observedClients = present
+    }
 
     /// A paused store or a failed refresh leaves the island silent; the baselines wait for the next good report.
     private func checkIslandEvents() {

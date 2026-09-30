@@ -3,37 +3,51 @@ import Foundation
 
 /// Pi's native lifecycle events are independent of its persisted message usage.
 public enum PiSessionObserver {
-    private static let filename = "agent-hud.ts"
+    /// The first Pi release whose extensions hear `agent_settled`. Its changelog names 0.80.4, which was never published.
+    public static let firstSettlingRelease = "0.80.5"
+
+    private static func file(_ paths: OpenAgentPaths) -> ObserverFile {
+        .init(url: paths.pi.appendingPathComponent("extensions/agent-hud.ts"), marker: "// Agent HUD Pi session observer\n",
+              script: script, conflict: L10n.text("agent-hud.ts 已被其他扩展使用", "agent-hud.ts belongs to another extension"))
+    }
+
+    /// Pi's directory exists once Pi has run.
+    static func isAvailable(home: URL = FileManager.default.homeDirectoryForCurrentUser,
+                            environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
+        FileManager.default.fileExists(atPath: OpenAgentPaths(home: home, environment: environment).pi.path)
+    }
 
     /// Adapter setup is independent of the user's live-status presentation preference.
     public static func configureIfAvailable(home: URL = FileManager.default.homeDirectoryForCurrentUser,
                                             environment: [String: String] = ProcessInfo.processInfo.environment) throws {
-        guard FileManager.default.fileExists(atPath: OpenAgentPaths(home: home, environment: environment).pi.path) else { return }
+        guard isAvailable(home: home, environment: environment) else { return }
         try configure(enabled: true, home: home, environment: environment)
     }
 
     public static func isInstalled(home: URL = FileManager.default.homeDirectoryForCurrentUser,
                                    environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
-        let paths = OpenAgentPaths(home: home, environment: environment)
-        return (try? String(contentsOf: paths.pi.appendingPathComponent("extensions/\(filename)"), encoding: .utf8)) == script
+        file(OpenAgentPaths(home: home, environment: environment)).isCurrent
     }
 
     public static func configure(enabled: Bool, home: URL = FileManager.default.homeDirectoryForCurrentUser,
                                  environment: [String: String] = ProcessInfo.processInfo.environment) throws {
-        let paths = OpenAgentPaths(home: home, environment: environment)
-        let file = paths.pi.appendingPathComponent("extensions/\(filename)")
-        let previous = try? String(contentsOf: file, encoding: .utf8)
-        // Only replace/remove our own extension, never an unrelated file with the same name.
-        guard previous == nil || previous!.hasPrefix("// Agent HUD Pi session observer\n") else {
-            throw UsageProviderError(L10n.text("agent-hud.ts 已被其他扩展使用", "agent-hud.ts belongs to another extension"))
-        }
-        if enabled {
-            guard previous != script else { return }
-            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try Data(script.utf8).write(to: file, options: .atomic)
-        } else if previous != nil {
-            try FileManager.default.removeItem(at: file)
-        }
+        try file(OpenAgentPaths(home: home, environment: environment)).configure(enabled: enabled)
+    }
+
+    /// Whether the extension is in place, for Pi's settings.
+    public static func fileState(home: URL = FileManager.default.homeDirectoryForCurrentUser,
+                                 environment: [String: String] = ProcessInfo.processInfo.environment) -> ClientObserverFile {
+        file(OpenAgentPaths(home: home, environment: environment)).state
+    }
+
+    /// The Pi version Pi last recorded, when it predates `agent_settled`: that Pi reports a run but never its completion.
+    /// Pi records its version when an interactive session opens on a fresh install or after an update.
+    public static func unsupportedVersion(home: URL = FileManager.default.homeDirectoryForCurrentUser,
+                                          environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+        let url = OpenAgentPaths(home: home, environment: environment).pi.appendingPathComponent("settings.json")
+        guard let version = (try? ProviderFiles.json(url))?["lastChangelogVersion"].stringValue, version.first?.isNumber == true,
+              version.compare(firstSettlingRelease, options: .numeric) == .orderedAscending else { return nil }
+        return version
     }
 
     struct Observation: Codable, Sendable {

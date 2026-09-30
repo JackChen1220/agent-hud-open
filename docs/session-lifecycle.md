@@ -2,7 +2,7 @@
 
 ## Overview
 
-Which clients expose running and terminal turns, which of them say they are waiting for the user and what the agent last said, what evidence each provider accepts, and how the hooks work. Usage records and running turns are separate observations: a token counter or a recent file modification never establishes that a whole agent turn is running or complete, and a quota response or a single model response never ends a turn.
+Which clients expose running and terminal turns, which of them say they are waiting for the user and what the agent last said, what evidence each provider accepts, and how the hooks and observers work. Usage records and running turns are separate observations: a token counter or a recent file modification never establishes that a whole agent turn is running or complete, and a quota response or a single model response never ends a turn.
 
 ## Model
 
@@ -15,7 +15,7 @@ Which clients expose running and terminal turns, which of them say they are wait
 | DeepSeek Harness | Yes | Yes | `turn/start`, later step, message and tool events (format 0 also logs streaming chunks), `turn/end`; only `reason.kind == completed` is a completion, and sub-agent sessions and inherited fork history record none. A quiet turn stays active while a Node process that predates it holds the Harness profile. |
 | Grok CLI | Yes | Yes | Session updates keyed by `promptId`; `turn_completed` with `stop_reason` `end_turn` completes, other outcomes end without a completion. Older unified logs carry usage only. |
 | Kimi | Yes | Yes | On the `main` agent the first `step.begin` starts the turn and loop events refresh it; `turn.ended` with `reason == completed` and no `error` completes it; child agents never finish the parent. Older status logs carry usage only. |
-| Pi | Yes, with the observer | Yes, with the observer | `agent_start`, `agent_settled` and `session_shutdown` from the Agent HUD extension; an assistant stop alone does not finish a run. |
+| Pi | Yes, with the observer | Yes, with the observer | `agent_start`, `agent_settled` and `session_shutdown` from the Agent HUD extension; an assistant stop alone does not finish a run. `agent_settled` arrived in Pi 0.80.5, so an older Pi reports runs but never a completion. |
 | OpenClaw | Yes | Yes | Gateway lifecycle status on a session's current window: `running` (turn `lifecycleRunId`) is running, `done` (turn `lastRunId`) completes, `failed`, `timeout` and `killed` end without a completion; a parent waiting on sub-agents stays running, and sub-agent sessions and legacy transcripts report none. |
 | GitHub Copilot CLI | Yes | Through the `agentStop` hook | A main-agent `user.message` or `assistant.turn_start` starts the turn and loop events, including sub-agent ones, refresh it; `abort` and `session.shutdown` end it. |
 | Antigravity | No | Through the `Stop` hook | Local records supply usage only. |
@@ -23,7 +23,7 @@ Which clients expose running and terminal turns, which of them say they are wait
 | CodeBuddy | No | Through the `Stop` hook | Local records supply usage only. |
 | Qwen Code | No | Through the `Stop` hook | Transcripts record no turn end; a text-only answer is not one, because a hook or a follow-up can continue the turn. |
 | Hermes Agent, ZCode, WorkBuddy | No | No | Local records hold usage counters only. |
-| OpenCode | No | No | A persisted message end is not an agent end. |
+| OpenCode | No | Through the plugin | The Agent HUD plugin records a turn when its session goes idle after a final answer; a persisted message end alone is not an agent end. |
 | GLM | n/a | n/a | Billing service; execution state belongs to the client using it. |
 
 ## Rules
@@ -33,7 +33,7 @@ Which clients expose running and terminal turns, which of them say they are wait
 - Every execution client has Settings → Agents → [Agent] → Live status; billing-only services have none. `Settings.liveStatusEnabled(for:)` controls running indicators and completion reminders only: turning it off changes nothing in collection, session history, token statistics or quota windows, and installs or removes no adapter. With it off a session shows no state, and not what the agent last said either.
 - The switch permits available observations; it never manufactures lifecycle support for a source whose logs only provide usage.
 - A running turn keeps the running indicator however quiet its log goes: one tool call can take minutes without writing a line. Only an end recorded by the client, evidence that the client is gone, or, for a client with neither a process check nor a heartbeat, 30 minutes of silence (`SessionPhase.Limits.abandoned`, which counts the turn as abandoned) leaves the indicator, and none of them invents an end time in history; a failed read never creates a completion or an artificial end. A source that never says what its turn is doing keeps the older rule: 120 s (`SessionPhase.Limits.quiet`) of silence leaves the indicator. A turn waiting for approval is a running turn: every client's rule keeps it in flight as it keeps a running one, it keeps its start time, and the panel marks it in the warning colour.
-- Silence counts from the newest event the client recorded: a Claude Code log's last line, a Codex rollout's newest event, a turn's latest observation. A file's modification date never counts, since writes that record nothing move it too. DeepSeek Harness has no silence limit: its turn runs while a Harness process that predates it holds the profile, checked once the log has recorded no event for 120 s. A Pi run ends with its heartbeat ([Pi observer](#pi-observer)). Sub-agents keep their session running only where the client ties them to it: Claude Code's ([Sub-agents](#sub-agents)) and GitHub Copilot CLI's, whose loop events refresh the turn.
+- Silence counts from the newest event the client recorded: a Claude Code log's last line, a Codex rollout's newest event, a turn's latest observation. A file's modification date never counts, since writes that record nothing move it too. DeepSeek Harness has no silence limit: its turn runs while a Harness process that predates it holds the profile, checked once the log has recorded no event for 120 s. A Pi run ends with its heartbeat ([observers](#observers)). Sub-agents keep their session running only where the client ties them to it: Claude Code's ([Sub-agents](#sub-agents)) and GitHub Copilot CLI's, whose loop events refresh the turn.
 - A session whose client waits for an answer to a permission request ([approvals](hud.md#approvals)) is waiting for approval for as long as the client waits, whatever its log says, since its turn in flight started, else since the session did; the request is the session's latest event. The client holding the request open is the evidence, so no reading's age ends the wait, and the request leaving the HUD returns the session to what its log says.
 - A session its source had in flight at a reading 30 minutes old or older (`SessionPhase.Limits.vouched`) is out of date: the Mac no longer vouches for that reading, so its card and its page say its status is out of date rather than show a state, and it does not count as running.
 - Session lists are ordered by each session's last event — a prompt, a reply, a tool result or an approval request — newest first, so a running session that has been quiet longer than another session has been finished ranks below it; sessions whose last events are equal go by vendor, then id. A source that reports no turns leaves the session's own end, or, while it runs, when its log last recorded anything, else the reading that last saw it running.
@@ -58,11 +58,21 @@ Which clients expose running and terminal turns, which of them say they are wait
 - The session's turn keeps its id and start while its agents work. Sub-agent logs report no completions and mark no prompts, so the agent's own answer is still announced when it ends its turn.
 - A session waiting for approval keeps waiting while its agents work: a request is answered by a line of the session's own log after it, never by a sub-agent's.
 
-### Pi observer
+### Observers
 
-- The standalone host installs or updates its extension under the Pi directory (`PI_CODING_AGENT_DIR`, default `~/.pi/agent`) whenever that directory exists; existing Pi processes need one `/reload`, new ones load it automatically. A same-named file that is not Agent HUD's is left alone.
-- The observer writes metadata-only turn snapshots, keeps retries, compaction and queued continuations inside one run until `agent_settled`, and reports a completion only for a successful final response; errors, cancellation and shutdown end activity without claiming success. While a run is active the observer refreshes its snapshot every 15 seconds; a run whose last snapshot is 120 seconds old stops being live and ends without claiming success. Snapshots are kept 7 days.
-- Token totals still come only from Pi's message transcripts; installing the observer replays no reminders and creates no usage events.
+Pi and OpenCode report through a file Agent HUD keeps in the client's own directory — an extension for Pi, a global plugin for OpenCode — which the client loads when it starts. `PiSessionObserver` and `OpenCodeSessionObserver` own the file, the records it writes and their reading.
+
+| Source | File | Records |
+| --- | --- | --- |
+| Pi | `extensions/agent-hud.ts` under the Pi directory (`PI_CODING_AGENT_DIR`, default `~/.pi/agent`) | Running and terminal turns in `agent-hud/turns/` beside it |
+| OpenCode | `opencode/plugin/agent-hud.js` under `$XDG_CONFIG_HOME` (default `~/.config`), the directory every OpenCode release reads | Completions in `opencode/agent-hud/turns/` under `$XDG_DATA_HOME` (default `~/.local/share`) |
+
+- The host installs or updates each file whenever the client's directory exists — Pi's, or OpenCode's data directory — at start-up, and at the next report when the directory appears while it runs, the first time the client is used. A same-named file that is not Agent HUD's is left alone. With Settings → General → Client hooks off, both are removed and none is added.
+- A client process already running keeps working without the file until it loads it: Pi needs one `/reload`, and OpenCode a restart.
+- Records hold metadata only — session, workspace, title, model, provider and times — never a prompt, a reply, a tool argument or a credential. Each is replaced atomically, kept 7 days, and creates no usage events: token totals still come from the clients' own records, and installing an observer replays no reminders.
+- Settings → Agents → Pi or OpenCode says whether the file is in place, when it last reported and what an open client needs before it reports; for Pi it also names a recorded version older than 0.80.5, which Pi writes to its settings when an interactive session opens on a fresh install or after an update.
+- Pi's extension keeps retries, compaction and queued continuations inside one run until `agent_settled`, and reports a completion only for a successful final response; errors, cancellation and shutdown end activity without claiming success. While a run is active it refreshes its snapshot every 15 seconds; a run whose last snapshot is 120 seconds old stops being live and ends without claiming success. A Pi older than 0.80.5 never settles a run: the refresh stops when the run ends, and the run stops being live 120 seconds later.
+- OpenCode's plugin follows the event bus. A session's busy stretch — tool calls, retries, compaction and queued prompts — completes when the session goes idle and its newest reply answers its newest prompt, stopped on its own (`finish` is `stop`) and carries no error. A reply with an error, an abort's included, a reply cut short or still calling tools, a summary `/compact` wrote and any session with a parent (a sub-agent's) record nothing. An error or an abort makes OpenCode idle before the reply that carries it closes, so a reply still open at idle is judged when it closes; a context overflow that OpenCode recovers from by compacting does not end the turn. The prompt names the turn.
 
 ### Notification hook
 
@@ -110,7 +120,8 @@ Antigravity, Cursor, GitHub Copilot CLI, CodeBuddy and Qwen Code do not record f
 | Completion reminders | `Sources/AgentHUDCore/Logic/Alerts/IslandEvents.swift`, `Sources/AgentHUDDesktop/App/DesktopApplication.swift` |
 | Adapter setup, a hook's installation, the handler command and the settings writer | `Sources/AgentHUDCore/Hooks/SessionObservers.swift`, `HookInstaller.swift`, `HookCommand.swift`, `HookSettings.swift` |
 | The records handlers leave for the application; completion hooks and handler entry | `Sources/AgentHUDCore/Hooks/HookInbox.swift`, `HookEntry.swift`, `CompletionHooks.swift` |
-| Pi observer and its extension script | `Sources/AgentHUDCore/Hooks/PiSessionObserver.swift` |
+| Observers, their scripts and records | `Sources/AgentHUDCore/Hooks/PiSessionObserver.swift`, `OpenCodeSessionObserver.swift`; installation in `SessionObservers.swift` and `Sources/AgentHUDDesktop/App/DesktopApplication.swift` |
+| Observer status in the settings | `Sources/AgentHUDDesktop/Settings/SourcesPane.swift` |
 | Per-client turn parsing | `Sources/AgentHUDCore/Providers/Claude/ClaudeTranscripts.swift`, `Codex/CodexTranscripts.swift`, `DeepSeek/DeepSeekTranscript.swift`, `Grok/GrokSessions.swift`, `OpenAgents/OpenAgentSessions.swift` |
 | Claude sub-agents keeping their session running | `Sources/AgentHUDCore/Providers/Claude/ClaudeCodeProvider.swift` |
 

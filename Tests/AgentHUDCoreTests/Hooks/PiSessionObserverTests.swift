@@ -59,6 +59,27 @@ final class PiSessionObserverTests: XCTestCase, @unchecked Sendable {
         XCTAssertTrue(PiSessionObserver.isInstalled(home: home, environment: env))
     }
 
+    func testSettingsTellWhetherTheExtensionIsInPlaceAndWhetherThisPiReportsAnEnd() throws {
+        let home = try temporaryHome(), paths = OpenAgentPaths(home: home, environment: [:])
+        XCTAssertEqual(PiSessionObserver.fileState(home: home, environment: [:]), .missing)
+        try PiSessionObserver.configure(enabled: true, home: home, environment: [:])
+        XCTAssertEqual(PiSessionObserver.fileState(home: home, environment: [:]), .installed)
+        try write(Data("// Someone else's extension\n".utf8), to: paths.pi.appendingPathComponent("extensions/agent-hud.ts"))
+        XCTAssertEqual(PiSessionObserver.fileState(home: home, environment: [:]), .foreign)
+
+        func recorded(_ version: String?) throws -> String? {
+            let settings = version.map { #"{"lastChangelogVersion":"\#($0)","theme":"light"}"# } ?? #"{"theme":"light"}"#
+            try write(Data(settings.utf8), to: paths.pi.appendingPathComponent("settings.json"))
+            return PiSessionObserver.unsupportedVersion(home: home, environment: [:])
+        }
+        XCTAssertEqual(try recorded("0.73.1"), "0.73.1", "the last release under the old package name has no agent_settled")
+        XCTAssertEqual(try recorded("0.80.3"), "0.80.3")
+        XCTAssertNil(try recorded("0.80.5"))
+        XCTAssertNil(try recorded("0.87.1"))
+        XCTAssertNil(try recorded(nil), "a Pi that never opened an interactive session recorded no version")
+        XCTAssertNil(try recorded("latest"))
+    }
+
     func testTheSessionsOwnLogNamesItOverTheObserversSnapshot() async throws {
         let home = try temporaryHome(), paths = OpenAgentPaths(home: home, environment: [:])
         try write(JSONEncoder().encode(observation(.completed)), to: paths.piTurns.appendingPathComponent("turn.json"))
