@@ -89,6 +89,25 @@ final class TokenFormatTests: XCTestCase {
     }
 }
 
+final class MoneyFormatTests: XCTestCase {
+    override func tearDown() {
+        L10n.setLanguage(.system)
+        super.tearDown()
+    }
+
+    /// A price is written with its ISO code in both languages, as the website writes it; an estimate keeps the symbol.
+    func testPricesCarryTheirCodeAndEstimatesTheSymbol() {
+        for language in [AppLanguage.zhHans, .en] {
+            L10n.setLanguage(language)
+            XCTAssertEqual(MoneyFormat.price(Decimal(string: "2.99")!, currency: "USD"), "USD 2.99")
+            XCTAssertEqual(MoneyFormat.price(Decimal(string: "29.99")!, currency: "USD"), "USD 29.99")
+            XCTAssertEqual(MoneyFormat.price(1299, currency: "USD"), "USD 1,299.00")
+            XCTAssertEqual(MoneyFormat.price(Decimal(string: "2.985")!, currency: "USD"), "USD 2.99")
+            XCTAssertEqual(MoneyFormat.amount(Decimal(string: "12.99")!, currency: "USD"), "$12.99")
+        }
+    }
+}
+
 final class ResetLabelTests: XCTestCase {
     override func setUp() {
         super.setUp()
