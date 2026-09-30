@@ -122,7 +122,7 @@ Antigravity, Cursor, GitHub Copilot CLI, CodeBuddy and Qwen Code do not record f
 | The records handlers leave for the application; completion hooks and handler entry | `Sources/AgentHUDCore/Hooks/HookInbox.swift`, `HookEntry.swift`, `CompletionHooks.swift` |
 | Observers, their scripts and records | `Sources/AgentHUDCore/Hooks/PiSessionObserver.swift`, `OpenCodeSessionObserver.swift`; installation in `SessionObservers.swift` and `Sources/AgentHUDDesktop/App/DesktopApplication.swift` |
 | Observer status in the settings | `Sources/AgentHUDDesktop/Settings/SourcesPane.swift` |
-| Per-client turn parsing | `Sources/AgentHUDCore/Providers/Claude/ClaudeTranscripts.swift`, `Codex/CodexTranscripts.swift`, `DeepSeek/DeepSeekTranscript.swift`, `Grok/GrokSessions.swift`, `OpenAgents/OpenAgentSessions.swift` |
+| Per-client turn parsing | `Sources/AgentHUDCore/Providers/Claude/ClaudeTranscriptParser.swift`, `TranscriptAccumulator.swift`, `Codex/CodexTranscripts.swift`, `DeepSeek/DeepSeekTranscript.swift`, `Grok/GrokSessions.swift`, `OpenAgents/OpenAgentSessions.swift` |
 | Claude sub-agents keeping their session running | `Sources/AgentHUDCore/Providers/Claude/ClaudeCodeProvider.swift` |
 
 ## Related
