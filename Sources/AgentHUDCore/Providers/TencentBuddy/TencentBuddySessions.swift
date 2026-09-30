@@ -99,12 +99,8 @@ enum TencentBuddySessions {
     static func lastAssistantMessage(_ url: URL, session: String) -> (id: String, model: String?)? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
-        guard let size = try? handle.seekToEnd() else { return nil }
-        let start = size > 1 << 20 ? size - (1 << 20) : 0
-        guard (try? handle.seek(toOffset: start)) != nil, let data = try? handle.readToEnd() else { return nil }
-        var lines = data.split(separator: 10)
-        if start > 0, !lines.isEmpty { lines.removeFirst() }
-        for line in lines.reversed() {
+        guard let data = try? ProviderFiles.tail(handle, bytes: 1 << 20) else { return nil }
+        for line in data.split(separator: 10).reversed() {
             guard let json = try? ProviderJSON.read(Data(line)), json["type"].stringValue == "message",
                   json["sessionId"].stringValue.map({ $0 == session }) != false else { continue }
             if json["role"].stringValue == "user" { return nil }

@@ -220,36 +220,13 @@ enum CopilotSessions: LocalSessionLayout {
 
     /// Decodes only lines whose leading `type` is wanted, so tool output and message bodies stay unparsed.
     static func events(_ url: URL, types: Set<String>, consume: (ProviderJSON) throws -> Void) throws {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        let marker = Data(#""type":""#.utf8), deadline = Date().addingTimeInterval(3)
+        let marker = Data(#""type":""#.utf8)
         func wanted(_ line: Data) -> Bool {
             guard let range = line.prefix(96).range(of: marker) else { return true }
             let rest = line[range.upperBound...].prefix(64)
             guard let end = rest.firstIndex(of: 34) else { return true }
             return types.contains(String(decoding: rest[rest.startIndex..<end], as: UTF8.self))
         }
-        var carry = Data(), read = 0, skipping = false
-        while let chunk = try handle.read(upToCount: 256 * 1024), !chunk.isEmpty {
-            try Task.checkCancellation()
-            read += chunk.count
-            guard read <= 256 * 1024 * 1024, Date() <= deadline else { throw ProviderFailure.limit }
-            carry.append(chunk)
-            var start = carry.startIndex
-            while let newline = carry[start...].firstIndex(of: 10) {
-                let line = carry[start..<newline]
-                if !skipping, !line.isEmpty, wanted(line) { try consume(ProviderJSON.read(Data(line))) }
-                skipping = false
-                start = newline + 1
-            }
-            carry.removeSubrange(carry.startIndex..<start)
-            // An oversized unwanted line (a large tool result) is dropped up to its newline.
-            if carry.count > 16 * 1024 * 1024 {
-                guard !wanted(carry) else { throw ProviderFailure.limit }
-                carry.removeAll(); skipping = true
-            }
-        }
-        // Accept a complete last JSON value without a newline; retry a torn tail on the next changed-file scan.
-        if !skipping, !carry.isEmpty, wanted(carry), let value = try? ProviderJSON.read(carry) { try consume(value) }
+        try ProviderFiles.lines(url, wanted: wanted) { json, _ in try consume(json) }
     }
 }

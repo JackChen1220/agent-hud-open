@@ -77,14 +77,9 @@ final class PermissionTranscriptWatch: @unchecked Sendable {
         source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: handle.fileDescriptor,
                                                            eventMask: [.extend, .write], queue: queue)
 
-        let end = handle.seekToEndOfFile()
-        let start = end > Self.history ? end - Self.history : 0
-        handle.seek(toFileOffset: start)
-        var earlier = handle.readData(ofLength: Int(end - start))
-        // A read that starts inside a line cannot parse it; the line it cut is older than any call worth finding.
-        if start > 0 { earlier = earlier.firstIndex(of: 0x0A).map { earlier.subdata(in: earlier.index(after: $0)..<earlier.endIndex) } ?? Data() }
-        // Results already in the record belong to earlier calls, so they settle nothing here.
-        _ = lines(in: earlier)
+        // The line a read from inside it cuts is older than any call worth finding. Results already in the record belong
+        // to earlier calls, so they settle nothing here.
+        _ = lines(in: (try? ProviderFiles.tail(handle, bytes: Self.history)) ?? Data())
 
         source.setEventHandler { [weak self] in self?.follow() }
         source.resume()

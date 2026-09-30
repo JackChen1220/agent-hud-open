@@ -41,38 +41,3 @@ actor AdditionalLocalStore {
             indexing: pass.indexing, revision: pass.revision, files: pass.listedFiles { $0.sessions.map(\.id) })
     }
 }
-
-enum ProviderFiles {
-    static func json(_ url: URL) throws -> ProviderJSON {
-        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size <= 16 * 1024 * 1024 else { throw ProviderFailure.limit }
-        return try ProviderJSON.read(Data(contentsOf: url))
-    }
-    /// Decodes a JSON Lines file line by line, numbering lines from 1. Given `markers`, a line holding none of them is
-    /// numbered but not decoded, so a reader passes them only when every line it uses holds one.
-    static func lines(_ url: URL, markers: [Data] = [], consume: (ProviderJSON, Int) throws -> Void) throws {
-        func wanted(_ line: Data) -> Bool { markers.isEmpty || markers.contains { line.range(of: $0) != nil } }
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        var carry = Data(), read = 0, ordinal = 0
-        let deadline = Date().addingTimeInterval(3)
-        while let chunk = try handle.read(upToCount: 256 * 1024), !chunk.isEmpty {
-            try Task.checkCancellation()
-            read += chunk.count
-            guard read <= 128 * 1024 * 1024, Date() <= deadline else { throw ProviderFailure.limit }
-            carry.append(chunk)
-            // Lines are cut from a moving start, and what they took is dropped once per chunk.
-            var start = carry.startIndex
-            while let newline = carry[start...].firstIndex(of: 10) {
-                let line = carry[start..<newline]
-                ordinal += 1
-                if !line.isEmpty, wanted(line) { try consume(ProviderJSON.read(Data(line)), ordinal) }
-                start = newline + 1
-            }
-            carry.removeSubrange(carry.startIndex..<start)
-            guard carry.count <= 16 * 1024 * 1024 else { throw ProviderFailure.limit }
-        }
-        // Accept a complete last JSON value without a newline; retry a torn tail on the next changed-file scan.
-        if !carry.isEmpty, wanted(carry), let value = try? ProviderJSON.read(carry) { try consume(value, ordinal + 1) }
-    }
-}
