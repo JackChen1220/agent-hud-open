@@ -28,6 +28,7 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 - `DesktopApplication` decides and presents island alerts itself: one `IslandEventTracker` checks every change of the report, the agent list or the Live status preference while the store is neither paused nor failing, and the island shows the new quota events, added usage resets and completed turns. Every host, the standalone application included, gets the same alerts without extra wiring.
 - A host that relays alerts elsewhere passes `onIslandEvents`. It receives every check after the island has presented it, including checks that found nothing, with the report and time the check used; the host maps that update and never runs a second tracker or presents again.
 - Completions in an update already honor `Settings.liveStatusEnabled(for:)`; hosts apply the same preference in any other relay or synchronization service they add ([session lifecycle](session-lifecycle.md)).
+- A host that receives its clients' prompt and Stop hooks hands the turns they saw to `UsageStore.hookTurns`, by session id, with `isReportedTurn` saying whether a hook turn is the one the report carries for its session; the store's view shows the hook turn's phase wherever the hooks saw more than the logs ([hook turns](session-lifecycle.md#hook-turns)). The standalone application hands in none.
 
 ### Collection signals
 
@@ -87,6 +88,7 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 | `UsageStore(provider:settings:accessAllowed:hooks:)` | AgentHUDCore | Any `UsageProvider`, the settings store, an access closure (false pauses collection) and `UsageCollectionHooks` |
 | `UsageCollectionHooks(historyHours:publish:merge:)` | AgentHUDCore | `@MainActor () -> Int`; `@MainActor (UsageReport) async -> Void`; `@MainActor (UsageReport) async -> UsageReport` |
 | `start()`, `stop()`, `refresh()`, `remerge()`, `replace(report:)`, `pause(for:)`, `resume()` | `UsageStore` | Collection lifecycle; `refresh` reads every source now unless a pass is running; `replace` installs a report without the provider |
+| `hookTurns` | `UsageStore` | `[String: SessionPhase.HookTurn]` by session id: the turns a host's prompt and Stop hooks saw |
 | `observeChanges(_:)` → `UsageChangeObservation` | `UsageStore` | `@MainActor (UsageChanges) -> Void` for each newly displayed report that changed something; releasing or cancelling the observation ends it |
 | `UsageSource(name:directories:accountSteps:)` | AgentHUDCore | A provider's independently read part and its signals; nil `directories` is read every `UsageRefresh.pollInterval` |
 | `DesktopApplication(options:settings:store:additionalSettingsPages:onIslandEvents:)` | AgentHUDDesktop | Parsed `DesktopLaunchOptions`, the two stores, `[DesktopSettingsPage]` and an optional `(IslandEventTracker.Update, UsageReport, Date) -> Void` relay hook |

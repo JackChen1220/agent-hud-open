@@ -105,6 +105,18 @@ final class SessionPhaseTests: XCTestCase {
                        SessionPhase(state: .idle, since: end, validUntil: nil))
     }
 
+    /// At a given time, an open hook turn runs for half an hour from its prompt, as a reading is vouched for, and is out of
+    /// date after that; a stopped one is idle since its Stop hook.
+    func testAHookTurnsPhaseAtATime() {
+        let start = now.addingTimeInterval(-600), end = now.addingTimeInterval(-60)
+        let open = SessionPhase.HookTurn(startedAt: start, endedAt: nil, isReportedTurn: true)
+        XCTAssertEqual(SessionPhase(hook: open, now: start.addingTimeInterval(1799.999)),
+                       SessionPhase(state: .running, since: start, validUntil: start.addingTimeInterval(1800)))
+        XCTAssertEqual(SessionPhase(hook: open, now: start.addingTimeInterval(1800)), SessionPhase(state: .unverified, since: start, validUntil: nil))
+        XCTAssertEqual(SessionPhase(hook: .init(startedAt: start, endedAt: end, isReportedTurn: false), now: now.addingTimeInterval(86400)),
+                       SessionPhase(state: .idle, since: end, validUntil: nil))
+    }
+
     /// A reading keeps its phase against a hook turn when it is in flight with work after the hook's end; when it reports
     /// the hook's turn open and waiting for approval, or that turn's end after the hook's start; and when it reports
     /// another turn, or none, that it dates after the hook's start. The hook wins everywhere else, and at equal times.

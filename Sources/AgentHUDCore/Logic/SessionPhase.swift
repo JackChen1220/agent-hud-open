@@ -5,7 +5,7 @@ import Foundation
 /// a reading too old for the Mac to vouch for. A provider decides when it reads a session whether its source has it in
 /// flight (`LiveSession.endedAt`), by the rule its client's records support (`read(_:rule:at:)`); the phase adds, at the
 /// time it is shown, how long the Mac vouches for that reading, what the newest turn says and whether live status is on.
-/// A client's prompt and Stop hooks give a phase of their own.
+/// A client's prompt and Stop hooks give a phase of their own, which takes the reading's place where the hooks saw more.
 public struct SessionPhase: Hashable, Sendable {
     public enum State: String, Hashable, Sendable {
         /// A turn is in flight.
@@ -22,8 +22,8 @@ public struct SessionPhase: Hashable, Sendable {
     /// In flight: when the turn started, or the session while no turn in flight is known. Otherwise: when the newest turn
     /// finished, else the session's last event.
     public let since: Date
-    /// In flight: when the Mac stops vouching for the state without a newer reading. Nil otherwise, for a hook turn, which
-    /// nothing bounds, and for a client waiting for an answer to a permission request, which lasts as long as it waits.
+    /// In flight: when the Mac stops vouching for the state without a newer reading or hook. Nil otherwise, and for a
+    /// client waiting for an answer to a permission request, which lasts as long as it waits.
     public let validUntil: Date?
 
     public init(state: State, since: Date, validUntil: Date?) {
@@ -246,7 +246,20 @@ public struct SessionPhase: Hashable, Sendable {
         }
     }
 
-    /// The phase a hook turn gives: running since its start while it is open, idle since its end.
+    /// The phase a hook turn gives at `now`: running since its start while it is open, for `Limits.vouched` after the start
+    /// as a reading is vouched for, and out of date after that; idle since its end.
+    public init(hook: HookTurn, now: Date) {
+        if let end = hook.endedAt {
+            self.init(state: .idle, since: end, validUntil: nil)
+        } else if now.timeIntervalSince(hook.startedAt) < Limits.vouched {
+            self.init(state: .running, since: hook.startedAt, validUntil: hook.startedAt.addingTimeInterval(Limits.vouched))
+        } else {
+            self.init(state: .unverified, since: hook.startedAt, validUntil: nil)
+        }
+    }
+
+    /// The phase a hook turn gives without a time: running since its start while it is open, however long ago that was,
+    /// and idle since its end. `init(hook:now:)` bounds an open turn as a reading is bounded.
     public init(hook: HookTurn) {
         self.init(state: hook.endedAt == nil ? .running : .idle, since: hook.endedAt ?? hook.startedAt, validUntil: nil)
     }
@@ -262,6 +275,15 @@ public struct SessionPhase: Hashable, Sendable {
         // The reading can see a wait for approval, or the turn's end, before the hooks do.
         return !(hook.endedAt == nil
             && (reading.state == .waitingForApproval || (!reading.isInFlight && reading.since > hook.startedAt)))
+    }
+
+    /// The phase a hook turn gives at `now` in place of a reading's, or nil where the reading keeps its own: where
+    /// `hookPrevails(_:over:lastEventAt:)` says the reading saw more, and where the hook turn is out of date while the
+    /// reading is in flight, since a hook turn past its half hour vouches for nothing.
+    static func hooked(_ hook: HookTurn, over reading: SessionPhase, lastEventAt: Date, now: Date) -> SessionPhase? {
+        guard hookPrevails(hook, over: reading, lastEventAt: lastEventAt) else { return nil }
+        let phase = SessionPhase(hook: hook, now: now)
+        return phase.state == .unverified && reading.isInFlight ? nil : phase
     }
 }
 

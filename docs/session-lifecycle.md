@@ -42,6 +42,13 @@ Which clients expose running and terminal turns, which of them say they are wait
 - The island announces each completed turn once, for clients whose Live status is on (`IslandEventTracker`). Completions that happened before the application started are history, not events, and turns that finished while Live status was off are not replayed when it is turned back on.
 - Hosts that relay completions use the island's update rather than deciding again, and apply the same preference in any other relay or synchronization service.
 
+### Hook turns
+
+- A host that receives its clients' prompt and Stop hooks hands the turns they saw to the store (`UsageStore.hookTurns`), by session id, saying whether each is the turn the session's log reports. A hook turn takes the place of what the log says wherever the hooks saw more (`SessionPhase.hookPrevails`), so the panel changes at the Stop hook rather than at the next read of the log.
+- The log keeps its word where it saw more than the hooks: work in flight after the Stop hook, such as sub-agents left running; while the hook turn is open, a wait for approval of the same turn, or that turn's end dated after the prompt; another turn, or one without an id, dated after the prompt.
+- An open hook turn runs for 30 minutes from its prompt (`SessionPhase.Limits.vouched`), as a reading is vouched for, and is out of date after that, when it no longer takes the place of a log that still has the session in flight; a stopped one is finished since its Stop hook, which is then the session's last event. With Live status off, hook turns change nothing.
+- Agent HUD Open receives no prompt hooks and hands in no hook turns: the Stop hooks it installs complete their clients' turns through the providers (`SessionPhase.stopped`), which read a record as soon as a hook writes it ([Completion hooks](#completion-hooks)).
+
 ### Sub-agents
 
 - A Claude Code session also runs while the sub-agents and workflow agents it started work, after its own agent ended its turn or went quiet waiting for them. Their logs sit in a directory named after the session's log (`<session>/subagents/`, workflow agents under `workflows/<run>/`), and their latest activity is the session's latest event.
@@ -95,7 +102,7 @@ Antigravity, Cursor, GitHub Copilot CLI, CodeBuddy and Qwen Code do not record f
 | Turn, completion and session models | `Sources/AgentHUDCore/Models/SessionTurn.swift`, `SessionCompletion.swift`, `LiveSession.swift` |
 | Live status preference | `Sources/AgentHUDCore/Models/Settings.swift` |
 | Whether a client's records have a session in flight when its provider reads it, and the turn it reports; a session's phase at a given time, a hook turn's phase and when it takes a reading's place; the session limits | `Sources/AgentHUDCore/Logic/SessionPhase.swift` |
-| A report's rows, balances, levels and sessions as the Mac shows them: each session's source, newest turn, last event, message and phase, the sessions waiting on a permission request, their order, and the live sessions, working vendors and logo queue; the store's view of its report and the requests waiting | `Sources/AgentHUDCore/Logic/ReportView.swift`, `Sources/AgentHUDCore/Store/UsageStore.swift`, `Sources/AgentHUDCore/Providers/Shared/PermissionRequests.swift` |
+| A report's rows, balances, levels and sessions as the Mac shows them: each session's source, newest turn, last event, message and phase, the sessions waiting on a permission request, the hook turns in the log's place, their order, and the live sessions, working vendors and logo queue; the store's view of its report, the requests waiting and the hook turns a host hands in | `Sources/AgentHUDCore/Logic/ReportView.swift`, `Sources/AgentHUDCore/Store/UsageStore.swift`, `Sources/AgentHUDCore/Providers/Shared/PermissionRequests.swift` |
 | Completion reminders | `Sources/AgentHUDCore/Logic/IslandEvents.swift`, `Sources/AgentHUDDesktop/App/DesktopApplication.swift` |
 | Adapter setup, the handler command and the settings writer | `Sources/AgentHUDCore/Providers/SessionObservers.swift`, `Shared/HookCommand.swift`, `Shared/HookSettings.swift` |
 | Completion hooks and handler entry | `Sources/AgentHUDCore/Providers/Additional/CompletionHooks.swift`, `Sources/AgentHUDOpenApp/main.swift` |

@@ -130,6 +130,10 @@ public final class UsageStore {
     public var glowHidden = false
     /// Advances every few seconds so countdowns re-render.
     public internal(set) var now = Date()
+    /// The turns clients' prompt and Stop hooks saw, by session id, which a host that receives those hooks hands in. A hook
+    /// turn takes the place of what a session's log says wherever the hooks saw more
+    /// (`SessionPhase.hookPrevails(_:over:lastEventAt:)`), so the panel follows a Stop hook at once.
+    public var hookTurns: [String: SessionPhase.HookTurn] = [:]
 
     public let settings: SettingsStore
     private let accessAllowed: () -> Bool
@@ -142,7 +146,7 @@ public final class UsageStore {
     @ObservationIgnored private var reportGeneration = 0
     /// The last view built, and what it was built from.
     @ObservationIgnored private var built: (generation: Int, agents: [AgentDescriptor], settings: Settings, approvals: [String],
-                                            view: ReportView)?
+                                            hookTurns: [String: SessionPhase.HookTurn], view: ReportView)?
 
     /// `hooks` let a host choose the history window, publish each provider report and merge it into the displayed report.
     public init(provider: any UsageProvider, settings: SettingsStore, accessAllowed: @escaping () -> Bool = { true },
@@ -260,16 +264,16 @@ public final class UsageStore {
     // MARK: Derived
 
     /// What the Mac shows of the report now: its rows, balances, levels and sessions, with the sessions whose clients wait
-    /// for an answer to a permission request (`PermissionRequests.shared`) waiting for approval. It is built again only
-    /// when the report, the agent list, the settings, the waiting requests or the time changed, and reading it tracks all
-    /// five.
+    /// for an answer to a permission request (`PermissionRequests.shared`) waiting for approval and the hooks' turns in
+    /// their place. It is built again only when the report, the agent list, the settings, the waiting requests, the hooks'
+    /// turns or the time changed, and reading it tracks all six.
     public var view: ReportView {
         let report = self.report, agents = settings.agents, preferences = settings.settings, now = self.now
-        let approvals = PermissionRequests.shared.pending, requests = approvals.map(\.id)
+        let approvals = PermissionRequests.shared.pending, requests = approvals.map(\.id), hookTurns = self.hookTurns
         if let built, built.generation == reportGeneration, built.view.now == now, built.agents == agents,
-           built.settings == preferences, built.approvals == requests { return built.view }
-        let view = ReportView(report: report, agents: agents, settings: preferences, approvals: approvals, now: now)
-        built = (reportGeneration, agents, preferences, requests, view)
+           built.settings == preferences, built.approvals == requests, built.hookTurns == hookTurns { return built.view }
+        let view = ReportView(report: report, agents: agents, settings: preferences, approvals: approvals, hookTurns: hookTurns, now: now)
+        built = (reportGeneration, agents, preferences, requests, hookTurns, view)
         return view
     }
 
