@@ -145,6 +145,12 @@ public extension UsageReport {
         }
     }
 
+    /// Whether an account's reading lists every window of the account, so that a window it leaves out has ended: the client
+    /// is signed in to the account and neither its read nor its vendor's has an issue.
+    func confirmsCompleteInventory(_ account: AccountObservation) -> Bool {
+        account.isCurrent && status(of: .account(account)).isNormal
+    }
+
     /// A vendor's status: its issue with a quota or balance reading. A report that does not type its issues gives its
     /// notice about such a reading as a failed read, and one that does not tell such notices apart every source notice.
     internal func vendorStatus(_ vendor: String) -> ReadingStatus {
@@ -163,9 +169,6 @@ extension AccountObservation {
     /// The account's own status; an observation saved without a typed issue gives its notice as a failed read.
     var ownStatus: ReadingStatus { readingIssue?.status ?? quotaNotice.map { .readFailed(reason: $0) } ?? .normal }
 
-    /// Whether this reading lists every window of its account, so that a window it leaves out has ended: the client is
-    /// signed in to the account and its own read succeeded.
-    public var confirmsCompleteInventory: Bool { isCurrent && ownStatus.isNormal }
 }
 
 extension APIBilling {

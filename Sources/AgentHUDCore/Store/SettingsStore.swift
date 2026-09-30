@@ -85,24 +85,42 @@ public final class SettingsStore {
     /// the order the providers gave them, switched off when the vendor catalog starts them hidden. The user's manual
     /// order is preserved.
     /// Account rows: the first identified account takes over an unscoped row's position and switch, a further account's
-    /// window inherits the switch of the same window on another account, and rows of accounts absent from a provider's
-    /// inventory are removed.
-    /// Full retained reports can retire Codex windows; incremental discovery keeps existing preferences.
+    /// window inherits the switch of the same window on another account, and rows that are no longer present, as
+    /// `ReportView.isPresent(_:in:)` decides without the sighting times, are removed.
+    /// With `replaceQuotaWindows`, a Codex read that lists an account's complete window inventory retires the windows it left
+    /// out; judged on the accounts alone, since these fields carry no notices. Incremental discovery keeps existing
+    /// preferences.
     public func mergeDiscovered(_ discovered: [AgentDescriptor], activeQuotaPoolIDs: [String: Set<String>]? = nil,
                                 accounts: [String: [AccountObservation]]? = nil, replaceQuotaWindows: Bool = false) {
+        merge(discovered, activeQuotaPoolIDs: activeQuotaPoolIDs, accounts: accounts,
+              completeInventory: replaceQuotaWindows ? { $0.isCurrent && $0.ownStatus.isNormal } : nil)
+    }
+
+    /// Merges the rows of a report the app displays, as `mergeDiscovered(_:activeQuotaPoolIDs:accounts:replaceQuotaWindows:)`
+    /// does with every Codex window replaced. A Codex read replaces an account's windows only when it lists them without an
+    /// issue of the account's or of Codex's own, the rule the report kept across passes follows.
+    public func mergeDiscovered(from report: UsageReport) {
+        merge(report.discoveredAgents, activeQuotaPoolIDs: report.activeQuotaPoolIDs, accounts: report.accounts,
+              completeInventory: report.confirmsCompleteInventory)
+    }
+
+    /// - completeInventory: whether an account's reading lists all of its windows; nil keeps every window.
+    private func merge(_ discovered: [AgentDescriptor], activeQuotaPoolIDs: [String: Set<String>]?,
+                       accounts: [String: [AccountObservation]]?, completeInventory: ((AccountObservation) -> Bool)?) {
         guard !discovered.isEmpty || activeQuotaPoolIDs != nil || accounts != nil else { return }
+        func isPresent(_ agent: AgentDescriptor) -> Bool {
+            ReportView.isPresent(agent, seenAt: nil, accounts: accounts, activePools: activeQuotaPoolIDs)
+        }
+        func isUnscoped(_ agent: AgentDescriptor) -> Bool { agent.account == nil && agent.billingPool == nil }
         let merged: [AgentDescriptor] = {
             var list = agents.filter { agent in
-                if let account = agent.account, agent.billingPool == nil, let known = accounts?[account.provider] {
-                    // Only the account's own notice keeps the windows a read left out; a notice for the whole vendor does not.
-                    if replaceQuotaWindows, account.provider == "Codex", known.contains(where: { $0.account.id == account.id && $0.confirmsCompleteInventory }) {
-                        return discovered.contains { $0.id == agent.id }
-                    }
-                    return known.contains { $0.account.id == account.id }
+                // A complete Codex inventory keeps only the windows it lists.
+                if let account = agent.account, agent.billingPool == nil, account.provider == "Codex", let completeInventory,
+                   accounts?["Codex"]?.contains(where: { $0.account.id == account.id && completeInventory($0) }) == true {
+                    return discovered.contains { $0.id == agent.id }
                 }
-                guard let pool = agent.billingPool, pool.product == .plan,
-                      let active = activeQuotaPoolIDs?[pool.provider] else { return true }
-                return active.contains(pool.id)
+                // A row without an account waits for an identified account to take it over.
+                return isUnscoped(agent) || isPresent(agent)
             }
             for found in discovered where found.account != nil && found.billingPool == nil && !list.contains(where: { $0.id == found.id }) {
                 if let index = list.firstIndex(where: { $0.account == nil && $0.billingPool == nil && $0.vendor == found.vendor && $0.id == found.windowKey }) {
@@ -121,10 +139,7 @@ public final class SettingsStore {
                 list.insert(contentsOf: replacements, at: index)
             }
             // Unscoped rows of a provider that now identifies accounts have been taken over or no longer exist.
-            list.removeAll { agent in
-                agent.account == nil && agent.billingPool == nil && accounts?[agent.vendor]?.isEmpty == false
-                    && !discovered.contains { $0.id == agent.id }
-            }
+            list.removeAll { agent in isUnscoped(agent) && !isPresent(agent) && !discovered.contains { $0.id == agent.id } }
             let listed = Set(list.map(\.vendor))
             var arriving: [AgentDescriptor] = []
             for found in discovered {

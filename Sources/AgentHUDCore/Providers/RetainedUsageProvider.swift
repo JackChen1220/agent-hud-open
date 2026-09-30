@@ -80,40 +80,34 @@ extension UsageReport {
 
     /// An absent reading is not a zero or a confirmed reset. Keep its original observation time.
     func retainingReadings(from previous: UsageReport) -> UsageReport {
+        /// A plan pool the provider's inventory leaves out retires with its rows, readings and account.
         func isActive(_ agent: AgentDescriptor) -> Bool {
-            guard let pool = agent.billingPool, pool.product == .plan,
-                  let active = activeQuotaPoolIDs?[pool.provider] else { return true }
-            return active.contains(pool.id)
+            ReportView.isPresent(agent, seenAt: nil, accounts: nil, activePools: activeQuotaPoolIDs)
         }
-        let retiredPools = previous.discoveredAgents.filter { !isActive($0) }
-        let retiredPoolIDs = Set(retiredPools.compactMap { $0.billingPool?.id })
+        let retiredPoolIDs = Set(previous.discoveredAgents.filter { !isActive($0) }.compactMap { $0.billingPool?.id })
         let cutoff = generatedAt.addingTimeInterval(-QuotaHistoryStore.retention)
         let currentIDs = Set(snapshots.map(\.agentId))
         // A successful Codex response is the complete window inventory for that account.
         // Omitted buckets are retired; a failed read, the vendor's failed read or an account switched away keeps its last
         // readings. A notice about Codex's logs or hooks keeps none.
-        let codexRead = vendorStatus("Codex").isNormal
-        let confirmedCodex = Set((self.accounts?["Codex"] ?? []).filter { $0.confirmsCompleteInventory && codexRead }.map(\.account.id))
+        let confirmedCodex = Set((self.accounts?["Codex"] ?? []).filter(confirmsCompleteInventory).map(\.account.id))
         let accounts = mergedAccounts(from: previous, retiredPoolIDs: retiredPoolIDs, cutoff: cutoff)
-        let knownAccountIDs = Set(accounts?.values.flatMap { $0.map(\.account.id) } ?? [])
-        // Rows of an account unseen for the retention period retire with its readings and settings.
-        // Rows without an account belong to a provider version that could not identify accounts; they are dropped.
-        let retiredRows = previous.discoveredAgents.filter { agent in
-            if let account = agent.account, confirmedCodex.contains(account.id), !currentIDs.contains(agent.id) { return true }
-            if let account = agent.account, agent.billingPool == nil { return accounts != nil && !knownAccountIDs.contains(account.id) }
-            return agent.account == nil && agent.billingPool == nil && accounts?[agent.vendor]?.isEmpty == false
-        }
-        // Any row retires once no provider has reported it for the retention period, whatever took it away: a client
-        // uninstalled, a window the service dropped, a vendor the app no longer reads. Rows from a report that kept no
-        // times start their clock now.
+        // Every row a provider reports is seen now; rows from a report that kept no times start their clock now.
         let reportedIDs = Set(discoveredAgents.map(\.id))
         var seen = previous.rowSeenAt ?? [:]
         for agent in previous.discoveredAgents where seen[agent.id] == nil { seen[agent.id] = generatedAt }
         for id in reportedIDs { seen[id] = generatedAt }
-        let unseenRows = previous.discoveredAgents.filter { !reportedIDs.contains($0.id) && seen[$0.id]! < cutoff }
-        let retired = retiredPools + retiredRows + unseenRows
+        // A row retires with its readings and settings once it is no longer present: no provider reported it for the
+        // retention period, whatever took it away (a client uninstalled, a window the service dropped, a vendor the app no
+        // longer reads), its account left its provider's inventory, its plan pool is inactive, or it has no account while
+        // its provider identifies them. A complete Codex inventory also retires the windows it left out.
+        let recent = seen.filter { $0.value >= cutoff }
+        let retired = previous.discoveredAgents.filter { agent in
+            if let account = agent.account, confirmedCodex.contains(account.id), !currentIDs.contains(agent.id) { return true }
+            return !ReportView.isPresent(agent, seenAt: recent, accounts: accounts, activePools: activeQuotaPoolIDs)
+        }
         let retiredWindowIDs = Set(retired.map(\.id))
-        func isRetained(_ agent: AgentDescriptor) -> Bool { isActive(agent) && !retiredWindowIDs.contains(agent.id) }
+        func isRetained(_ agent: AgentDescriptor) -> Bool { !retiredWindowIDs.contains(agent.id) }
         let billingIDs = Set(billing.map(\.id))
         let retainedBilling = billing.map { value -> APIBilling in
             guard value.updatedAt == nil, let old = previous.billing.first(where: { $0.id == value.id }) else { return value }

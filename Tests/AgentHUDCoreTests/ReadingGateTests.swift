@@ -67,16 +67,16 @@ final class ReadingGateTests: XCTestCase {
                                                quotaNotice: "offline")
         let cases: [(String, Reading, Gates)] = [
             ("a fresh reading", Reading(), Gates()),
-            // The reset column and the settings row pass over the vendor's notice. A reading without a level enters neither
-            // the menu figure nor a hint.
+            // The reset column passes over the vendor's notice. A reading without a level enters neither the menu figure nor
+            // a hint, and the kept report and the settings both keep the window a failed read left out.
             ("the vendor's read failed", Reading(sourceNotices: ["Codex": "offline"], quotaNotices: ["Codex": "offline"]),
              Gates(notice: "offline", level: nil, startsAlerts: false, startsCredits: false, menuFigure: nil, status: "Last read 1m ago",
-                   hint: nil, keepsLeftOutWindow: true, keptSessions: ["Codex"])),
+                   hint: nil, keepsLeftOutWindow: true, keepsLeftOutRow: true, keptSessions: ["Codex"])),
             // A notice about the vendor's logs holds nothing back.
             ("only the vendor's logs could not be read", Reading(sourceNotices: ["Codex": "logs unreadable"]), Gates()),
             ("a report that does not tell quota notices apart", Reading(sourceNotices: ["Codex": "offline"], quotaNotices: nil),
              Gates(notice: "offline", level: nil, startsAlerts: false, startsCredits: false, menuFigure: nil, status: "Last read 1m ago",
-                   hint: nil, keepsLeftOutWindow: true, keptSessions: ["Codex"])),
+                   hint: nil, keepsLeftOutWindow: true, keepsLeftOutRow: true, keptSessions: ["Codex"])),
             ("the account's read failed", Reading(accountNotice: "offline"),
              Gates(notice: "offline", level: nil, startsAlerts: false, startsCredits: false, menuFigure: nil, status: "Last read 1m ago",
                    hint: nil, keepsLeftOutWindow: true, keepsLeftOutRow: true)),
@@ -254,7 +254,7 @@ final class ReadingGateTests: XCTestCase {
         _ = resets.update(report: report, now: now)
         let next = nextReading(of: [window])
         settings.updateAgents { _ in [window, spark] }
-        settings.mergeDiscovered(report.discoveredAgents, accounts: report.accounts, replaceQuotaWindows: true)
+        settings.mergeDiscovered(from: report)
         let retained = report.retainingReadings(from: earlier)
         return Gates(notice: report.quotaNotice(for: window), level: row.level,
                      startsAlerts: !alerts.update(report: next, agents: [window], now: later).criticalAgentIDs.isEmpty,

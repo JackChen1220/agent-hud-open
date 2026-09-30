@@ -31,10 +31,10 @@ public struct ReportView: Sendable {
     }
 
     public let now: Date
-    /// Rows a provider reported within the retention period, in the settings' order. Settings keep the switch and place
-    /// of a row that stopped being reported, so it comes back as it was; until then it is not shown anywhere.
+    /// The rows present, as `isPresent(_:in:)` decides, in the settings' order. Settings keep the switch and place of a
+    /// row that stops being present, so it comes back as it was; until then it is not shown anywhere.
     public let visibleAgents: [AgentDescriptor]
-    /// The visible rows switched on, but for plan pools the report does not list as active.
+    /// The visible rows switched on.
     public let enabledAgents: [AgentDescriptor]
     /// A quota row for each enabled row that is not billed through an API account.
     public let rows: [AgentRow]
@@ -71,9 +71,8 @@ public struct ReportView: Sendable {
     /// - failure: the error of the last pass when every source failed to read it.
     public init(report: UsageReport?, agents: [AgentDescriptor], settings: Settings, approvals: [PermissionRequest] = [],
                 hookTurns: [String: SessionPhase.HookTurn] = [:], now: Date, failure: String? = nil) {
-        let visible = report?.visibleRows(agents) ?? agents
-        // Without a report, a plan pool's rows stay hidden.
-        let enabled = visible.filter { $0.enabled && Self.isPoolActive($0, in: report, withoutReport: false) }
+        let visible = agents.filter { Self.isPresent($0, in: report) }
+        let enabled = visible.filter(\.enabled)
         let rows = enabled.filter { !$0.isAPIBilled }.enumerated().map { index, agent in
             let snapshot = report?.snapshot(for: agent.id)
             // Without a report, a row has no reading and counts as its account's current one.
@@ -132,12 +131,27 @@ public struct ReportView: Sendable {
 
     // MARK: Quota
 
-    /// Whether a row's plan pool is active: a row without one always is, and a plan pool is unless the report's inventory
-    /// for its provider leaves it out. Without a report, `withoutReport` answers.
-    static func isPoolActive(_ agent: AgentDescriptor, in report: UsageReport?, withoutReport: Bool) -> Bool {
-        guard let pool = agent.billingPool, pool.product == .plan else { return true }
-        guard let report else { return withoutReport }
-        return report.activeQuotaPoolIDs?[pool.provider]?.contains(pool.id) ?? true
+    /// Whether a row is present, the one rule of the panel, the menu, Settings and the report kept across passes: a provider
+    /// reported it within the retention period, its account is in its provider's inventory, and its plan pool is active.
+    /// What a report does not say counts as present: rows it keeps no sighting times for, a provider without an inventory, a
+    /// pool its provider's inventory does not cover; without a report every row is. A row without an account is no longer
+    /// present once its provider identifies accounts.
+    public static func isPresent(_ agent: AgentDescriptor, in report: UsageReport?) -> Bool {
+        guard let report else { return true }
+        return isPresent(agent, seenAt: report.rowSeenAt, accounts: report.accounts, activePools: report.activeQuotaPoolIDs)
+    }
+
+    /// `isPresent(_:in:)` over the sighting times, the account inventory and the active plan pools themselves.
+    static func isPresent(_ agent: AgentDescriptor, seenAt: [String: Date]?, accounts: [String: [AccountObservation]]?,
+                          activePools: [String: Set<String>]?) -> Bool {
+        if let seenAt, seenAt[agent.id] == nil { return false }
+        if let pool = agent.billingPool {
+            guard pool.product == .plan, let active = activePools?[pool.provider] else { return true }
+            return active.contains(pool.id)
+        }
+        guard let inventory = accounts?[agent.account?.provider ?? agent.vendor] else { return true }
+        guard let account = agent.account else { return inventory.isEmpty }
+        return inventory.contains { $0.account.id == account.id }
     }
 
     /// Each glow segment's level, in glow order.

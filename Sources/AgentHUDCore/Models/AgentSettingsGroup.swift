@@ -13,11 +13,10 @@ public struct AgentSettingsGroup: Identifiable, Equatable, Sendable {
     public var displayedCount: Int { agents.filter(\.enabled).count }
     public var hasLiveStatus: Bool { SessionSource.agentVendors.contains(id) }
 
-    /// One group per vendor with something to set: rows a provider reported within the retention period, a service,
-    /// or a client found on this Mac. A client that is neither installed nor reporting has no group.
+    /// One group per vendor with something to set: rows present, as `ReportView.isPresent(_:in:)` decides, a service, or
+    /// a client found on this Mac. A client that is neither installed nor reporting has no group.
     public static func make(sources: [SourceStatus], agents: [AgentDescriptor], report: UsageReport? = nil) -> [Self] {
-        // Without a report, a plan pool's rows are listed.
-        let agents = (report?.visibleRows(agents) ?? agents).filter { ReportView.isPoolActive($0, in: report, withoutReport: true) }
+        let agents = agents.filter { ReportView.isPresent($0, in: report) }
         let existing = agents.agentGroups
         var ids = existing.map(\.id)
         let found = sources.filter { $0.state != .notDetected }.map(\.name)

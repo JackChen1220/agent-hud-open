@@ -309,7 +309,7 @@ final class UsageCollector {
             mergeRequested = false
             let report = await hooks.merge?(fetched) ?? fetched
             guard store.isAccessAllowed, !Task.isCancelled else { needsFetch = true; return }
-            settings.mergeDiscovered(report.discoveredAgents, activeQuotaPoolIDs: report.activeQuotaPoolIDs, accounts: report.accounts, replaceQuotaWindows: true)
+            settings.mergeDiscovered(from: report)
             generation += 1
             local = (fetched, generation)
             store.collected(report)

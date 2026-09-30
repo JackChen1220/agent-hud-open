@@ -54,39 +54,40 @@ final class RowPresenceTests: XCTestCase {
                                      .map { ($0, now) }))
         let codexRows = "Codex: codex-current, codex-other, codex-unlisted"
         let cases: [(String, UsageReport?, Presence)] = [
-            // Without a report, plan pools are hidden from the island and menu but listed in Settings, and every row
-            // reads as its account's current one.
+            // Without a report nothing says a row is gone, so every row is present, plan pools included, on every
+            // surface as in Settings, and every row reads as its account's current one.
             ("no report", nil, Presence(
                 visible: everyRow,
-                enabled: ["claude", "claude-unseen", "deepseek", "codex-current", "codex-other", "codex-unlisted"],
-                rows: ["claude", "claude-unseen", "codex-current", "codex-other", "codex-unlisted"],
+                enabled: everyRow.filter { $0 != "claude-off" },
+                rows: ["claude", "claude-unseen", "kimi-active", "kimi-inactive", "glm", "codex-current", "codex-other", "codex-unlisted"],
                 billing: [],
-                groups: ["Claude: claude, claude-unseen", codexRows],
-                sections: ["Claude: no account", "Codex: current", "Codex: other", "Codex: unlisted"],
+                groups: ["Claude: claude, claude-unseen", "Kimi: kimi-active, kimi-inactive", "GLM: glm", codexRows],
+                sections: ["Claude: no account", "Kimi: kimi-active", "Kimi: kimi-inactive", "GLM: glm", "Codex: current", "Codex: other",
+                           "Codex: unlisted"],
                 settings: ["Claude: claude, claude-unseen, claude-off", "DeepSeek: deepseek", "Kimi: kimi-active, kimi-inactive",
                            "GLM: glm", codexRows])),
-            // A report that keeps no sightings and has no pool inventory shows every row it may.
+            // A report that keeps no sightings and has no pool inventory shows every row but those of an account missing
+            // from its provider's inventory.
             ("a report without sightings or pool inventory", bare, Presence(
-                visible: everyRow,
-                enabled: everyRow.filter { $0 != "claude-off" },
-                rows: ["claude", "claude-unseen", "kimi-active", "kimi-inactive", "glm", "codex-current", "codex-other (another account)",
-                       "codex-unlisted"],
+                visible: everyRow.filter { $0 != "codex-unlisted" },
+                enabled: everyRow.filter { !["claude-off", "codex-unlisted"].contains($0) },
+                rows: ["claude", "claude-unseen", "kimi-active", "kimi-inactive", "glm", "codex-current", "codex-other (another account)"],
                 billing: ["DeepSeek"],
-                groups: ["Claude: claude, claude-unseen", "Kimi: kimi-active, kimi-inactive", "GLM: glm", codexRows],
+                groups: ["Claude: claude, claude-unseen", "Kimi: kimi-active, kimi-inactive", "GLM: glm", "Codex: codex-current, codex-other"],
                 sections: ["Claude: no account", "Kimi: kimi-active", "Kimi: kimi-inactive", "GLM: glm", "Codex: current",
-                           "Codex: other, not current", "Codex: unlisted"],
+                           "Codex: other, not current"],
                 settings: ["Claude: claude, claude-unseen, claude-off", "DeepSeek: deepseek", "Kimi: kimi-active, kimi-inactive",
-                           "GLM: glm", codexRows + "; accounts current, other"])),
-            // An unlisted row and an inactive pool go everywhere; the API row's balance goes with its row.
+                           "GLM: glm", "Codex: codex-current, codex-other; accounts current, other"])),
+            // An unlisted row, an inactive pool and a row of an account missing from its inventory go everywhere; the API
+            // row's balance goes with its row.
             ("a report with sightings and a pool inventory", fuller, Presence(
-                visible: ["claude", "claude-off", "kimi-active", "kimi-inactive", "glm", "codex-current", "codex-other", "codex-unlisted"],
-                enabled: ["claude", "kimi-active", "glm", "codex-current", "codex-other", "codex-unlisted"],
-                rows: ["claude", "kimi-active", "glm", "codex-current", "codex-other (another account)", "codex-unlisted"],
+                visible: ["claude", "claude-off", "kimi-active", "glm", "codex-current", "codex-other"],
+                enabled: ["claude", "kimi-active", "glm", "codex-current", "codex-other"],
+                rows: ["claude", "kimi-active", "glm", "codex-current", "codex-other (another account)"],
                 billing: [],
-                groups: ["Claude: claude", "Kimi: kimi-active", "GLM: glm", codexRows],
-                sections: ["Claude: no account", "Kimi: kimi-active", "GLM: glm", "Codex: current", "Codex: other, not current",
-                           "Codex: unlisted"],
-                settings: ["Claude: claude, claude-off", "Kimi: kimi-active", "GLM: glm", codexRows + "; accounts current, other"])),
+                groups: ["Claude: claude", "Kimi: kimi-active", "GLM: glm", "Codex: codex-current, codex-other"],
+                sections: ["Claude: no account", "Kimi: kimi-active", "GLM: glm", "Codex: current", "Codex: other, not current"],
+                settings: ["Claude: claude, claude-off", "Kimi: kimi-active", "GLM: glm", "Codex: codex-current, codex-other; accounts current, other"])),
         ]
         for (name, report, expected) in cases {
             let store = UsageStore(provider: DemoUsageProvider(), settings: try makeSettings(agents))
@@ -95,11 +96,10 @@ final class RowPresenceTests: XCTestCase {
         }
     }
 
-    /// What a pass makes of a Codex read that leaves one of the current account's windows out while a notice stands for
-    /// Codex. ReadingGateTests pins each rule on its own: a kept report holds on to such a window's reading while Codex's
-    /// read failed, and the settings drop its row from a list without it. A pass hands the settings the kept report's rows,
-    /// so the two agree while there is an earlier report to keep from. A notice about Codex's logs holds nothing back, and
-    /// the first pass of a run without a restart copy has nothing to keep from, so the row goes.
+    /// What a pass makes of a Codex read that leaves one of the current account's windows out. The kept report and the
+    /// settings follow one rule: only a read without an issue replaces the account's windows, and a notice about Codex's
+    /// logs is no issue. After a read whose Codex read failed, the row keeps its switch and place in the settings; the
+    /// window keeps its reading and its place among the rows shown only when an earlier report had them.
     @MainActor
     func testACodexWindowLeftOutOfAReadKeepsItsRowOnlyWhenAnEarlierReportIsKept() async throws {
         let window = AgentDescriptor(id: current.windowID("codex"), vendor: "Codex", model: "5h", source: "", enabled: true, account: current)
@@ -111,21 +111,24 @@ final class RowPresenceTests: XCTestCase {
                         quotaNotices: failed.map { ["Codex": $0] } ?? [:], accounts: ["Codex": [AccountObservation(account: current, observedAt: date)]])
         }
         let earlier = read([window, spark], at: now.addingTimeInterval(-600))
-        // The reads a run makes in turn, and whether the left-out window keeps its row, its place among the rows shown and
-        // its reading after the last of them.
-        let cases: [(String, [UsageReport], keeps: Bool)] = [
-            ("an earlier read, then one whose Codex read failed", [earlier, read([window], at: now, failed: "Codex could not be read")], true),
-            ("an earlier read, then one with a notice about logs", [earlier, read([window], at: now, notice: "Codex logs could not be read")], false),
-            ("an earlier read, then one without", [earlier, read([window], at: now)], false),
-            ("a first read whose Codex read failed and no restart copy", [read([window], at: now, failed: "Codex could not be read")], false),
+        // The reads a run makes in turn, whether the left-out window keeps its row in the settings, and whether it keeps its
+        // place among the rows shown and its reading after the last of them.
+        let cases: [(String, [UsageReport], keepsRow: Bool, keepsReading: Bool)] = [
+            ("an earlier read, then one whose Codex read failed", [earlier, read([window], at: now, failed: "Codex could not be read")],
+             true, true),
+            ("an earlier read, then one with a notice about logs", [earlier, read([window], at: now, notice: "Codex logs could not be read")],
+             false, false),
+            ("an earlier read, then one without", [earlier, read([window], at: now)], false, false),
+            ("a first read whose Codex read failed and no restart copy", [read([window], at: now, failed: "Codex could not be read")],
+             true, false),
         ]
-        for (name, reads, keeps) in cases {
+        for (name, reads, keepsRow, keepsReading) in cases {
             let store = UsageStore(provider: RetainedUsageProvider(provider: Reads(reads)), settings: try makeSettings([window, spark]))
             for _ in reads { await store.refresh() }
             XCTAssertNil(store.lastError, name)
-            XCTAssertEqual(store.settings.agents.map(\.id), [window.id] + (keeps ? [spark.id] : []), name)
-            XCTAssertEqual(store.rows.map(\.id), [window.id] + (keeps ? [spark.id] : []), name)
-            XCTAssertEqual(store.report?.snapshot(for: spark.id) != nil, keeps, name)
+            XCTAssertEqual(store.settings.agents.map(\.id), [window.id] + (keepsRow ? [spark.id] : []), name)
+            XCTAssertEqual(store.rows.map(\.id), [window.id] + (keepsReading ? [spark.id] : []), name)
+            XCTAssertEqual(store.report?.snapshot(for: spark.id) != nil, keepsReading, name)
         }
     }
 
