@@ -92,6 +92,28 @@ final class OpenAgentProviderTests: XCTestCase {
         XCTAssertThrowsError(try OpenAgentQuotaClient.parse(json(#"{"usage":{"limit":"0","used":"1"}}"#), credential: credential(), now: now))
     }
 
+    /// Kimi's current report. The fixtures are derived from Kimi Code's own reader of `/coding/v1/usages`
+    /// (`parseManagedUsagePayload`, MoonshotAI/kimi-code 21406fb4) and its membership docs, not captured from an account.
+    func testKimiReadsTheCurrentReportUnderTheEarlierWindowIds() throws {
+        L10n.setLanguage(.en)
+        defer { L10n.setLanguage(.system) }
+        let earlier = try OpenAgentQuotaClient.parse(json(#"{"usage":{"limit":"2000","used":"400"},"limits":[{"window":{"duration":300,"timeUnit":"TIME_UNIT_MINUTE"},"detail":{"limit":"200","used":"50"}}]}"#), credential: credential(), now: now)
+        // A current plan drops the week and adds the month's total, of which the code share is a part.
+        let current = try OpenAgentQuotaClient.parse(json(#"{"usages":{"limit_5h":{"used_ratio":0.25,"reset_time":"2026-09-08T05:00:00Z"},"limit_month_total":{"used_ratio":"0.4","reset_time":"2026-10-01T00:00:00Z"},"limit_month_code":{"used_ratio":0.1}},"boosterWallet":null,"membership":{"level":"Plus"}}"#), credential: credential(), now: now)
+        XCTAssertEqual(current.windows.map(\.id), [earlier.windows[1].id, credential().pool.windowID("monthly")], "the 5 hours keep their window")
+        XCTAssertEqual(current.windows.map(\.remaining), [75, 60])
+        XCTAssertEqual(current.windows.map(\.duration), [18000, nil])
+        XCTAssertEqual(current.windows.first?.reset, DateParsing.internet("2026-09-08T05:00:00Z"))
+        XCTAssertEqual(current.windows.last?.label, "Monthly total quota · Plus")
+        XCTAssertEqual(current.windows.first?.label, earlier.windows[1].label)
+        // An older plan in the current report keeps its week, under the week's window.
+        let older = try OpenAgentQuotaClient.parse(json(#"{"usages":{"limit_5h":{"used_ratio":0.25},"limit_7d":{"used_ratio":0.2}},"usage":{"limit":"2000","used":"1000"}}"#), credential: credential(), now: now)
+        XCTAssertEqual(Set(older.windows.map(\.id)), Set(earlier.windows.map(\.id)))
+        XCTAssertEqual(older.windows.map(\.remaining), [75, 80], "the current report is read alone where it gives a window")
+        let fallback = try OpenAgentQuotaClient.parse(json(#"{"usages":{},"usage":{"limit":"2000","used":"400"}}"#), credential: credential(), now: now)
+        XCTAssertEqual(fallback.windows.map(\.id), [earlier.windows[0].id])
+    }
+
     func testGoFractionsArePercentAndMonthlyHasNoFabricatedPeriod() throws {
         let root = try json(#"{"usage":{"rolling":{"percent":0.5,"resetInSec":60},"weekly":{"percent":1},"monthly":{"percent":20}}}"#)
         let result = try OpenAgentQuotaClient.parse(root, credential: credential(.go), now: now)

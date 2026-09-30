@@ -38,13 +38,35 @@ struct OpenAgentQuotaClient: Sendable {
     }
     static func parse(_ root: ProviderJSON, credential: OpenAgentCredential, now: Date) throws -> ProviderQuota {
         var quota = ProviderQuota()
-        func add(_ key: String, _ title: String, _ used: Double, reset: Date?, duration: Double?) throws {
+        /// A window's label is its title and the pool's label, unless it is given a name of its own.
+        func add(_ key: String, _ title: String, _ used: Double, reset: Date?, duration: Double?, named name: String? = nil) throws {
             guard used.isFinite, used >= 0 else { throw ProviderFailure.format }
-            quota.windows.append(.init(id: credential.pool.windowID(key), label: title + " · " + credential.pool.label,
+            quota.windows.append(.init(id: credential.pool.windowID(key), label: name ?? title + " · " + credential.pool.label,
                 remaining: QuotaMath.remaining(usedPercent: used), reset: reset, duration: duration))
+        }
+        /// A window named in the vendor's own words, then its plan.
+        func named(_ name: String, plan: String?) -> String {
+            guard let plan, !plan.isEmpty else { return name }
+            return name + " · " + plan
         }
         switch credential.service {
         case .kimi, .kimiGlobal:
+            quota.plan = root["membership"]["level"].stringValue
+            // The current report, as Kimi's own CLI reads it: the share used and the reset of the 5 hours, of the week on
+            // older plans and of the month's total, which holds the month's code share. Where it gives a window it is read
+            // alone, the 5 hours and the week under the ids the earlier report gave them.
+            let usages = root["usages"]
+            let current: [(field: String, key: String, title: String, duration: Double?)] = [
+                ("limit_5h", "limit:TIME_UNIT_MINUTE:300.0", "300m", 18000), ("limit_7d", "weekly", "7d", 604800),
+                ("limit_month_total", "monthly", "", nil),
+            ]
+            for window in current {
+                guard let ratio = numeric(usages[window.field]["used_ratio"]) else { continue }
+                try add(window.key, window.title, ratio * 100, reset: DateParsing.internet(usages[window.field]["reset_time"].stringValue),
+                        duration: window.duration,
+                        named: window.key == "monthly" ? named(L10n.text("月总额度", "Monthly total quota"), plan: quota.plan) : nil)
+            }
+            guard quota.windows.isEmpty else { break }
             func window(_ detail: ProviderJSON, key: String, title: String, duration: Double?) throws {
                 guard let limit = numeric(detail["limit"]), limit > 0,
                       let used = numeric(detail["used"]) ?? numeric(detail["remaining"]).map({ max(0, limit - $0) }) else { throw ProviderFailure.format }
@@ -60,7 +82,6 @@ struct OpenAgentQuotaClient: Sendable {
                 guard duration.isFinite, duration <= 253402300799 else { throw ProviderFailure.format }
                 try window(entry["detail"], key: "limit:\(unit):\(count)", title: "\(Int(duration / 60))m", duration: duration)
             }
-            quota.plan = root["membership"]["level"].stringValue
         case .go:
             guard root["usage"].objectValue != nil else { throw ProviderFailure.format }
             for key in ["rolling", "weekly", "monthly"] {

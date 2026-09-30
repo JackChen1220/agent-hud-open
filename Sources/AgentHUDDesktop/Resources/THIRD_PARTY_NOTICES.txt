@@ -2,7 +2,8 @@ Agent HUD — Third-party notices
 
 Kimi Code
 Source: https://github.com/MoonshotAI/kimi-code/tree/0b67511291a0dbf6781d4bce63cab3f228ea6fe1
-Regional endpoint, profile, OAuth storage naming and wire protocol references.
+Additional reference revision: 21406fb4c805cc8c715e6d1f16ad3fb5f25f4fe3 (the usage report of current plans).
+Regional endpoint, profile, OAuth storage naming, wire protocol and usage report references.
 
 MIT License
 
