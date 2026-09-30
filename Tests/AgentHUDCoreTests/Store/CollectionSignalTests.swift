@@ -114,19 +114,24 @@ final class CollectionSignalTests: XCTestCase, @unchecked Sendable {
 
     @MainActor
     func testASettingsChangeThatNeedsAReadWakesTheCollector() async throws {
-        let a = Source(directory: try directory(), readsAccount: true)
-        let store = try await start(CombinedUsageProvider([.init("A", a)]))
-        // The first pass reads A's account, and the finished step signals one more read of A.
-        let settled = try await wait { let x = await a.fetches; let y = await a.accountReads; return x == 2 && y == 1 }
+        let copilot = Source(directory: try directory(), readsAccount: true), b = Source(directory: try directory(), readsAccount: true)
+        let store = try await start(CombinedUsageProvider([.init(AdditionalSource.copilot.vendor, copilot), .init("B", b)]))
+        // The first pass reads both accounts, and each finished step signals one more read of its source.
+        let settled = try await wait {
+            let reads = (await copilot.fetches, await b.fetches), accounts = (await copilot.accountReads, await b.accountReads)
+            return reads == (2, 2) && accounts == (1, 1)
+        }
         XCTAssertTrue(settled)
-        // Without a wake the next pass would be A's account interval away, five minutes.
+        // Without a wake the next pass would be an account interval away, five minutes.
         store.settings.update { $0.readCopilotQuota = true }
-        let swept = try await wait { await a.accountReads == 2 }
-        XCTAssertTrue(swept, "consent to read Copilot quota reads every account at once")
-        let signalled = try await wait { await a.fetches == 3 }
+        let swept = try await wait { await copilot.accountReads == 2 }
+        XCTAssertTrue(swept, "consent to read Copilot quota reads Copilot's account at once")
+        let signalled = try await wait { await copilot.fetches == 3 }
         XCTAssertTrue(signalled)
-        store.settings.updateAgents { $0 + [AgentDescriptor(id: "a-window", vendor: "A", model: "Window", source: "Fixture", enabled: true)] }
-        let reread = try await wait { await a.fetches == 4 }
+        let spaced = await b.accountReads
+        XCTAssertEqual(spaced, 1, "another account read seconds ago waits out the request spacing")
+        store.settings.updateAgents { $0 + [AgentDescriptor(id: "b-window", vendor: "B", model: "Window", source: "Fixture", enabled: true)] }
+        let reread = try await wait { let x = await copilot.fetches; let y = await b.fetches; return x == 4 && y == 3 }
         XCTAssertTrue(reread, "a changed agent list is read from every source at once")
     }
 

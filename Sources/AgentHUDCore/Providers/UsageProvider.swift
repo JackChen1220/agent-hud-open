@@ -93,7 +93,8 @@ public enum UsageRefresh {
     public static let runningAccountInterval: TimeInterval = 60
     /// Quota and balance readings while a session is live between turns.
     public static let liveAccountInterval: TimeInterval = 180
-    /// A provider never repeats an account request sooner than this, whoever asks.
+    /// The collector never runs a source's account steps again sooner than this, whoever asks; only consent to read
+    /// GitHub Copilot's quota, given or withdrawn, reads Copilot's sooner.
     public static let accountRequestSpacing: TimeInterval = 60
     /// A source that cannot name its directories is read this often.
     public static let pollInterval: TimeInterval = 5

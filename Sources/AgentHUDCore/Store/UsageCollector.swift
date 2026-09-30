@@ -43,7 +43,7 @@ final class UsageCollector {
     private var accountSteps: [(source: String, run: AccountRefreshStep)] = []
     /// When each source's account steps last ran; a source that has never run them is due at once.
     private var accountRunAt: [String: Date] = [:]
-    /// Consent to read an account, and a look at the numbers, read every account at once instead of when work moves them.
+    /// Consent to read GitHub Copilot's quota, and a look at the numbers, read accounts at once instead of when work moves them.
     private var sweptWithCopilotQuota: Bool?
     private var forcesAccounts = false
     /// The read of every local source that stands in for a file event the watch missed.
@@ -136,7 +136,8 @@ final class UsageCollector {
 
     /// A settings change that collection follows wakes the loop at once, where it would wait for the next signal: a
     /// changed agent list is read from every source, and consent to read GitHub Copilot quota, given or withdrawn, reads
-    /// every account. It wakes the next pass, serial like any other. Rows a pass merged from its own report ask for nothing.
+    /// Copilot's quota and every other account the request spacing allows. It wakes the next pass, serial like any other.
+    /// Rows a pass merged from its own report ask for nothing.
     private func settingsChanged(_ change: SettingsStore.Change) {
         guard change != .discovery,
               settings.agents != fetchedAgents || settings.settings.readCopilotQuota != sweptWithCopilotQuota else { return }
@@ -185,14 +186,15 @@ final class UsageCollector {
         }
         let consent = settings.settings.readCopilotQuota
         if accountSteps.isEmpty {
-            // Consent to read an account follows the switch at once; a look reads whatever the request spacing allows;
-            // otherwise every source waits until its own work, or one of its windows, is worth a reading.
-            let consented = sweptWithCopilotQuota != consent, looked = forcesAccounts
+            // Consent to read Copilot's quota follows the switch at once and is a look at every other account; a look
+            // reads whatever the request spacing allows; otherwise every source waits until its own work, or one of its
+            // windows, is worth a reading.
+            let consented = sweptWithCopilotQuota != consent, looked = forcesAccounts || consented
             forcesAccounts = false
             sweptWithCopilotQuota = consent
             let due = await accountDue(at: started)
             accountSteps = sources.filter { source in
-                if consented { return true }
+                if consented && source.name == AdditionalSource.copilot.vendor { return true }
                 let spaced = (accountRunAt[source.name] ?? .distantPast).addingTimeInterval(UsageRefresh.accountRequestSpacing)
                 return spaced <= started && (looked || due[source.name].map { $0 <= started } ?? false)
             }.flatMap { source in source.accountSteps.map { (source.name, $0) } }
