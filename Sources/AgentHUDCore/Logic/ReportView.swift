@@ -18,7 +18,8 @@ public struct ReportView: Sendable {
         /// answer is an event too, and so are the prompt and the Stop hook of a hook turn that takes the reading's place.
         public let lastEventAt: Date
         /// What the agent last said: the message of the last turn listed that carries one, from the providers `turn`
-        /// comes from. Nil while live status is off.
+        /// comes from, or what it said at the Stop hook of a hook turn that takes the reading's place. Nil while live
+        /// status is off.
         public let message: String?
         /// Whether live status is on for the session's vendor; a session without a vendor answers to no vendor's switch.
         public let liveStatus: Bool
@@ -252,14 +253,15 @@ public struct ReportView: Sendable {
         var lastEventAt = max(session.lastEvent(turnAt: index.lastTurnEvents[session.id]), asked ?? .distantPast)
         let liveStatus = settings.liveStatusEnabled(for: vendor ?? "")
         var phase = SessionPhase(session: session, turn: turns.last, lastEventAt: lastEventAt, liveStatus: liveStatus, now: now)
+        var message = turns.last { $0.message != nil }?.message
         if liveStatus, let hook = index.hooks[session.id],
            let hooked = SessionPhase.hooked(hook, over: phase, lastEventAt: lastEventAt, now: now) {
             phase = hooked
             lastEventAt = max(lastEventAt, hook.endedAt ?? hook.startedAt)
+            message = hook.message ?? message
         }
         if liveStatus, asked != nil { phase = phase.awaitingApproval(session, turn: turns.last) }
         return Session(session: session, source: SessionSource(vendor: vendor, client: session.client), turn: turns.last,
-                       lastEventAt: lastEventAt, message: liveStatus ? turns.last { $0.message != nil }?.message : nil,
-                       liveStatus: liveStatus, phase: phase)
+                       lastEventAt: lastEventAt, message: liveStatus ? message : nil, liveStatus: liveStatus, phase: phase)
     }
 }

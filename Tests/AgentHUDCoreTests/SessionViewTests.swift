@@ -258,6 +258,29 @@ final class SessionViewTests: XCTestCase {
         XCTAssertEqual(store.view.session("prompted")?.lastEventAt, now.addingTimeInterval(-600))
     }
 
+    /// What the agent said at the Stop hook is the session's message when the hook turn takes the log's place: the hook's
+    /// turn is then the newest that carries one. Where the log saw more, the log's message stands, and with live status
+    /// off there is none.
+    @MainActor
+    func testAStopHooksTextIsTheSessionsMessage() throws {
+        let store = try makeStore()
+        show([session("stopped", observed: -30), session("busy", observed: -30)], turns: [
+            turn("stopped", .completed, id: "1", started: -900, observed: -700, message: "Earlier answer"),
+            turn("stopped", .running, id: "2", started: -600, observed: -60),
+            turn("busy", .running, started: -600, observed: -10, message: "Still working"),
+        ], in: store)
+        store.hookTurns = [
+            "stopped": .init(startedAt: now.addingTimeInterval(-600), endedAt: now.addingTimeInterval(-20), isReportedTurn: true, message: "All done"),
+            "busy": .init(startedAt: now.addingTimeInterval(-600), endedAt: now.addingTimeInterval(-20), isReportedTurn: true, message: "Stopped"),
+        ]
+        XCTAssertEqual(store.view.session("stopped")?.message, "All done")
+        XCTAssertEqual(store.view.session("busy")?.message, "Still working")
+        store.hookTurns["stopped"]?.message = nil
+        XCTAssertEqual(store.view.session("stopped")?.message, "Earlier answer", "a Stop hook without words leaves the newest message")
+        store.settings.update { $0.setLiveStatus(for: "Claude", enabled: false) }
+        XCTAssertNil(store.view.session("busy")?.message)
+    }
+
     /// A session in flight without turns is dated by when its log last recorded anything, which a read does not move, and
     /// a copy of the session keeps that date.
     @MainActor

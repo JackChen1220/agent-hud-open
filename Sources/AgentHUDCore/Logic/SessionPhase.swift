@@ -234,11 +234,14 @@ public struct SessionPhase: Hashable, Sendable {
         public var endedAt: Date?
         /// Whether it is the turn the reading reports; the caller matches the ids.
         public var isReportedTurn: Bool
+        /// What the agent said at the Stop hook, where the hook carries it.
+        public var message: String?
 
-        public init(startedAt: Date, endedAt: Date?, isReportedTurn: Bool) {
+        public init(startedAt: Date, endedAt: Date?, isReportedTurn: Bool, message: String? = nil) {
             self.startedAt = startedAt
             self.endedAt = endedAt
             self.isReportedTurn = isReportedTurn
+            self.message = message
         }
     }
 
