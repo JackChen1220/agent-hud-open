@@ -34,6 +34,8 @@ public enum AttentionHooks {
         public init(sessionID: String, message: String?, at: Date) {
             self.sessionID = sessionID; self.message = message; self.at = at
         }
+
+        var approval: SessionPhase.Approval { SessionPhase.Approval(at: at, message: message) }
     }
 
     public static var directory: URL { AppSupport.directory.appendingPathComponent("attention") }

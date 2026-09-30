@@ -3,8 +3,9 @@ import Foundation
 
 /// What a session is doing as the Mac shows it: a turn running or blocked on the user, nothing in flight, or in flight by
 /// a reading too old for the Mac to vouch for. A provider decides when it reads a session whether its source has it in
-/// flight (`LiveSession.endedAt`); the phase adds, at the time it is shown, how long the Mac vouches for that reading,
-/// what the newest turn says and whether live status is on. A client's prompt and Stop hooks give a phase of their own.
+/// flight (`LiveSession.endedAt`), by the rule its client's records support (`read(_:rule:at:)`); the phase adds, at the
+/// time it is shown, how long the Mac vouches for that reading, what the newest turn says and whether live status is on.
+/// A client's prompt and Stop hooks give a phase of their own.
 public struct SessionPhase: Hashable, Sendable {
     public enum State: String, Hashable, Sendable {
         /// A turn is in flight.
@@ -54,6 +55,94 @@ public struct SessionPhase: Hashable, Sendable {
         public static let processCheck: TimeInterval = 120
         /// The process table behind that check is read again at most this often.
         public static let processRecheck: TimeInterval = 30
+    }
+
+    // MARK: Source
+
+    /// Which of a client's records decide whether its session is in flight when a provider reads it.
+    public enum SourceRule: Hashable, Sendable {
+        /// A log that dates every line and follows its turn, as Claude Code's main and sub-agent logs do. A running turn is
+        /// in flight until the log has been quiet for `Limits.abandoned`, or for `Limits.quiet` when the log never showed
+        /// the turn start; a log that never said what its turn is doing is in flight until it has been quiet for
+        /// `Limits.quiet`. A session also runs while any of its sub-agents does.
+        case transcript
+    }
+
+    /// A client's request for the user's approval, from its notification hook.
+    public struct Approval: Hashable, Sendable {
+        public var at: Date
+        /// What the client said it is waiting for.
+        public var message: String?
+
+        public init(at: Date, message: String?) {
+            self.at = at
+            self.message = message
+        }
+    }
+
+    /// What a provider read about one session.
+    public struct SourceEvidence: Hashable, Sendable {
+        /// The newest turn the source recorded for the session.
+        public var turn: SessionTurn?
+        /// When the source last wrote anything for the session: a log's last line of any kind. Nil when it wrote nothing
+        /// that counts.
+        public var lastWriteAt: Date?
+        /// The newest line of the session's sub-agents that are themselves in flight; nil when none is.
+        public var subagentsAt: Date?
+        /// The client's latest request for approval in the session.
+        public var approval: Approval?
+
+        public init(turn: SessionTurn?, lastWriteAt: Date? = nil, subagentsAt: Date? = nil, approval: Approval? = nil) {
+            self.turn = turn
+            self.lastWriteAt = lastWriteAt
+            self.subagentsAt = subagentsAt
+            self.approval = approval
+        }
+    }
+
+    /// What a source says about its session when it is read.
+    public struct SourceReading: Hashable, Sendable {
+        /// Whether the session is in flight: the provider reports it without an end while it is.
+        public let inFlight: Bool
+        /// The newest turn as the provider reports it.
+        public let turn: SessionTurn?
+    }
+
+    /// What `evidence` says about its session when it is read at `readAt`, by the rule of the client's records.
+    public static func read(_ evidence: SourceEvidence, rule: SourceRule, at readAt: Date) -> SourceReading {
+        switch rule {
+        case .transcript:
+            let limit: TimeInterval?
+            if let turn = evidence.turn {
+                // A turn nothing was seen to start comes from a partial log; only its freshness vouches for it.
+                limit = turn.state == .running ? (turn.startedAtMs == nil ? Limits.quiet : Limits.abandoned) : nil
+            } else {
+                limit = Limits.quiet
+            }
+            let fresh = limit.map { limit in evidence.lastWriteAt.map { readAt.timeIntervalSince($0) < limit } ?? false } ?? false
+            return SourceReading(inFlight: fresh || evidence.subagentsAt != nil, turn: evidence.turn.map {
+                transcriptTurn($0, approval: evidence.approval, subagentsAt: evidence.subagentsAt)
+            })
+        }
+    }
+
+    /// A transcript's turn as its provider reports it. A running turn waits for approval while the client's request is
+    /// newer than the turn's last line, dated by the request and showing its message; then, while sub-agents work, the
+    /// turn runs, dated by their newest line. A request is answered by a line of the session's own log, never by a
+    /// sub-agent's, so a turn waiting for approval keeps waiting while they work.
+    static func transcriptTurn(_ turn: SessionTurn, approval: Approval?, subagentsAt: Date?) -> SessionTurn {
+        var state = turn.state, observed = turn.observedAtMs, message = turn.message
+        if state == .running, let approval, RecordCoding.milliseconds(approval.at) > observed {
+            state = .waitingForApproval
+            observed = RecordCoding.milliseconds(approval.at)
+            message = approval.message ?? message
+        }
+        if let subagentsAt {
+            if state != .waitingForApproval { state = .running }
+            observed = max(observed, RecordCoding.milliseconds(subagentsAt))
+        }
+        return SessionTurn(provider: turn.provider, sessionID: turn.sessionID, turnID: turn.turnID, state: state,
+                           startedAtMs: turn.startedAtMs, observedAtMs: observed, message: message)
     }
 
     // MARK: View

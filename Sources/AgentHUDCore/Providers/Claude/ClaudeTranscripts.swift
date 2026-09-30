@@ -195,15 +195,16 @@ public struct TranscriptSession: Hashable, Sendable, Identifiable {
     public var turn: SessionTurn? = nil
     public var turnInProgress: Bool? { turn.map { $0.state == .running } }
 
-    /// Running means a turn is in progress. A quiet log does not end it: one tool call can take minutes without
-    /// writing a line, and only silence long enough to mean the client is gone does. A session waiting for input stops
-    /// right away, and a transcript that never said what its turn is doing falls back to how recently it was written.
+    /// Whether this log has its session in flight at `now`, by the transcript rule of `SessionPhase.read(_:rule:at:)`
+    /// without sub-agents. The limits are `SessionPhase.Limits`; `threshold` and `abandonedAfter` are not read.
     public func isLive(now: Date, threshold: TimeInterval, abandonedAfter: TimeInterval = UsageRefresh.abandonedTurnTimeout) -> Bool {
-        let quiet = now.timeIntervalSince(lastActivityAt)
-        guard let turn else { return quiet < threshold }
-        guard turn.state == .running else { return false }
-        // A turn nothing was seen to start comes from a partial transcript; only its freshness can vouch for it.
-        return quiet < (turn.startedAtMs == nil ? threshold : abandonedAfter)
+        SessionPhase.read(evidence(), rule: .transcript, at: now).inFlight
+    }
+
+    /// What this log says about its session, with the newest line of its sub-agents still at work and the client's latest
+    /// request for approval.
+    func evidence(subagentsAt: Date? = nil, approval: SessionPhase.Approval? = nil) -> SessionPhase.SourceEvidence {
+        SessionPhase.SourceEvidence(turn: turn, lastWriteAt: lastActivityAt, subagentsAt: subagentsAt, approval: approval)
     }
 }
 

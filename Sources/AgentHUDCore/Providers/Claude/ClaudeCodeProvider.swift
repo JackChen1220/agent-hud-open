@@ -133,22 +133,24 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
         }
 
         // 2. Session list: running first, then most recent. A session also runs while the sub-agents and workflow agents
-        // it started are at work, after its own agent stopped or went quiet waiting for them.
+        // it started are at work, after its own agent stopped or went quiet waiting for them. A request for approval is
+        // compared with the session's own log, which is what answering it writes to.
         let windowStart = usage?.fiveHour?.resetsAt.map { $0.addingTimeInterval(-5 * 3600) } ?? now.addingTimeInterval(-5 * 3600)
         let agents = Self.workingAgents(sessions, now: now)
-        func isLive(_ session: TranscriptSession) -> Bool {
-            session.isLive(now: now, threshold: Self.liveThreshold) || agents[session.path] != nil
-        }
-        let candidates = sessions.filter { !$0.isSubagent }.sorted { lhs, rhs in
-            let lhsLive = isLive(lhs), rhsLive = isLive(rhs)
-            if lhsLive != rhsLive { return lhsLive }
-            return lhs.lastActivityAt > rhs.lastActivityAt
+        let requests = AttentionHooks.read(source: AttentionHooks.Source.claude, now: now)
+        let candidates = sessions.filter { !$0.isSubagent }.map { session in
+            (session: session, reading: SessionPhase.read(session.evidence(subagentsAt: agents[session.path],
+                                                                           approval: requests[session.id]?.approval),
+                                                          rule: .transcript, at: now))
+        }.sorted { lhs, rhs in
+            if lhs.reading.inFlight != rhs.reading.inFlight { return lhs.reading.inFlight }
+            return lhs.session.lastActivityAt > rhs.session.lastActivityAt
         }
         let windowTokens = await transcripts.tokens(since: windowStart)
         let windowTotal = windowTokens.values.reduce(0, +)
         let utilization = usage?.fiveHour?.utilizationPct ?? 0
-        let listed = candidates.map { session -> LiveSession in
-            let live = isLive(session)
+        let listed = candidates.map { session, reading -> LiveSession in
+            let live = reading.inFlight
             let share = windowTotal > 0 ? Double(windowTokens[session.path] ?? 0) / Double(windowTotal) : 0
             let agentId = session.dominantAgentId
             return LiveSession(
@@ -201,7 +203,7 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
             sourceNotices: notice.map { ["Claude": $0] } ?? [:],
             consumerIdsByQuota: consumerIdsByQuota,
             completions: sessions.flatMap(\.completions),
-            turns: Self.turns(candidates, agentsWorkingAt: agents, requests: AttentionHooks.read(source: AttentionHooks.Source.claude, now: now)),
+            turns: candidates.compactMap(\.reading.turn),
             // A login without plan limits has no current subscription account; earlier accounts keep their last readings.
             accounts: reading.map { reading in
                 ["Claude": usage == nil ? [] : [AccountObservation(account: self.account(for: reading), home: home,
@@ -266,7 +268,7 @@ extension ClaudeCodeProvider {
     /// Code keeps a session's sub-agent and workflow agent logs in a directory named after its own log.
     static func workingAgents(_ sessions: [TranscriptSession], now: Date) -> [String: Date] {
         var latest: [String: Date] = [:]
-        for agent in sessions where agent.isSubagent && agent.isLive(now: now, threshold: liveThreshold) {
+        for agent in sessions where agent.isSubagent && SessionPhase.read(agent.evidence(), rule: .transcript, at: now).inFlight {
             guard let directory = agent.path.range(of: "/subagents/") else { continue }
             let parent = String(agent.path[..<directory.lowerBound]) + ".jsonl"
             latest[parent] = max(latest[parent] ?? agent.lastActivityAt, agent.lastActivityAt)
@@ -274,36 +276,25 @@ extension ClaudeCodeProvider {
         return latest
     }
 
-    /// Each session's turn. A request is compared with the session's own log, which is what answering it writes to; what
-    /// its sub-agents write afterwards does not answer it, so their work is added only once that is decided.
+    /// Each session's turn as the provider reports it (`SessionPhase.read(_:rule:at:)`).
     static func turns(_ sessions: [TranscriptSession], agentsWorkingAt: [String: Date],
                       requests: [String: AttentionHooks.Event]) -> [SessionTurn] {
         sessions.compactMap { session in
-            session.turn.map { turn(awaiting([$0], requests: requests)[0], agentsWorkingAt: agentsWorkingAt[session.path]) }
+            session.turn.map {
+                SessionPhase.transcriptTurn($0, approval: requests[$0.sessionID]?.approval, subagentsAt: agentsWorkingAt[session.path])
+            }
         }
     }
 
-    /// The session's turn, running while its agents work: the agent that stopped, or went quiet waiting for them, has not
-    /// finished what it was asked. A turn waiting for approval keeps waiting.
+    /// The session's turn while its agents work (`SessionPhase.read(_:rule:at:)`).
     static func turn(_ turn: SessionTurn, agentsWorkingAt: Date?) -> SessionTurn {
-        guard let agentsWorkingAt else { return turn }
-        return SessionTurn(provider: turn.provider, sessionID: turn.sessionID, turnID: turn.turnID,
-                           state: turn.state == .waitingForApproval ? .waitingForApproval : .running, startedAtMs: turn.startedAtMs,
-                           observedAtMs: max(turn.observedAtMs, RecordCoding.milliseconds(agentsWorkingAt)), message: turn.message)
+        SessionPhase.transcriptTurn(turn, approval: nil, subagentsAt: agentsWorkingAt)
     }
 
-    /// A turn Claude Code said it is blocked on. The hook only says it needs the user; a turn that is still running is
-    /// waiting for approval, and one that already finished is simply waiting for the next prompt. A request older than
-    /// the transcript has been answered.
-
+    /// The turns Claude Code said it is blocked on (`SessionPhase.read(_:rule:at:)`). The hook only says it needs the
+    /// user; a turn that is still running is waiting for approval, and one that already finished is simply waiting for
+    /// the next prompt. A request older than the transcript has been answered.
     static func awaiting(_ turns: [SessionTurn], requests: [String: AttentionHooks.Event]) -> [SessionTurn] {
-        guard !requests.isEmpty else { return turns }
-        return turns.map { turn in
-            guard turn.state == .running, let request = requests[turn.sessionID],
-                  RecordCoding.milliseconds(request.at) > turn.observedAtMs else { return turn }
-            return SessionTurn(provider: turn.provider, sessionID: turn.sessionID, turnID: turn.turnID,
-                               state: .waitingForApproval, startedAtMs: turn.startedAtMs,
-                               observedAtMs: RecordCoding.milliseconds(request.at), message: request.message ?? turn.message)
-        }
+        turns.map { SessionPhase.transcriptTurn($0, approval: requests[$0.sessionID]?.approval, subagentsAt: nil) }
     }
 }
