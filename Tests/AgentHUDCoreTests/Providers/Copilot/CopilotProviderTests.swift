@@ -55,6 +55,29 @@ final class CopilotProviderTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(calls.values, ["token"])
     }
 
+    /// Usage-based billing. The fixtures are derived from VS Code's reader of this answer (`parseQuotas` and
+    /// `IQuotaSnapshotData`, microsoft/vscode afedf379) and GitHub's billing docs, not captured from an account.
+    func testUsageBasedBillingNamesThePremiumSnapshotAsCredits() throws {
+        L10n.setLanguage(.en)
+        defer { L10n.setLanguage(.system) }
+        let credits = try CopilotClient.parse(json(#"{"copilot_plan":"individual_pro","access_type_sku":"monthly_subscriber_quota","token_based_billing":true,"quota_reset_date":"2026-10-01","quota_reset_date_utc":"2026-10-01T00:00:00.000Z","quota_snapshots":{"chat":{"entitlement":"0","quota_remaining":0,"percent_remaining":100,"unlimited":true,"has_quota":false,"overage_count":0,"overage_entitlement":0,"overage_permitted":false},"completions":{"entitlement":"0","quota_remaining":0,"percent_remaining":100,"unlimited":true,"has_quota":false,"overage_count":0,"overage_entitlement":0,"overage_permitted":false},"premium_interactions":{"entitlement":"1500","quota_remaining":1200,"percent_remaining":80,"unlimited":false,"has_quota":false,"quota_reset_at":1790812800,"overage_count":0,"overage_entitlement":0,"overage_permitted":false}}}"#))
+        XCTAssertEqual(credits.windows.map(\.id), ["copilot:premium_interactions"], "the window keeps its id when its unit changes")
+        XCTAssertEqual(credits.windows.map(\.label), ["AI credits"])
+        XCTAssertEqual(credits.windows.map(\.remaining), [80])
+        XCTAssertEqual(credits.windows.first?.reset, Date(timeIntervalSince1970: 1790812800))
+        // A Free plan under usage-based billing counts its chat snapshot in credits too; its premium snapshot has none.
+        let free = try CopilotClient.parse(json(#"{"copilot_plan":"free","access_type_sku":"free_limited_copilot","token_based_billing":true,"quota_snapshots":{"chat":{"entitlement":"50","quota_remaining":40,"percent_remaining":80,"unlimited":false},"completions":{"entitlement":"2000","quota_remaining":1000,"percent_remaining":50,"unlimited":false},"premium_interactions":{"entitlement":"0","quota_remaining":0,"percent_remaining":0,"unlimited":false}}}"#))
+        XCTAssertEqual(free.windows.map(\.id), ["copilot:chat", "copilot:completions"])
+        XCTAssertEqual(free.windows.map(\.label), ["AI credits", "Completions"])
+        // Newer backends call the premium snapshot premium_models; a plan on premium requests keeps its name.
+        let requests = try CopilotClient.parse(json(#"{"copilot_plan":"individual","quota_reset_date":"2026-10-01","quota_snapshots":{"premium_models":{"entitlement":"300","remaining":150,"percent_remaining":50,"unlimited":false}}}"#))
+        XCTAssertEqual(requests.windows.map(\.id), ["copilot:premium_interactions"])
+        XCTAssertEqual(requests.windows.map(\.label), ["Premium requests"])
+        XCTAssertEqual(requests.windows.first?.reset, Date(timeIntervalSince1970: 1790812800))
+        let both = try CopilotClient.parse(json(#"{"quota_snapshots":{"premium_interactions":{"entitlement":300,"remaining":30,"unlimited":false},"premium_models":{"entitlement":300,"remaining":150,"unlimited":false}}}"#))
+        XCTAssertEqual(both.windows.map(\.remaining), [10], "the premium_interactions snapshot is read where both are sent")
+    }
+
     func testQuotaRequestAndSnapshots() async throws {
         let body = #"{"copilot_plan":"individual","quota_reset_date":"2026-10-01","quota_snapshots":{"chat":{"entitlement":0,"remaining":0,"percent_remaining":100,"unlimited":true},"completions":{"entitlement":0,"remaining":0,"percent_remaining":100,"quota_id":"completions"},"premium_interactions":{"entitlement":300,"remaining":-6,"percent_remaining":-2,"unlimited":false},"code_review":{"entitlement":"50","remaining":"20"}}}"#
         let calls = Calls()
