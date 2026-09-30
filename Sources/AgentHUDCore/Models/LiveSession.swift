@@ -114,6 +114,4 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
     public func duration(now: Date) -> TimeInterval {
         max(0, (endedAt ?? now).timeIntervalSince(startedAt))
     }
-
-    public var hasTokenCounts: Bool { tokensIn > 0 || tokensOut > 0 || cacheReadTokens > 0 }
 }

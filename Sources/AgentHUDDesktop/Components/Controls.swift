@@ -213,23 +213,6 @@ extension View {
     }
 }
 
-/// Naming rules shared by the stats window and menus.
-enum AgentNaming {
-    /// "Claude · Opus" when the vendor has several models, otherwise just the vendor.
-    static func compact(_ agent: AgentDescriptor, among agents: [AgentDescriptor]) -> String {
-        sharesVendor(agent, among: agents) ? "\(agent.vendorName) · \(L10n.shortModelLabel(agent.model))" : agent.vendorName
-    }
-
-    /// Legend label: "Opus" / "Sonnet" / "ChatGPT".
-    static func legend(_ agent: AgentDescriptor, among agents: [AgentDescriptor]) -> String {
-        sharesVendor(agent, among: agents) ? L10n.shortModelLabel(agent.model) : agent.displayVendor
-    }
-
-    private static func sharesVendor(_ agent: AgentDescriptor, among agents: [AgentDescriptor]) -> Bool {
-        agents.filter { $0.displayVendor == agent.displayVendor }.count > 1
-    }
-}
-
 extension SettingsStore {
     /// Two-way binding into one `Settings` field.
     func binding<T: Equatable>(_ keyPath: WritableKeyPath<AgentHUDCore.Settings, T>) -> Binding<T> {

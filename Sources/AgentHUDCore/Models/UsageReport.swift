@@ -157,11 +157,4 @@ public struct UsageReport: Hashable, Codable, Sendable {
     public func snapshot(for agentId: String) -> UsageSnapshot? {
         snapshots.first { $0.agentId == agentId }
     }
-
-    /// The rows of `agents` a provider reported within the retention period. A report that keeps no sighting times
-    /// (a single read, the demo) shows them all.
-    public func visibleRows(_ agents: [AgentDescriptor]) -> [AgentDescriptor] {
-        guard let rowSeenAt else { return agents }
-        return agents.filter { rowSeenAt[$0.id] != nil }
-    }
 }

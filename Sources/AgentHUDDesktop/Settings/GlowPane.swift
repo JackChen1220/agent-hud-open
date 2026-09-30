@@ -123,13 +123,6 @@ struct GlowPane: View {
         return density + L10n.text("上方预览会一直播放所选动效；灵动岛上 Agent 运行时按工作周期播放，空闲时按空闲周期放慢。",
                                    "The preview always plays the selected effect; the notch plays it at the working period while an agent runs and at the idle period otherwise.")
     }
-
-    private func percentBinding(_ keyPath: WritableKeyPath<AgentHUDCore.Settings, Double>) -> Binding<Double> {
-        Binding(
-            get: { settings.settings[keyPath: keyPath] * 100 },
-            set: { value in settings.update { $0[keyPath: keyPath] = value / 100 } }
-        )
-    }
 }
 
 private extension GlowStyle {

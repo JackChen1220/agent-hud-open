@@ -11,22 +11,6 @@ public enum StatusLevel: String, Codable, Sendable, CaseIterable {
         if remainingPct <= warnPct { return .warning }
         return .ok
     }
-
-    /// How alarming the level is; higher wins when several windows are shown as one.
-    public var severity: Int {
-        switch self {
-        case .ok: return 0
-        case .warning: return 1
-        case .critical: return 2
-        }
-    }
-
-    /// The more alarming of two levels, treating "no window watched" as no opinion.
-    public static func worse(_ lhs: StatusLevel?, _ rhs: StatusLevel?) -> StatusLevel? {
-        guard let lhs else { return rhs }
-        guard let rhs else { return lhs }
-        return lhs.severity >= rhs.severity ? lhs : rhs
-    }
 }
 
 /// Status colors from the design tokens. Dark values are the defaults; light values are the macOS system tints.

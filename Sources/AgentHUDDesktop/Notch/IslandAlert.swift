@@ -64,8 +64,6 @@ enum IslandAlert: Identifiable {
     /// Completed turns, resets and added usage resets share the calm accent; a window running out uses the warm one.
     var accent: RGBA { isWarning ? Self.warningAccent : Self.calmAccent }
     static let calmAccent = RGBA(hex: 0x6cd8ac)
-    /// The card being decided, lifted off the island's own black so a pile of requests reads as cards.
-    static let stackBackground = RGBA(hex: 0x1e1e22)
     static let warningAccent = RGBA(hex: 0xe9a16d)
 }
 

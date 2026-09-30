@@ -235,7 +235,6 @@ struct SessionUsageBuilder {
     }
 
     var isEmpty: Bool { calls == 0 }
-    var latestModel: String? { latestAgent }
 
     /// What a call in the session's own log sent again after `previous`, the prompt of the call before it: its whole
     /// input when it read back less than half of that prompt from the cache and sent at least half of it again.
