@@ -63,7 +63,8 @@ public actor DeepSeekUsageProvider: UsageProvider, LedgerRecording {
                                task: t.title ?? t.cwd.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "DeepSeek Harness",
                                terminal: t.cwd.map { URL(fileURLWithPath: $0).lastPathComponent },
                                startedAt: t.startedAt ?? session.modifiedAt,
-                               endedAt: t.isLive(processStarts: processStarts) ? nil : (t.lastActivityAt ?? t.startedAt ?? session.modifiedAt),
+                               endedAt: SessionPhase.read(t.evidence(processStarts: processStarts), rule: .process, at: now).inFlight
+                                   ? nil : (t.lastActivityAt ?? t.startedAt ?? session.modifiedAt),
                                pctOfWindow: nil, tokensIn: t.inputTokens, tokensOut: t.outputTokens,
                                client: "DeepSeek Harness", transcriptPath: session.path,
                                cacheReadTokens: t.cachedInputTokens, observedAt: now, workingDirectory: t.cwd)

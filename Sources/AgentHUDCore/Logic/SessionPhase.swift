@@ -70,6 +70,10 @@ public struct SessionPhase: Hashable, Sendable {
         /// until the file has been left unwritten for `Limits.abandoned`, and a rollout that never logged a turn until
         /// it has for `Limits.quiet`. One that wrote nothing is never in flight.
         case rollout
+        /// A log whose client's process can be checked, as DeepSeek Harness's can: a running newest turn of a log that
+        /// recorded something is in flight however quiet the log is, unless the process table, when it was read, holds
+        /// no process that predates the turn.
+        case process
     }
 
     /// A client's request for the user's approval, from its notification hook.
@@ -88,19 +92,24 @@ public struct SessionPhase: Hashable, Sendable {
     public struct SourceEvidence: Hashable, Sendable {
         /// The newest turn the source recorded for the session.
         public var turn: SessionTurn?
-        /// When the source last wrote anything for the session: a log's last line of any kind, or a rollout's modification
-        /// date. Nil when it wrote nothing that counts.
+        /// When the source last wrote anything for the session: a log's last line of any kind or last event, or a rollout's
+        /// modification date. Nil when it wrote nothing that counts.
         public var lastWriteAt: Date?
         /// The newest line of the session's sub-agents that are themselves in flight; nil when none is.
         public var subagentsAt: Date?
         /// The client's latest request for approval in the session.
         public var approval: Approval?
+        /// Whether a process that holds the client's profile started no later than the newest turn. Nil when the process
+        /// table was not read.
+        public var processOutlivesTurn: Bool?
 
-        public init(turn: SessionTurn?, lastWriteAt: Date? = nil, subagentsAt: Date? = nil, approval: Approval? = nil) {
+        public init(turn: SessionTurn?, lastWriteAt: Date? = nil, subagentsAt: Date? = nil, approval: Approval? = nil,
+                    processOutlivesTurn: Bool? = nil) {
             self.turn = turn
             self.lastWriteAt = lastWriteAt
             self.subagentsAt = subagentsAt
             self.approval = approval
+            self.processOutlivesTurn = processOutlivesTurn
         }
     }
 
@@ -132,6 +141,9 @@ public struct SessionPhase: Hashable, Sendable {
             let quiet = readAt.timeIntervalSince(lastWriteAt)
             guard let turn = evidence.turn else { return SourceReading(inFlight: quiet < Limits.quiet, turn: nil) }
             return SourceReading(inFlight: turn.state == .running && quiet < Limits.abandoned, turn: turn)
+        case .process:
+            return SourceReading(inFlight: evidence.turn?.state == .running && evidence.lastWriteAt != nil
+                                     && evidence.processOutlivesTurn != false, turn: evidence.turn)
         }
     }
 

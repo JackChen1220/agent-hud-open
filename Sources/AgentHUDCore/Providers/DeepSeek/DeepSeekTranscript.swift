@@ -243,12 +243,24 @@ public struct DeepSeekTranscript: Codable, Sendable {
         return value
     }
 
-    /// Running means the newest turn is still going: questions and long tools leave an open turn quiet, and that
-    /// does not end it. `processStarts` is the process table, read only once a turn has been quiet for a while; a
-    /// newer process cannot own an older turn, so a turn none of them predates has lost its harness and stops.
+    /// Whether this log has its session in flight, by the process rule of `SessionPhase.read(_:rule:at:)`.
+    /// `processStarts` is the process table, nil when it was not read.
     public func isLive(processStarts: [Date]?) -> Bool {
-        guard let turn = turns?.last, turn.state == .running, lastActivityAt != nil else { return false }
-        guard let processStarts, let turnStartedAt = turn.startedAt else { return true }
-        return processStarts.contains { $0 <= turnStartedAt }
+        // The process rule reads no clock.
+        SessionPhase.read(evidence(processStarts: processStarts), rule: .process, at: Date()).inFlight
+    }
+
+    /// What this log says about its session: its newest turn, when it last recorded an event, and, when the process table
+    /// was read, whether a process there predates the turn. A newer process cannot own an older turn, so a turn none of
+    /// them predates has lost its harness.
+    func evidence(processStarts: [Date]?) -> SessionPhase.SourceEvidence {
+        let newest = turns?.last
+        return SessionPhase.SourceEvidence(turn: newest.map { turn in
+            SessionTurn(provider: "deepseek", sessionID: "deepseek:\(id ?? "")", turnID: String(turn.id), state: turn.state,
+                        startedAtMs: turn.startedAt.map(RecordCoding.milliseconds), observedAtMs: RecordCoding.milliseconds(turn.observedAt))
+        }, lastWriteAt: lastActivityAt, processOutlivesTurn: processStarts.map { starts in
+            // `turn/start` opens every turn, so a running one always has a start.
+            starts.contains { $0 <= newest?.startedAt ?? .distantPast }
+        })
     }
 }
