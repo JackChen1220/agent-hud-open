@@ -7,11 +7,14 @@ final class PiCodexTests: XCTestCase {
     private static let payload = #"{"account_id":"workspace","email":"A@Example.com","plan_type":"plus","rate_limit":{"primary_window":{"used_percent":20,"limit_window_seconds":18000,"reset_at":1800018000},"secondary_window":{"used_percent":30,"limit_window_seconds":604800,"reset_at":1800604800}},"additional_rate_limits":[{"metered_feature":"base_model_inference","limit_name":"gpt-reserve","rate_limit":{"primary_window":{"used_percent":0,"limit_window_seconds":604800,"reset_at":1800604800}}}],"rate_limit_reset_credits":{"available_count":2}}"#
 
     func testBackendMappingSharesNativeAccountAndWindowIds() throws {
+        L10n.setLanguage(.en)
+        defer { L10n.setLanguage(.system) }
         let limits = try PiCodexClient.parse(Data(Self.payload.utf8), expectedAccount: "workspace")
         let native = try JSONDecoder().decode(CodexRateLimits.self, from: Data(#"{"accountId":"workspace","account":{"email":"a@example.com"},"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":20,"windowDurationMins":300,"resetsAt":1800018000}}}}"#.utf8))
         XCTAssertEqual(limits.providerAccount(home: "pi"), native.providerAccount(home: ""))
         XCTAssertEqual(limits.rows(home: "pi").first?.id, native.rows(home: "").first?.id)
-        XCTAssertEqual(limits.rows.map(\.label), ["5h", "Weekly", "Luna Reserve · Weekly"])
+        XCTAssertEqual(limits.rows.map(\.label), ["5h limit", "Weekly limit", "Luna Reserve · Weekly limit"])
+        XCTAssertEqual(limits.rows.map(\.shortLabel), ["5h", "Weekly", "Reserve"])
         XCTAssertEqual(limits.rows.first?.window.remainingPct, 80)
         XCTAssertEqual(limits.rateLimitResetCredits?.availableCount, 2)
         XCTAssertThrowsError(try PiCodexClient.parse(Data(Self.payload.utf8), expectedAccount: "another-workspace"))

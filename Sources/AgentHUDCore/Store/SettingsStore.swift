@@ -145,11 +145,11 @@ public final class SettingsStore {
             for found in discovered {
                 if let index = list.firstIndex(where: { $0.id == found.id }) {
                     let existing = list[index]
-                    if existing.model != found.model || existing.source != found.source || existing.connected != found.connected
-                        || existing.billingPool != found.billingPool || existing.account != found.account
-                        || existing.allModels != found.allModels {
+                    if existing.model != found.model || existing.shortModel != found.shortModel || existing.source != found.source
+                        || existing.connected != found.connected || existing.billingPool != found.billingPool
+                        || existing.account != found.account || existing.allModels != found.allModels {
                         list[index] = AgentDescriptor(
-                            id: existing.id, vendor: existing.vendor, model: found.model, source: found.source,
+                            id: existing.id, vendor: existing.vendor, model: found.model, shortModel: found.shortModel, source: found.source,
                             enabled: existing.enabled, connected: found.connected, billingPool: found.billingPool, account: found.account,
                             allModels: found.allModels
                         )

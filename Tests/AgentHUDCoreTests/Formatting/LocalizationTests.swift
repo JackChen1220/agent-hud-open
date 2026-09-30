@@ -28,18 +28,18 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(L10n.resolved, L10n.systemLanguage())
     }
 
+    /// Claude's windows in Anthropic's words, and their short names.
     func testQuotaWindowKeysRenderInBothLanguages() {
+        let keys = [L10n.windowSession, L10n.windowWeekly, L10n.windowWeeklyPrefix + "Fable", L10n.windowWeeklyPrefix + "Mythos preview",
+                    "Desktop / CLI"]
         L10n.setLanguage(.zhHans)
-        XCTAssertEqual(L10n.modelLabel(L10n.windowSession), "当前会话 · 5h")
-        XCTAssertEqual(L10n.modelLabel(L10n.windowWeekly), "本周 · 全部模型")
-        XCTAssertEqual(L10n.modelLabel(L10n.windowWeeklyPrefix + "Fable"), "本周 · Fable")
-        XCTAssertEqual(L10n.shortModelLabel(L10n.windowSession), "当前会话")
-        XCTAssertEqual(L10n.shortModelLabel(L10n.windowWeeklyPrefix + "Fable"), "本周 Fable")
+        XCTAssertEqual(keys.map(L10n.modelLabel), ["当前会话", "每周限制 · 所有模型", "每周限制 · Fable", "每周限制 · Mythos preview", "账户额度"])
+        XCTAssertEqual(keys.map(L10n.shortModelLabel), ["5h", "每周", "Fable", "Mythos", "额度"],
+                       "a family's name is kept whole up to eight characters, else its first word")
         L10n.setLanguage(.en)
-        XCTAssertEqual(L10n.modelLabel(L10n.windowSession), "Session · 5h")
-        XCTAssertEqual(L10n.modelLabel(L10n.windowWeekly), "Weekly · all models")
-        XCTAssertEqual(L10n.modelLabel(L10n.windowWeeklyPrefix + "Fable"), "Weekly · Fable")
-        XCTAssertEqual(L10n.shortModelLabel(L10n.windowWeekly), "Weekly")
+        XCTAssertEqual(keys.map(L10n.modelLabel), ["Current session", "Weekly limit · All models", "Weekly limit · Fable",
+                                                   "Weekly limit · Mythos preview", "Account quota"])
+        XCTAssertEqual(keys.map(L10n.shortModelLabel), ["5h", "Weekly", "Fable", "Mythos", "Quota"])
     }
 
     func testRealModelNamesPassThrough() {

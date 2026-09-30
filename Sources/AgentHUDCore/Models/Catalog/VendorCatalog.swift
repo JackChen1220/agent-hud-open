@@ -16,14 +16,17 @@ public enum VendorCatalog {
         public var clients: [String: String]
         /// Quota window names as the vendor's service reports them, mapped to the names shown.
         public var windows: [String: String]
+        /// The same window names mapped to the word a short name keeps of them.
+        public var windowWords: [String: String]
 
         public init(name: String? = nil, startsHidden: Bool = false, bundleIDs: [String] = [],
-                    clients: [String: String] = [:], windows: [String: String] = [:]) {
+                    clients: [String: String] = [:], windows: [String: String] = [:], windowWords: [String: String] = [:]) {
             self.name = name
             self.startsHidden = startsHidden
             self.bundleIDs = bundleIDs
             self.clients = clients
             self.windows = windows
+            self.windowWords = windowWords
         }
     }
 
@@ -35,7 +38,7 @@ public enum VendorCatalog {
         "Codex": Entry(
             bundleIDs: ["com.openai.codex"],
             clients: ["Codex Desktop": "Desktop", "codex_vscode": "IDE", "codex-tui": "CLI", "codex_exec": "CLI · exec"],
-            windows: ["gpt-reserve": "Luna Reserve"]),
+            windows: ["gpt-reserve": "Luna Reserve"], windowWords: ["gpt-reserve": "Reserve"]),
         "Cursor": Entry(bundleIDs: ["com.todesktop.230313mzl4w4u92"]),
         // An API balance, not a subscription: its rows stay out of the HUD until switched on.
         "DeepSeek": Entry(startsHidden: true),
@@ -50,6 +53,12 @@ public enum VendorCatalog {
 
     /// The name shown for a quota window the vendor's service reported; unnamed windows keep the service's name.
     public static func window(_ value: String, vendor: String) -> String { entries[vendor]?.windows[value] ?? value }
+
+    /// The word a short name keeps of a quota window the vendor's service reported: the catalog's, else the distinctive
+    /// word of the name shown (`WindowNames.word(_:)`).
+    public static func windowWord(_ value: String, vendor: String) -> String {
+        entries[vendor]?.windowWords[value] ?? WindowNames.word(window(value, vendor: vendor))
+    }
 
     /// The vendor's apps wherever Launch Services has seen them, so a renamed or moved app is still found.
     public static func applications(_ vendor: String) -> [URL] {

@@ -96,7 +96,8 @@ struct AntigravityClient: Sendable {
         let groups = json["response"]["groups"].arrayValue ?? json["summary"]["groups"].arrayValue ?? json["groups"].arrayValue
         guard let groups else { throw ProviderFailure.format }
         var result = ProviderQuota(), ids = Set<String>()
-        for group in groups {
+        var found: [(group: Int, name: String?, window: ProviderQuota.Window)] = []
+        for (index, group) in groups.enumerated() {
             guard let buckets = group["buckets"].arrayValue else { throw ProviderFailure.format }
             for bucket in buckets {
                 guard bucket["disabled"].boolValue != true, let id = bucket["bucketId"].stringValue, !id.isEmpty else { continue }
@@ -111,11 +112,32 @@ struct AntigravityClient: Sendable {
                     .replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ")
                 let duration: TimeInterval? = cadence.contains("weekly") ? 604800
                     : cadence.contains("five hour") || cadence.contains("5 hour") ? 18000 : nil
-                result.windows.append(.init(id: "antigravity:\(id)", label: label, remaining: fraction * 100,
-                    reset: DateParsing.internet(bucket["resetTime"].stringValue), duration: duration))
+                found.append((index, group["displayName"].stringValue, .init(id: "antigravity:\(id)", label: label, remaining: fraction * 100,
+                    reset: DateParsing.internet(bucket["resetTime"].stringValue), duration: duration)))
             }
         }
+        // One group's windows are the account's main set, known by their period alone; with several groups a window is
+        // known by its group's word, and by its period too where the group has more than one window.
+        let counts = Dictionary(grouping: found, by: \.group).mapValues(\.count)
+        result.windows = found.map { entry in
+            var window = entry.window
+            let period = WindowNames.Period(seconds: window.duration)
+            if counts.count == 1 {
+                window.shortLabel = period?.shortName
+            } else if let word = entry.name.map(groupWord) {
+                window.shortLabel = counts[entry.group] == 1 ? word : period.map { "\(word) \($0.afterWord)" }
+            }
+            return window
+        }
         return result
+    }
+
+    /// The word a group of models is known by in tight places: its first word, as Gemini for Gemini Models, and
+    /// third-party for Claude and GPT models, as Antigravity's plans describe them.
+    static func groupWord(_ name: String) -> String {
+        let lower = name.lowercased()
+        if lower.contains("claude") || lower.contains("gpt") { return L10n.text("第三方", "3rd-party") }
+        return name.split(separator: " ").first.map(String.init) ?? name
     }
 
     static func identity(_ json: ProviderJSON) -> (ProviderAccount?, String?) {
@@ -134,9 +156,11 @@ struct AntigravityClient: Sendable {
             if ["lite", "autocomplete", "image"].contains(where: lower.contains) { continue }
             let family = lower.contains("gemini") ? "gemini" : lower.contains("claude") || lower.contains("gpt") ? "claude-gpt" : model
             guard !family.isEmpty else { continue }
-            let name = family == "gemini" ? "Gemini" : family == "claude-gpt" ? "Claude + GPT" : label
+            // The groups by Antigravity's own names; any other model by its label.
+            let name = family == "gemini" ? "Gemini Models" : family == "claude-gpt" ? "Claude and GPT models" : label
+            let short = family == "gemini" ? "Gemini" : family == "claude-gpt" ? groupWord(name) : WindowNames.word(label)
             let window = ProviderQuota.Window(id: "antigravity:legacy:\(family)", label: name, remaining: fraction * 100,
-                reset: DateParsing.internet(config["quotaInfo"]["resetTime"].stringValue))
+                reset: DateParsing.internet(config["quotaInfo"]["resetTime"].stringValue), shortLabel: short)
             if pools[family].map({ window.remaining < $0.remaining }) ?? true { pools[family] = window }
         }
         let plan = status["userTier"]["name"].stringValue ?? status["planStatus"]["planInfo"]["planName"].stringValue

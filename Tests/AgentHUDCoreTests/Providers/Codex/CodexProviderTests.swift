@@ -344,11 +344,16 @@ final class CodexProviderTests: XCTestCase {
     }
 
     func testWindowNamesComeFromTheCatalogOrTheService() throws {
+        L10n.setLanguage(.en)
+        defer { L10n.setLanguage(.system) }
         let limits = try decode(#"{"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":3,"windowDurationMins":300}},"base_model_inference":{"limitName":"gpt-reserve","primary":{"usedPercent":0,"windowDurationMins":10080}},"codex_next":{"limitName":"Next Model","primary":{"usedPercent":5,"windowDurationMins":10080}}}}"#)
         let labels = Dictionary(uniqueKeysWithValues: limits.rows.map { ($0.id, $0.label) })
-        XCTAssertEqual(labels["codex"], "5h")
-        XCTAssertEqual(labels["codex:base_model_inference:primary"], "Luna Reserve · Weekly", "the name OpenAI's own client shows")
-        XCTAssertEqual(labels["codex:codex_next:primary"], "Next Model · Weekly", "a window the catalog does not name keeps the service's name")
+        XCTAssertEqual(labels["codex"], "5h limit")
+        XCTAssertEqual(labels["codex:base_model_inference:primary"], "Luna Reserve · Weekly limit", "the name OpenAI's own client shows")
+        XCTAssertEqual(labels["codex:codex_next:primary"], "Next Model · Weekly limit", "a window the catalog does not name keeps the service's name")
+        let short = Dictionary(uniqueKeysWithValues: limits.rows.map { ($0.id, $0.descriptor.shortName) })
+        XCTAssertEqual(short["codex:base_model_inference:primary"], "Reserve", "the catalog's word")
+        XCTAssertEqual(short["codex:codex_next:primary"], "Model", "the last word of a name the catalog does not know")
     }
 
     func testOnlyTheCodexBucketCoversEveryModel() throws {

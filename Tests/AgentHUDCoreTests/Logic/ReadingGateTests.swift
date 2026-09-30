@@ -178,7 +178,7 @@ final class ReadingGateTests: XCTestCase {
                                        sessions: [], accounts: accounts)
             let alerts = tracker.update(report: restored, agents: [window, weekly], now: now).alerts
             XCTAssertEqual(alerts.map(\.kind), [.reset], name)
-            XCTAssertEqual(alerts.first?.otherExhaustedWindows, expected, name)
+            XCTAssertEqual(alerts.first?.otherExhaustedWindows.map(\.name), expected, name)
         }
     }
 

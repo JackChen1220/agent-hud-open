@@ -14,7 +14,8 @@ public struct ClaudeUsageWindow: Hashable, Sendable {
     public var remainingPct: Double { QuotaMath.remaining(usedPercent: utilizationPct) }
 }
 
-/// One quota window as a row: "当前会话 · 5h", "本周 · 全部模型", "本周 · Fable". Each has its own reset cadence.
+/// One quota window as a row: Current session, Weekly limit · All models, Weekly limit · Fable. Each has its own reset
+/// cadence.
 public struct ClaudeQuotaWindowRow: Hashable, Sendable, Identifiable {
     public let id: String
     public let label: String

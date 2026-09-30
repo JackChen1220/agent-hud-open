@@ -54,21 +54,24 @@ struct GrokClient: Sendable {
         let duration = ProviderDate.period(start: start, end: end)
         var quota = ProviderQuota()
         if let used = config["creditUsagePercent"].numberValue, used >= 0 {
-            let label: String
+            // xAI's weekly usage limit, which its billing service can also report by the month.
+            let label: String, short: String
             switch period["type"].stringValue {
-            case "USAGE_PERIOD_TYPE_WEEKLY": label = L10n.text("每周额度", "Weekly credits")
-            case "USAGE_PERIOD_TYPE_MONTHLY": label = L10n.text("每月额度", "Monthly credits")
-            default: label = L10n.text("订阅额度", "Subscription credits")
+            case "USAGE_PERIOD_TYPE_WEEKLY": (label, short) = (L10n.text("每周用量额度", "Weekly usage limit"), WindowNames.Period.week.shortName)
+            case "USAGE_PERIOD_TYPE_MONTHLY": (label, short) = (L10n.text("每月用量额度", "Monthly usage limit"), WindowNames.Period.month.shortName)
+            default: (label, short) = (L10n.text("用量额度", "Usage limit"), L10n.text("用量", "Usage"))
             }
-            quota.windows.append(.init(id: "grok", label: label, remaining: QuotaMath.remaining(usedPercent: used), reset: end, duration: duration))
+            quota.windows.append(.init(id: "grok", label: label, remaining: QuotaMath.remaining(usedPercent: used), reset: end, duration: duration,
+                                       shortLabel: short))
         } else {
             quota.displayNotice = L10n.text("Grok 已连接，但服务未返回已用额度", "Grok is connected, but used credits were not reported")
         }
         // Extra spending is a distinct budget, never a substitute for subscription consumption.
         if let cap = config["onDemandCap"]["val"].numberValue, cap > 0,
            let used = config["onDemandUsed"]["val"].numberValue, used >= 0 {
-            quota.windows.append(.init(id: "grok:extra", label: L10n.text("额外用量预算", "Extra usage budget"),
-                remaining: QuotaMath.remaining(usedPercent: used / cap * 100), reset: end, duration: duration))
+            quota.windows.append(.init(id: "grok:extra", label: L10n.text("额外用量", "Extra usage"),
+                remaining: QuotaMath.remaining(usedPercent: used / cap * 100), reset: end, duration: duration,
+                shortLabel: L10n.text("额外用量", "Extra")))
         }
         return quota
     }

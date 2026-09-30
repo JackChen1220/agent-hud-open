@@ -229,12 +229,14 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         let provider = AdditionalUsageProvider(source: .cursor, readQuota: {
             state.reads += 1
             guard state.reads == 1 else { throw ProviderHTTPError(status: 503) }
-            return ProviderQuota(windows: [.init(id: "cursor", label: "Plan usage", remaining: 60)], account: account)
+            return ProviderQuota(windows: [.init(id: "cursor", label: "Included usage", remaining: 60, shortLabel: "Included"),
+                                           .init(id: "cursor:team", label: "Pooled usage", remaining: 60)], account: account)
         }, readSessions: { _ in ProviderSessions(sessions: [conversation]) }, history: QuotaHistoryStore(), clock: { state.now }, ledger: ledger)
         func accounts() async throws -> Set<String> {
             Set(try await ledger.buckets(since: .distantPast, source: AdditionalSource.cursor.rawValue).compactMap(\.account))
         }
-        _ = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 168)
+        let report = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 168)
+        XCTAssertEqual(report.discoveredAgents.map(\.shortName), ["Included", "Pooled usage"], "a window without a short name shows its full name")
         var recorded = try await accounts()
         XCTAssertEqual(recorded, [account.id])
         state.now = start.addingTimeInterval(UsageRefresh.accountRequestSpacing + 1)

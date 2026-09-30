@@ -60,10 +60,13 @@ public enum AdditionalSource: String, CaseIterable, Sendable {
 struct ProviderQuota: Sendable {
     struct Window: Sendable {
         let id: String
+        /// The window's full name in the vendor's words.
         let label: String
         let remaining: Double
         var reset: Date? = nil
         var duration: TimeInterval? = nil
+        /// The window's short name (`WindowNames`); nil shows its full name.
+        var shortLabel: String? = nil
     }
     var windows: [Window] = []
     var plan: String? = nil
@@ -86,10 +89,14 @@ struct ProviderQuota: Sendable {
         account ?? .unresolved(provider: source.vendor, home: "")
     }
 
-    /// Window ids scoped to the account: `account:<hash>/cursor:team`.
+    /// Window ids scoped to the account: `account:<hash>/cursor:team`. Windows whose short names would read alike keep
+    /// their full names.
     func scopedWindows(_ source: AdditionalSource) -> [Window] {
         let account = resolvedAccount(source)
-        return windows.map { Window(id: account.windowID($0.id), label: $0.label, remaining: $0.remaining, reset: $0.reset, duration: $0.duration) }
+        return zip(windows, WindowNames.distinct(windows.map(\.shortLabel))).map { window, short in
+            Window(id: account.windowID(window.id), label: window.label, remaining: window.remaining, reset: window.reset,
+                   duration: window.duration, shortLabel: short)
+        }
     }
 }
 

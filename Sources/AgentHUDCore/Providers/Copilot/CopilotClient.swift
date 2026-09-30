@@ -61,29 +61,35 @@ struct CopilotClient: Sendable {
             // A snapshot's own reset, in seconds, governs it before the account's.
             let own = number(item["quota_reset_at"]).flatMap { $0 > 0 && $0 <= 253402300799 ? Date(timeIntervalSince1970: $0) : nil }
             let credits = (usageBased || item["token_based_billing"].boolValue == true) && (key == "premium_interactions" || key == "chat" && free)
-            quota.windows.append(.init(id: "copilot:\(key)", label: label(key, credits: credits), remaining: min(100, max(0, percent)),
-                                       reset: own ?? reset))
+            let name = names(key, credits: credits)
+            quota.windows.append(.init(id: "copilot:\(key)", label: name.full, remaining: min(100, max(0, percent)),
+                                       reset: own ?? reset, shortLabel: name.short))
         }
         // Free accounts report remaining and monthly counts instead of snapshots.
         if quota.windows.isEmpty, let limited = response["limited_user_quotas"].objectValue {
             let reset = date(response["limited_user_reset_date"].stringValue)
             for key in keys(limited) {
                 guard let remaining = number(limited[key]!), let total = number(response["monthly_quotas"][key]), total > 0 else { continue }
-                quota.windows.append(.init(id: "copilot:\(key)", label: label(key, credits: usageBased && free && key == "chat"),
-                                           remaining: min(100, max(0, remaining / total * 100)), reset: reset))
+                let name = names(key, credits: usageBased && free && key == "chat")
+                quota.windows.append(.init(id: "copilot:\(key)", label: name.full,
+                                           remaining: min(100, max(0, remaining / total * 100)), reset: reset, shortLabel: name.short))
             }
         }
         return quota
     }
 
-    /// GitHub keeps "AI credits" in English in its Chinese docs as well.
-    static func label(_ key: String, credits: Bool = false) -> String {
-        if credits { return "AI credits" }
+    /// A window's names in GitHub's words and VS Code's: GitHub keeps "AI credits" in English in its Chinese docs, and
+    /// VS Code's Chinese calls the row 额度. A key GitHub has not named reads as its words, in English in both languages,
+    /// and is known in tight places by the whole of it up to eight characters, else its first word.
+    static func names(_ key: String, credits: Bool = false) -> (full: String, short: String) {
+        if credits { return ("AI credits", L10n.text("额度", "Credits")) }
         switch key {
-        case "premium_interactions": return L10n.text("高级请求", "Premium requests")
-        case "chat": return L10n.text("对话", "Chat")
-        case "completions": return L10n.text("代码补全", "Completions")
-        default: return key.replacingOccurrences(of: "_", with: " ").capitalized
+        case "premium_interactions": return (L10n.text("高级请求", "Premium requests"), L10n.text("高级请求", "Premium"))
+        case "chat": return (L10n.text("聊天消息", "Chat messages"), L10n.text("聊天消息", "Chat"))
+        case "completions": return (L10n.text("代码补全", "Code completions"), L10n.text("代码补全", "Completions"))
+        default:
+            let name = key.replacingOccurrences(of: "_", with: " ").capitalized
+            return (name, WindowNames.leading(name))
         }
     }
 

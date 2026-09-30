@@ -104,8 +104,9 @@ final class OpenAgentProviderTests: XCTestCase {
         XCTAssertEqual(current.windows.map(\.remaining), [75, 60])
         XCTAssertEqual(current.windows.map(\.duration), [18000, nil])
         XCTAssertEqual(current.windows.first?.reset, DateParsing.internet("2026-09-08T05:00:00Z"))
-        XCTAssertEqual(current.windows.last?.label, "Monthly total quota · Plus")
-        XCTAssertEqual(current.windows.first?.label, earlier.windows[1].label)
+        XCTAssertEqual(current.windows.map(\.label), ["5-hour quota · Plus", "Monthly total quota · Plus"])
+        XCTAssertEqual(earlier.windows.map(\.label), ["Weekly quota", "5-hour quota"], "an account that names no plan")
+        XCTAssertEqual(current.windows.map(\.shortLabel), ["5h", "Monthly"])
         // An older plan in the current report keeps its week, under the week's window.
         let older = try OpenAgentQuotaClient.parse(json(#"{"usages":{"limit_5h":{"used_ratio":0.25},"limit_7d":{"used_ratio":0.2}},"usage":{"limit":"2000","used":"1000"}}"#), credential: credential(), now: now)
         XCTAssertEqual(Set(older.windows.map(\.id)), Set(earlier.windows.map(\.id)))
@@ -146,7 +147,7 @@ final class OpenAgentProviderTests: XCTestCase {
         XCTAssertEqual(credits.windows.map(\.id), ["CREDIT_LIMIT:3:5", "CREDIT_LIMIT:6:1"].map(credential(.glmGlobal).pool.windowID))
         XCTAssertEqual(credits.plan, "Pro")
         let tokens = try OpenAgentQuotaClient.parse(json(#"{"success":true,"code":200,"data":{"planName":"Pro","limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":25},{"type":"TIME_LIMIT","unit":5,"number":1,"percentage":5}]}}"#), credential: credential(.glmGlobal), now: now)
-        XCTAssertEqual(tokens.windows.map(\.label), ["300m", "MCP"].map { $0 + " · " + credential(.glmGlobal).pool.label })
+        XCTAssertEqual(tokens.windows.map(\.label), ["5-hour limit · Pro", "MCP usage (1 month) · Pro"])
     }
 
     func piLines(session: String = "original", entry: String = "message-a", provider: String = "openai-codex", model: String = "model-x") -> String {

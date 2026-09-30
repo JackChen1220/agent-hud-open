@@ -80,27 +80,26 @@ public enum L10n {
     public static let windowWeekly = "window.weekly"
     public static let windowWeeklyPrefix = "window.weekly."
 
-    /// Full row label: "当前会话 · 5h" / "Session · 5h", "本周 · Fable" / "Weekly · Fable"; real model names pass through.
+    /// Full row label, in Anthropic's words for Claude's windows: "当前会话" / "Current session", "每周限制 · 所有模型" /
+    /// "Weekly limit · All models", "每周限制 · Fable" / "Weekly limit · Fable"; real model names pass through.
     public static func modelLabel(_ model: String) -> String {
         if model == "Desktop / CLI" || model == "CLI" { return text("账户额度", "Account quota") }
-        if model == windowSession { return text("当前会话 · 5h", "Session · 5h") }
-        if model == windowWeekly { return text("本周 · 全部模型", "Weekly · all models") }
+        if model == windowSession { return text("当前会话", "Current session") }
+        if model == windowWeekly { return text("每周限制 · 所有模型", "Weekly limit · All models") }
         if model.hasPrefix(windowWeeklyPrefix) {
             let family = model.dropFirst(windowWeeklyPrefix.count)
-            return text("本周 · \(family)", "Weekly · \(family)")
+            return text("每周限制 · \(family)", "Weekly limit · \(family)")
         }
         return model
     }
 
-    /// Short form for titles: "当前会话" / "Session", "本周 Fable" / "Weekly Fable", "Opus 4.5" → "Opus".
+    /// Short form for tight places (`WindowNames`): "5h", "每周" / "Weekly", a family's weekly window by the family alone
+    /// ("Fable"), and a model by its first word ("Opus 4.5" → "Opus").
     public static func shortModelLabel(_ model: String) -> String {
-        if model == "Desktop / CLI" || model == "CLI" { return modelLabel(model) }
-        if model == windowSession { return text("当前会话", "Session") }
-        if model == windowWeekly { return text("本周", "Weekly") }
-        if model.hasPrefix(windowWeeklyPrefix) {
-            let family = model.dropFirst(windowWeeklyPrefix.count)
-            return text("本周 \(family)", "Weekly \(family)")
-        }
+        if model == "Desktop / CLI" || model == "CLI" { return text("额度", "Quota") }
+        if model == windowSession { return WindowNames.Period.fiveHours.shortName }
+        if model == windowWeekly { return WindowNames.Period.week.shortName }
+        if model.hasPrefix(windowWeeklyPrefix) { return WindowNames.leading(String(model.dropFirst(windowWeeklyPrefix.count))) }
         return model.split(separator: " ").first.map(String.init) ?? model
     }
 

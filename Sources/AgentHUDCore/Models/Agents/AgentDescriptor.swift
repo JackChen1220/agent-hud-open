@@ -4,7 +4,12 @@ import Foundation
 public struct AgentDescriptor: Hashable, Codable, Sendable, Identifiable {
     public let id: String
     public let vendor: String
+    /// A model's name, or a quota window's full name in its vendor's words: Claude's windows as persisted keys that
+    /// `L10n.modelLabel(_:)` words in the current language, every other window as its provider wrote it.
     public let model: String
+    /// A quota window's short name as its provider wrote it (`WindowNames`), its full name where it has none; nil for
+    /// Claude's windows and models, whose short names `L10n.shortModelLabel(_:)` derives from `model`.
+    public let shortModel: String?
     /// Human-readable data-source label shown in settings ("Claude Code 会话", "codex app-server", "未连接").
     public let source: String
     public let enabled: Bool
@@ -22,6 +27,7 @@ public struct AgentDescriptor: Hashable, Codable, Sendable, Identifiable {
         id: String,
         vendor: String,
         model: String,
+        shortModel: String? = nil,
         source: String,
         enabled: Bool,
         connected: Bool = true,
@@ -32,6 +38,7 @@ public struct AgentDescriptor: Hashable, Codable, Sendable, Identifiable {
         self.id = id
         self.vendor = vendor
         self.model = model
+        self.shortModel = shortModel
         self.source = source
         self.enabled = enabled
         self.connected = connected
@@ -41,13 +48,14 @@ public struct AgentDescriptor: Hashable, Codable, Sendable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, vendor, model, source, enabled, connected, billingPool, account, allModels
+        case id, vendor, model, shortModel, source, enabled, connected, billingPool, account, allModels
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(id: try c.decode(String.self, forKey: .id), vendor: try c.decode(String.self, forKey: .vendor),
-                  model: try c.decode(String.self, forKey: .model), source: try c.decode(String.self, forKey: .source),
+                  model: try c.decode(String.self, forKey: .model), shortModel: try c.decodeIfPresent(String.self, forKey: .shortModel),
+                  source: try c.decode(String.self, forKey: .source),
                   enabled: try c.decode(Bool.self, forKey: .enabled), connected: try c.decode(Bool.self, forKey: .connected),
                   billingPool: try c.decodeIfPresent(BillingPool.self, forKey: .billingPool),
                   account: try c.decodeIfPresent(ProviderAccount.self, forKey: .account),
@@ -60,6 +68,7 @@ public struct AgentDescriptor: Hashable, Codable, Sendable, Identifiable {
         try c.encode(id, forKey: .id)
         try c.encode(vendor, forKey: .vendor)
         try c.encode(model, forKey: .model)
+        try c.encodeIfPresent(shortModel, forKey: .shortModel)
         try c.encode(source, forKey: .source)
         try c.encode(enabled, forKey: .enabled)
         try c.encode(connected, forKey: .connected)
@@ -79,11 +88,12 @@ public struct AgentDescriptor: Hashable, Codable, Sendable, Identifiable {
     public var displayVendor: String { billingPool?.product == .api ? billingPool!.provider : vendor }
     /// The group's name as shown, from the vendor catalog.
     public var vendorName: String { VendorCatalog.name(displayVendor) }
-    /// The row's own name, a quota window's or a model's, as every surface writes it: a persisted window key in words
-    /// (`L10n.modelLabel(_:)`), else the model as written.
+    /// The row's own name, a quota window's full name or a model's, as every surface writes it: a persisted window key in
+    /// words (`L10n.modelLabel(_:)`), else the model as written.
     public var name: String { L10n.modelLabel(model) }
-    /// The short form of `name` for titles and tight rows (`L10n.shortModelLabel(_:)`).
-    public var shortName: String { L10n.shortModelLabel(model) }
+    /// The short form of `name` for tight places such as the menu's rows, a Watch row or a small widget: the provider's
+    /// short name for a window, else `L10n.shortModelLabel(_:)`. Never cut: a window without a short name gives its full name.
+    public var shortName: String { shortModel ?? L10n.shortModelLabel(model) }
     /// The vendor's name and the row's.
     public var displayName: String { "\(vendorName) · \(name)" }
     /// The vendor's name and the row's short name, for a menu row that names its vendor.
@@ -104,6 +114,7 @@ public struct AgentDescriptor: Hashable, Codable, Sendable, Identifiable {
             id: id,
             vendor: vendor,
             model: model,
+            shortModel: shortModel,
             source: source,
             enabled: enabled ?? self.enabled,
             connected: connected ?? self.connected,

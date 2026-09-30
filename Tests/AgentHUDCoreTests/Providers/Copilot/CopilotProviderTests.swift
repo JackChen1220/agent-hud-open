@@ -68,7 +68,8 @@ final class CopilotProviderTests: XCTestCase, @unchecked Sendable {
         // A Free plan under usage-based billing counts its chat snapshot in credits too; its premium snapshot has none.
         let free = try CopilotClient.parse(json(#"{"copilot_plan":"free","access_type_sku":"free_limited_copilot","token_based_billing":true,"quota_snapshots":{"chat":{"entitlement":"50","quota_remaining":40,"percent_remaining":80,"unlimited":false},"completions":{"entitlement":"2000","quota_remaining":1000,"percent_remaining":50,"unlimited":false},"premium_interactions":{"entitlement":"0","quota_remaining":0,"percent_remaining":0,"unlimited":false}}}"#))
         XCTAssertEqual(free.windows.map(\.id), ["copilot:chat", "copilot:completions"])
-        XCTAssertEqual(free.windows.map(\.label), ["AI credits", "Completions"])
+        XCTAssertEqual(free.windows.map(\.label), ["AI credits", "Code completions"])
+        XCTAssertEqual(free.windows.map(\.shortLabel), ["Credits", "Completions"])
         // Newer backends call the premium snapshot premium_models; a plan on premium requests keeps its name.
         let requests = try CopilotClient.parse(json(#"{"copilot_plan":"individual","quota_reset_date":"2026-10-01","quota_snapshots":{"premium_models":{"entitlement":"300","remaining":150,"percent_remaining":50,"unlimited":false}}}"#))
         XCTAssertEqual(requests.windows.map(\.id), ["copilot:premium_interactions"])

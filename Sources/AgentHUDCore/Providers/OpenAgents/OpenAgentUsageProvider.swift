@@ -222,8 +222,8 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
             guard let quota = result.quota else {
                 // A reading that failed without a sign-out keeps the account current, at its last reading, with the reason.
                 if result.isActive {
-                    accounts[pool.provider, default: []].append(AccountObservation(account: ProviderAccount(pool: pool), plan: result.plan,
-                        observedAt: result.readAt ?? result.at, quotaNotice: result.notice,
+                    accounts[pool.provider, default: []].append(AccountObservation(account: ProviderAccount(pool: pool), label: pool.label,
+                        plan: result.plan, observedAt: result.readAt ?? result.at, quotaNotice: result.notice,
                         readingIssue: result.notice.map(ReadingIssue.readFailed)))
                 }
                 continue
@@ -233,14 +233,15 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
             }
             if result.isActive {
                 // A reading whose account the service could not confirm is not verified either.
-                accounts[pool.provider, default: []].append(AccountObservation(account: ProviderAccount(pool: pool), plan: quota.plan,
-                    observedAt: result.at, quotaNotice: result.notice, readingIssue: result.notice.map(ReadingIssue.unverified)))
+                // The pool's label names the account, where its windows are named by their periods.
+                accounts[pool.provider, default: []].append(AccountObservation(account: ProviderAccount(pool: pool), label: pool.label,
+                    plan: quota.plan, observedAt: result.at, quotaNotice: result.notice, readingIssue: result.notice.map(ReadingIssue.unverified)))
             }
             for window in quota.windows {
                 let snapshot = UsageSnapshot(agentId: window.id, remainingPct: window.remaining, resetAt: window.reset,
                                              windowDuration: window.duration, updatedAt: result.at)
                 snapshots.append(snapshot)
-                descriptors.append(.init(id: window.id, vendor: pool.provider, model: window.label + (quota.plan.map { " · " + $0 } ?? ""),
+                descriptors.append(.init(id: window.id, vendor: pool.provider, model: window.label, shortModel: window.shortLabel ?? window.label,
                     source: result.credential.clients.sorted().joined(separator: ", "), enabled: true, billingPool: pool,
                     account: ProviderAccount(pool: pool)))
                 // Historical records lacking a pool must not inherit the current credential's quota.
