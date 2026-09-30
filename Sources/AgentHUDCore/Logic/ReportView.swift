@@ -66,19 +66,18 @@ public struct ReportView: Sendable {
         let enabled = visible.filter { $0.enabled && Self.isPoolActive($0, in: report, withoutReport: false) }
         let rows = enabled.filter { !$0.isAPIBilled }.enumerated().map { index, agent in
             let snapshot = report?.snapshot(for: agent.id)
-            let isCurrent = report?.isCurrent(agent) ?? true
+            // Without a report, a row has no reading and counts as its account's current one.
+            let assessment = report?.assess(.window(agent), now: now)
+                ?? ReadingAssessment(status: .normal, isCurrentAccount: true, observedAt: nil, now: now)
             return AgentRow(
                 agent: agent,
                 remainingPct: snapshot?.remainingPct,
-                level: isCurrent && report?.quotaNotice(for: agent) == nil ? snapshot.flatMap {
-                    ($0.resetAt ?? .distantFuture) > now && now.timeIntervalSince($0.updatedAt) < AlertPolicy.maximumReadingAge
-                        ? AlertPolicy.quotaLevel(remaining: $0.remainingPct) : nil
-                } : nil,
+                level: assessment.showsLevel ? snapshot.map { AlertPolicy.quotaLevel(remaining: $0.remainingPct) } : nil,
                 resetAt: snapshot?.resetAt,
                 weeklyRemainingPct: snapshot?.weeklyRemainingPct,
                 paletteIndex: index,
                 account: agent.account.flatMap { report?.observation(accountID: $0.id) },
-                isCurrentAccount: isCurrent
+                assessment: assessment
             )
         }
         let vendors = Set(enabled.map(\.vendor))

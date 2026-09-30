@@ -13,10 +13,13 @@ public struct AgentRow: Hashable, Sendable, Identifiable {
     public let paletteIndex: Int
     /// The account this window belongs to, when the provider identifies accounts.
     public let account: AccountObservation?
-    /// Other accounts show their last reading without a status level, so they stay out of the glow and alerts.
-    public let isCurrentAccount: Bool
+    /// What the surfaces weigh about the window's reading at the time the row was made; `level` follows its `showsLevel`.
+    public let assessment: ReadingAssessment
 
     public var id: String { agent.id }
+
+    /// Other accounts show their last reading without a status level, so they stay out of the glow and alerts.
+    public var isCurrentAccount: Bool { assessment.isCurrentAccount }
 
     /// Share of the window already consumed; the UI shows usage, not what is left.
     public var usedPct: Double? { remainingPct.map { max(0, min(100, 100 - $0)) } }
