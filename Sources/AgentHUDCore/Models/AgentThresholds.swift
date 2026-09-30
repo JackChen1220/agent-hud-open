@@ -14,18 +14,20 @@ public enum AlertPolicy {
     public static let resetRise: Double = 5
     /// How far back a window's insights read its stored readings.
     public static let insightsLookback: TimeInterval = 7 * 86400
-    /// The balance at or below which an account warns, by currency. A balance in any other currency warns only when
-    /// it runs out.
+    /// The balance at or below which an account runs low, by currency. A balance in any other currency is fine until it
+    /// runs out.
     public static let balanceWarnings: [String: Decimal] = ["CNY": 10, "USD": 2]
 
     public static func quotaLevel(remaining: Double) -> StatusLevel {
         StatusLevel.resolve(remainingPct: remaining, warnPct: 100 - warningUsed, critPct: 100 - criticalUsed)
     }
 
+    /// A balance's rung on the one ladder every currency climbs: depleted (critical) at or below zero, low (warning) at or
+    /// below its currency's line, else fine (ok). Nil only for an amount that is not a number.
     public static func balanceLevel(remaining: Decimal, currency: String) -> StatusLevel? {
         guard !remaining.isNaN else { return nil }
-        guard let warning = balanceWarnings[currency] else { return remaining <= 0 ? .critical : nil }
-        return remaining <= 0 ? .critical : remaining <= warning ? .warning : .ok
+        if remaining <= 0 { return .critical }
+        return balanceWarnings[currency].map { remaining <= $0 } == true ? .warning : .ok
     }
 
     /// An API account's level: critical while its service marks it unavailable, even with no balance to show, else

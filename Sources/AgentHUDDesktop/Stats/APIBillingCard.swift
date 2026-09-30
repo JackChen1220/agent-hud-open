@@ -19,6 +19,15 @@ struct APIBillingCard: View {
                 Spacer()
             }
             .padding(.vertical, compact ? IslandRowLayout.headingVerticalPadding : 0)
+            // A balance whose read failed keeps its last amount without a colour, and says why.
+            if let reason = store.view.assessment(of: billing).status.reason {
+                Text(reason)
+                    .font(.ui(11))
+                    .foregroundStyle(theme.statusText(.warning))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, compact ? IslandRowLayout.textInset : 0)
+            }
             if billing.balances.isEmpty {
                 balanceLine(currency: billing.currency, balance: nil)
             } else {

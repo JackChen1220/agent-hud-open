@@ -178,10 +178,10 @@ final class ReadingGateTests: XCTestCase {
         }
     }
 
-    /// An API balance takes its place in the glow between the quota rows around it, coloured without any check of the
-    /// reading behind it.
+    /// An API balance takes its place in the glow between the quota rows around it, by the rules of a quota window: a
+    /// balance whose read failed, or one read in the future, has no level and leaves the glow.
     @MainActor
-    func testABalanceBetweenTwoQuotaRowsIsColouredWhateverItsReading() throws {
+    func testABalanceBetweenTwoQuotaRowsFollowsTheQuotaRules() throws {
         let (rows, store) = try balanceStore()
         func billing(_ total: Decimal, currency: String = "CNY", isAvailable: Bool? = true, age: TimeInterval = 60,
                      notice: String? = nil) -> APIBilling {
@@ -193,9 +193,13 @@ final class ReadingGateTests: XCTestCase {
             ("a balance at its warning line", billing(10), [.warning, .warning, .ok]),
             ("an empty balance", billing(0), [.warning, .critical, .ok]),
             ("a balance the service marks unavailable", billing(50, isAvailable: false), [.warning, .critical, .ok]),
-            ("the last balance kept after a failed read, two hours old", billing(8, age: 7200, notice: "offline"), [.warning, .warning, .ok]),
-            ("a balance read in the future", billing(8, age: -60), [.warning, .warning, .ok]),
-            ("a balance in a currency without a warning line", billing(5, currency: "EUR"), [.warning, .ok]),
+            ("an unavailable account without an amount",
+             APIBilling(vendor: "DeepSeek", balances: [], isAvailable: false, updatedAt: now.addingTimeInterval(-60), notice: nil),
+             [.warning, .critical, .ok]),
+            ("the last balance kept after a failed read, two hours old", billing(8, age: 7200, notice: "offline"), [.warning, .ok]),
+            ("a balance read two hours ago", billing(8, age: 7200), [.warning, .warning, .ok]),
+            ("a balance read in the future", billing(8, age: -60), [.warning, .ok]),
+            ("a balance in a currency without a warning line", billing(5, currency: "EUR"), [.warning, .ok, .ok]),
             ("a balance whose read never succeeded",
              APIBilling(vendor: "DeepSeek", balances: [], isAvailable: nil, updatedAt: nil, notice: "offline"), [.warning, .ok]),
         ]
@@ -207,8 +211,8 @@ final class ReadingGateTests: XCTestCase {
         XCTAssertEqual(store.rows.map(\.paletteIndex), [0, 1], "the quota rows number their palette colours without the balance")
     }
 
-    /// A pass in which every source failed keeps the last report on screen, but every window's reading counts as failed:
-    /// the windows lose their colours and their accounts say when they were last read.
+    /// A pass in which every source failed keeps the last report on screen, but every reading counts as failed: the windows
+    /// and the balance lose their colours, and the accounts say when they were last read.
     @MainActor
     func testAPassInWhichEverySourceFailedTakesEveryWindowsColour() throws {
         let (rows, store) = try balanceStore()
@@ -217,7 +221,7 @@ final class ReadingGateTests: XCTestCase {
         show(balanceReport(rows, billing: billing), in: store)
         XCTAssertEqual(store.levels, [.warning, .warning, .ok])
         store.lastError = "offline"
-        XCTAssertEqual(store.levels, [.warning], "the balance keeps its colour")
+        XCTAssertEqual(store.levels, [])
         XCTAssertEqual(store.rows.map(\.level), [nil, nil])
         XCTAssertEqual(store.rows.map(\.assessment.status), [.readFailed(reason: "offline"), .readFailed(reason: "offline")])
         XCTAssertEqual(store.rows.compactMap(\.account).map(store.accountLabel(for:)), ["Last read 1m ago", "Last read 1m ago"])

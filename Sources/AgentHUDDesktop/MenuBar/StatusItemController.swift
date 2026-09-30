@@ -97,13 +97,15 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             let title = (billing.billingPool == nil ? billing.vendor : billing.displayName) + L10n.text(" · 余额", " · Balance")
             let item = NSMenuItem(title: title, action: #selector(openStats), keyEquivalent: "")
             item.target = self
-            // Red only when the service says the account cannot be used, whatever the balance or its reading.
             item.view = MenuRowView(title: title, value: balance.isEmpty ? "—" : balance,
                                          image: AgentArtwork.image(for: billing.vendor), font: Self.agentMenuFont,
-                                         valueColor: billing.isAvailable == false ? .systemRed : .secondaryLabelColor, minimumWidth: Self.menuWidth)
+                                         valueColor: Self.valueColor(store.view.level(of: billing)), minimumWidth: Self.menuWidth)
             let cost = billing.estimatedCost(currency: billing.currency, during: store.statsInterval)
                 .map { MoneyFormat.amount($0, currency: billing.currency, estimated: true) } ?? "—"
-            item.toolTip = (L10n.text("费用估算 · ", "Est. cost · ") + store.statsRange.recentLabel + ": " + cost)
+            // A balance whose read failed says why before its cost.
+            item.toolTip = [store.view.assessment(of: billing).status.reason,
+                            L10n.text("费用估算 · ", "Est. cost · ") + store.statsRange.recentLabel + ": " + cost].compactMap { $0 }
+                .joined(separator: "\n")
             menu.addItem(item)
         }
         if store.rows.isEmpty && store.enabledBilling.isEmpty {
@@ -140,18 +142,22 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         } else {
             value = row.missingQuotaLabel
         }
-        let valueColor: NSColor = level == .critical ? NSColor(StatusPalette.textColor(for: .critical, light: light)) : .secondaryLabelColor
         let item = NSMenuItem(title: name, action: #selector(openStats), keyEquivalent: "")
         item.target = self
         item.view = MenuRowView(
             title: name, value: value,
             image: showVendor ? AgentArtwork.image(for: row.agent.vendor) : StatusIconRenderer.dot(color: row.level == nil ? .tertiaryLabelColor : color),
             font: showVendor ? Self.agentMenuFont : .menuFont(ofSize: 13),
-            titleColor: row.isCurrentAccount ? .labelColor : .secondaryLabelColor, valueColor: valueColor, minimumWidth: Self.menuWidth
+            titleColor: row.isCurrentAccount ? .labelColor : .secondaryLabelColor, valueColor: Self.valueColor(row.level), minimumWidth: Self.menuWidth
         )
         item.toolTip = store.quotaForecastHint(for: row.id)
         item.view?.toolTip = item.toolTip
         return item
+    }
+
+    /// The colour of a quota row's or a balance's figure: the critical text colour at a critical level, else secondary.
+    static func valueColor(_ level: StatusLevel?) -> NSColor {
+        level == .critical ? NSColor(StatusPalette.textColor(for: .critical, light: SystemAppearance.isLight)) : .secondaryLabelColor
     }
 
     private func action(_ title: String, key: String, modifiers: NSEvent.ModifierFlags, selector: Selector) -> NSMenuItem {

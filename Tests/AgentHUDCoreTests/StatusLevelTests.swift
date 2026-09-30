@@ -33,7 +33,8 @@ final class StatusLevelTests: XCTestCase {
         XCTAssertEqual(AlertPolicy.balanceLevel(remaining: 10, currency: "CNY"), .warning)
         XCTAssertEqual(AlertPolicy.balanceLevel(remaining: 2, currency: "USD"), .warning)
         XCTAssertEqual(AlertPolicy.balanceLevel(remaining: 0, currency: "USD"), .critical)
-        XCTAssertNil(AlertPolicy.balanceLevel(remaining: 2, currency: "EUR"))
+        XCTAssertEqual(AlertPolicy.balanceLevel(remaining: 2, currency: "EUR"), .ok, "a currency without a line is fine until it runs out")
+        XCTAssertEqual(AlertPolicy.balanceLevel(remaining: 0, currency: "EUR"), .critical)
     }
 
     func testPaletteHexValues() {

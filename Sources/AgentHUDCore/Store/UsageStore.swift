@@ -304,8 +304,9 @@ public final class UsageStore {
     /// `view.billing`.
     public var enabledBilling: [APIBilling] { view.billing }
 
+    /// One of an account's balances' level, which follows `view.level(of:)`: none while the account's reading shows none.
     public func balanceLevel(_ balance: AccountBalance, billing: APIBilling) -> StatusLevel? {
-        guard !balance.total.isNaN else { return nil }
+        guard !balance.total.isNaN, view.assessment(of: billing).showsLevel else { return nil }
         return AlertPolicy.balanceLevel([balance], isAvailable: billing.isAvailable)
     }
 

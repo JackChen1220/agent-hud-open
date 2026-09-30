@@ -93,7 +93,7 @@ public struct ReportView: Sendable {
         let levels = enabled.flatMap { model -> [StatusLevel] in
             if !model.isAPIBilled { return quota[model.id].map { [$0] } ?? [] }
             return billing.filter { $0.contains(model) && seenAccounts.insert($0.id).inserted }.compactMap {
-                AlertPolicy.balanceLevel($0.balances, isAvailable: $0.isAvailable)
+                Self.level(of: $0, assessment: Self.assessment(of: $0, in: report, failure: failure, now: now))
             }
         }
         var order: [String] = []
@@ -162,6 +162,25 @@ public struct ReportView: Sendable {
             let rows = sections[key] ?? []
             return AccountSection(id: key, account: rows.first?.account, isCurrent: rows.first?.isCurrentAccount ?? true, rows: rows)
         }
+    }
+
+    /// A balance's reading as its card and the menu weigh it at the view's time.
+    public func assessment(of billing: APIBilling) -> ReadingAssessment {
+        Self.assessment(of: billing, in: report, failure: failure, now: now)
+    }
+
+    /// A balance's level, which follows the rules of a quota window's: none while its reading shows none, such as after a
+    /// failed read, else the lowest rung of its balances, critical while its service marks the account unavailable.
+    public func level(of billing: APIBilling) -> StatusLevel? { Self.level(of: billing, assessment: assessment(of: billing)) }
+
+    private static func assessment(of billing: APIBilling, in report: UsageReport?, failure: String?, now: Date) -> ReadingAssessment {
+        let reading = report?.assess(.balance(billing), now: now)
+            ?? ReadingAssessment(status: billing.ownStatus, isCurrentAccount: true, observedAt: billing.updatedAt, now: now)
+        return failure.map(reading.failing) ?? reading
+    }
+
+    private static func level(of billing: APIBilling, assessment: ReadingAssessment) -> StatusLevel? {
+        assessment.showsLevel ? AlertPolicy.balanceLevel(billing.balances, isAvailable: billing.isAvailable) : nil
     }
 
     /// An account's reading as its section header weighs it at the view's time.

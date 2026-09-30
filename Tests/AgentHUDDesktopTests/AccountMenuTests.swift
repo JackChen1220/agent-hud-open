@@ -99,10 +99,10 @@ final class AccountMenuTests: XCTestCase {
                        "the island shows above each account what its menu header's tooltip says")
     }
 
-    /// A balance's figure turns red only when its service says the account cannot be used: not at zero or below it,
-    /// and not when the balance could not be read, however old the last one is.
+    /// A balance's figure follows its level, as a quota row's does: red when the account is unavailable or its balance is
+    /// at or below zero, and without a colour when its read failed, which its tooltip explains before the cost.
     @MainActor
-    func testABalanceIsRedOnlyWhenItsAccountIsUnavailable() throws {
+    func testABalanceIsRedWhenItsLevelIsCritical() throws {
         let suite = "AccountMenuTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite); L10n.setLanguage(.system) }
         let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -125,13 +125,16 @@ final class AccountMenuTests: XCTestCase {
                        isAvailable: balance.isAvailable, updatedAt: now.addingTimeInterval(-balance.readAgo), notice: balance.notice,
                        billingPool: pool)
         })
-        let (menu, _) = buildMenu(showing: report, agents: agents, now: now, defaults: defaults)
+        let (menu, store) = buildMenu(showing: report, agents: agents, now: now, defaults: defaults)
 
         let items = menu.items.filter { $0.title.hasSuffix(" · Balance") }
         XCTAssertEqual(items.map { $0.view?.accessibilityLabel() }, [
             "DeepSeek · API · Balance, $50.00", "Kimi · API · Balance, $0.00", "GLM · API · Balance, -$1.00", "OpenAI · API · Balance, $5.00",
         ])
-        XCTAssertEqual(items.map { valueColor($0) }, [.systemRed, .secondaryLabelColor, .secondaryLabelColor, .secondaryLabelColor])
+        XCTAssertEqual(store.enabledBilling.map { store.view.level(of: $0) }, [.critical, .critical, .critical, nil])
+        XCTAssertEqual(items.map { $0.toolTip?.hasPrefix("Balance could not be read\nEst. cost") }, [false, false, false, true])
+        XCTAssertEqual(StatusItemController.valueColor(.critical), NSColor(StatusPalette.textColor(for: .critical, light: SystemAppearance.isLight)))
+        XCTAssertEqual([StatusLevel.warning, .ok, nil].map(StatusItemController.valueColor), [.secondaryLabelColor, .secondaryLabelColor, .secondaryLabelColor])
     }
 
     /// The menu `StatusItemController` builds over `report` at `now`, in English, with the rows of `agents` shown.
@@ -149,10 +152,4 @@ final class AccountMenuTests: XCTestCase {
         return (menu, store)
     }
 
-    /// The colour a menu row draws its value in, which the row keeps only in the text it draws.
-    @MainActor
-    private func valueColor(_ item: NSMenuItem) -> NSColor? {
-        let value = item.view.flatMap { Mirror(reflecting: $0).descendant("value") } as? NSAttributedString
-        return value?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
-    }
 }
