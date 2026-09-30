@@ -473,7 +473,9 @@ final class UsageStoreTests: XCTestCase {
     }
 
     func testQuotaTokenRateUsesOnlyMappedConsumersInTheObservedCurrentCycle() throws {
-        let store = makeStore()
+        let weekly = AgentDescriptor(id: "claude-weekly", vendor: "Claude", model: "Weekly", source: "", enabled: true)
+        let store = UsageStore(provider: DemoUsageProvider(), settings: SettingsStore(defaults: UserDefaults(suiteName: "AgentHUDTests.\(UUID().uuidString)")!,
+                                                                                      defaultAgents: DemoData.agents + [weekly]))
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let snapshot = UsageSnapshot(agentId: "claude-weekly", remainingPct: 60,
                                      resetAt: now.addingTimeInterval(2 * 3600), windowDuration: 5 * 3600,

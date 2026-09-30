@@ -298,7 +298,7 @@ public final class UsageStore {
     /// `view.forecastHint(for:)`.
     public func quotaForecastHint(for agentId: String) -> String? { view.forecastHint(for: agentId) }
 
-    /// `view.tokensPerHour(for:)`, the same reading sent to the phone.
+    /// `view.tokensPerHour(for:)`.
     public func quotaTokensPerHour(for agentId: String) -> Double? { view.tokensPerHour(for: agentId) }
 
     /// `view.billing`.

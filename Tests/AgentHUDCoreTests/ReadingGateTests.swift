@@ -67,21 +67,24 @@ final class ReadingGateTests: XCTestCase {
                                                quotaNotice: "offline")
         let cases: [(String, Reading, Gates)] = [
             ("a fresh reading", Reading(), Gates()),
-            // The menu figure, the account header, the reset column, the hint and the settings row pass over the vendor's notice.
+            // The account header, the reset column and the settings row pass over the vendor's notice. A reading without a
+            // level enters neither the menu figure nor a hint.
             ("the vendor's read failed", Reading(sourceNotices: ["Codex": "offline"], quotaNotices: ["Codex": "offline"]),
-             Gates(notice: "offline", level: nil, startsAlerts: false, startsCredits: false, keepsLeftOutWindow: true, keptSessions: ["Codex"])),
+             Gates(notice: "offline", level: nil, startsAlerts: false, startsCredits: false, menuFigure: nil, hint: nil, keepsLeftOutWindow: true,
+                   keptSessions: ["Codex"])),
             // Reset credits and the kept windows count every notice of the vendor, about its logs as well.
             ("only the vendor's logs could not be read", Reading(sourceNotices: ["Codex": "logs unreadable"]),
              Gates(startsCredits: false, keepsLeftOutWindow: true)),
             ("a report that does not tell quota notices apart", Reading(sourceNotices: ["Codex": "offline"], quotaNotices: nil),
-             Gates(notice: "offline", level: nil, startsAlerts: false, startsCredits: false, keepsLeftOutWindow: true, keptSessions: ["Codex"])),
+             Gates(notice: "offline", level: nil, startsAlerts: false, startsCredits: false, menuFigure: nil, hint: nil, keepsLeftOutWindow: true,
+                   keptSessions: ["Codex"])),
             ("the account's read failed", Reading(accountNotice: "offline"),
-             Gates(notice: "offline", level: nil, startsAlerts: false, startsCredits: false, status: "Last read 1m ago",
-                   keepsLeftOutWindow: true, keepsLeftOutRow: true)),
+             Gates(notice: "offline", level: nil, startsAlerts: false, startsCredits: false, menuFigure: nil, status: "Last read 1m ago",
+                   hint: nil, keepsLeftOutWindow: true, keepsLeftOutRow: true)),
             ("Codex files the account's failure under the account's id",
              Reading(accountNotice: "offline", sourceNotices: [account.id: "offline"], quotaNotices: [account.id: "offline"]),
-             Gates(notice: "offline", level: nil, startsAlerts: false, startsCredits: false, status: "Last read 1m ago",
-                   keepsLeftOutWindow: true, keepsLeftOutRow: true)),
+             Gates(notice: "offline", level: nil, startsAlerts: false, startsCredits: false, menuFigure: nil, status: "Last read 1m ago",
+                   hint: nil, keepsLeftOutWindow: true, keepsLeftOutRow: true)),
             ("Codex could not read its own login", Reading(sourceNotices: ["Codex login": "offline"], quotaNotices: ["Codex login": "offline"]),
              Gates()),
             // Filed under "Pi", the notice keeps the Pi client's earlier sessions as if its own read had failed.
@@ -93,8 +96,10 @@ final class ReadingGateTests: XCTestCase {
             ("a reading 30:00 old", Reading(age: 1800), Gates(startsAlerts: false, startsCredits: false)),
             ("a reading two hours old", Reading(age: 7200), Gates(startsAlerts: false, startsCredits: false, status: "Current account")),
             // A reading from the future is used nowhere.
-            ("a reading 60 s in the future", Reading(age: -60), Gates(level: nil, startsAlerts: false, startsCredits: false)),
-            ("a reset that has passed", Reading(resetIn: -60), Gates(level: nil, startsAlerts: false, reset: "Pending update")),
+            ("a reading 60 s in the future", Reading(age: -60),
+             Gates(level: nil, startsAlerts: false, startsCredits: false, menuFigure: nil, hint: nil)),
+            ("a reset that has passed", Reading(resetIn: -60), Gates(level: nil, startsAlerts: false, menuFigure: nil, reset: "Pending update",
+                                                                     hint: nil)),
             ("a reset under a minute away", Reading(resetIn: 30), Gates(reset: "<1m")),
             ("no reset and a full window", Reading(remaining: 100, resetIn: nil),
              Gates(level: .ok, menuFigure: 0, reset: "—", hint: nil)),
@@ -102,7 +107,7 @@ final class ReadingGateTests: XCTestCase {
             ("no reset and a half-used window", Reading(remaining: 50, resetIn: nil),
              Gates(level: .ok, startsAlerts: false, menuFigure: 50, reset: "—", hint: nil)),
             ("an account the client is no longer signed in to", Reading(isCurrent: false),
-             Gates(level: nil, startsAlerts: false, startsCredits: false, menuFigure: nil, status: "Last read 1m ago", reset: "—",
+             Gates(level: nil, startsAlerts: false, startsCredits: false, menuFigure: nil, status: "Last read 1m ago", reset: "—", hint: nil,
                    keepsLeftOutWindow: true, keepsLeftOutRow: true)),
         ]
         let store = try makeStore([window])
@@ -146,7 +151,8 @@ final class ReadingGateTests: XCTestCase {
         }
     }
 
-    /// A reset alert lists the account's other exhausted windows by their reading alone.
+    /// A reset alert lists the account's other windows that are exhausted until a later reset, among those whose readings
+    /// show a level: however old, but not from the future.
     func testAResetAlertNamesExhaustedSiblingsWhateverTheirReadingsAge() {
         let weekly = AgentDescriptor(id: account.windowID("codex:codex:secondary"), vendor: "Codex", model: "Weekly", source: "",
                                      enabled: true, account: account)
@@ -154,8 +160,7 @@ final class ReadingGateTests: XCTestCase {
             ("an exhausted sibling", snapshot(weekly, remaining: 0, resetIn: 86400, at: now.addingTimeInterval(-60)), ["Weekly"]),
             ("an exhausted sibling read two hours ago", snapshot(weekly, remaining: 0, resetIn: 86400, at: now.addingTimeInterval(-7200)),
              ["Weekly"]),
-            ("an exhausted sibling read in the future", snapshot(weekly, remaining: 0, resetIn: 86400, at: now.addingTimeInterval(60)),
-             ["Weekly"]),
+            ("an exhausted sibling read in the future", snapshot(weekly, remaining: 0, resetIn: 86400, at: now.addingTimeInterval(60)), []),
             ("an exhausted sibling whose reset has passed", snapshot(weekly, remaining: 0, resetIn: -60, at: now.addingTimeInterval(-60)), []),
             ("an exhausted sibling without a reset", snapshot(weekly, remaining: 0, resetIn: nil, at: now.addingTimeInterval(-60)), []),
             ("a sibling with a fraction left", snapshot(weekly, remaining: 0.4, resetIn: 86400, at: now.addingTimeInterval(-60)), []),
@@ -217,7 +222,7 @@ final class ReadingGateTests: XCTestCase {
         XCTAssertEqual(store.rows.map(\.level), [nil, nil])
         XCTAssertEqual(store.rows.map(\.assessment.status), [.readFailed(reason: "offline"), .readFailed(reason: "offline")])
         XCTAssertEqual(store.rows.compactMap(\.account).map(store.accountLabel(for:)), ["Last read 1m ago", "Last read 1m ago"])
-        XCTAssertEqual(store.maxUsedPct, 75)
+        XCTAssertNil(store.maxUsedPct)
         XCTAssertEqual(store.rows.map { $0.resetLabel(now: now) }, ["2h 00m", "2h 00m"])
         store.lastError = nil
         XCTAssertEqual(store.levels, [.warning, .warning, .ok], "the next pass that reads a source brings them back")

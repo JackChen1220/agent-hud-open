@@ -76,7 +76,8 @@ final class QuotaOutlookTests: XCTestCase {
             ("infiniteTime", .init(hint: "Insufficient data", exhaustsIn: nil, projected: 70, detail: "70% by reset", tokensPerHour: 1000)),
             ("exhaustsBeforeReset", .init(hint: "Exhausts ~1h", exhaustsIn: hour, projected: 100, detail: at(hour), tokensPerHour: 1000)),
             ("exhaustsAfterReset", .init(hint: "Exhausts ~5h", exhaustsIn: nil, projected: 70, detail: "70% by reset", tokensPerHour: 1000)),
-            ("resetPassed", .init(hint: "Exhausts ~5h", exhaustsIn: nil, projected: nil, detail: "Insufficient data", tokensPerHour: 581)),
+            // A reading whose reset passed shows no level, so the row gives it no burn rate or token rate.
+            ("resetPassed", .init(hint: "Exhausts ~5h", exhaustsIn: nil, projected: nil, detail: "—", tokensPerHour: nil)),
             ("weekly", .init(hint: "Exhausts ~50h", exhaustsIn: 50 * hour, projected: 100, detail: at(50 * hour), tokensPerHour: 1167)),
             ("fullWindow", .init(hint: "Insufficient data", exhaustsIn: nil, projected: nil, detail: "Insufficient data", tokensPerHour: 1000)),
         ]
@@ -110,9 +111,26 @@ final class QuotaOutlookTests: XCTestCase {
         }
     }
 
+    /// A window whose reading shows no level enters no calculation: its row keeps the share used and its reset, but shows
+    /// no burn rate, projection or token rate, and neither the island nor the menu gives it a hint.
+    @MainActor
+    func testAWindowWhoseReadingShowsNoLevelHasNoForecast() throws {
+        try withStore([grid[9]], quotaNotices: ["Codex": "Codex quota could not be read"]) { store in
+            let row = try metrics("exhaustsBeforeReset", in: store)
+            XCTAssertNil(row.row.level)
+            XCTAssertEqual(IslandQuotaMetric.allCases.map { row.value($0) }, ["90%", nil, nil])
+            XCTAssertEqual(IslandQuotaMetric.allCases.map { row.detail($0, isLoading: false) }, ["2h 00m", "—", "—"])
+            XCTAssertNil(row.exhaustsBeforeReset)
+            XCTAssertNil(row.projectedAtReset)
+            XCTAssertNil(store.quotaForecastHint(for: "exhaustsBeforeReset"))
+            XCTAssertNil(store.quotaTokensPerHour(for: "exhaustsBeforeReset"))
+            XCTAssertNil(store.maxUsedPct)
+        }
+    }
+
     /// A store showing `windows` at `now`, each counting the tokens of one model spent before, around and after now.
     @MainActor
-    private func withStore(_ windows: [Window], _ body: (UsageStore) throws -> Void) throws {
+    private func withStore(_ windows: [Window], quotaNotices: [String: String] = [:], _ body: (UsageStore) throws -> Void) throws {
         let suite = "QuotaOutlookTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let agents = windows.map { AgentDescriptor(id: $0.name, vendor: "Codex", model: $0.name, source: "", enabled: true) }
@@ -133,6 +151,7 @@ final class QuotaOutlookTests: XCTestCase {
                                                 weeklyWaitLongest: 0, weeklyWaitLongestAt: nil))
                 }
             }),
+            sourceNotices: quotaNotices, quotaNotices: quotaNotices,
             consumerIdsByQuota: Dictionary(uniqueKeysWithValues: windows.map { ($0.name, ["m"]) })))
         store.now = now
         try body(store)

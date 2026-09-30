@@ -136,8 +136,12 @@ public struct ReportView: Sendable {
     /// its vendor's entries take in this list.
     public var alertPulseVendors: [String] { rows.filter { $0.level != nil }.map { $0.agent.vendor } }
 
-    /// The most consumed window of a signed-in account, shown in the menu bar, whatever its reading's status or age.
-    public var maxUsedPct: Double? { rows.filter(\.assessment.isCurrentAccount).compactMap(\.usedPct).max() }
+    /// The most consumed window among those whose readings show a level, shown in the menu bar.
+    public var maxUsedPct: Double? { rows.filter(\.assessment.showsLevel).compactMap(\.usedPct).max() }
+
+    /// Whether a window's reading enters calculations: only the reading of a row that shows a level does. Any other is
+    /// shown greyed, without a forecast.
+    private func counts(_ agentId: String) -> Bool { rows.contains { $0.id == agentId && $0.assessment.showsLevel } }
 
     /// Plans of the vendors that have an enabled row.
     public var subscriptions: [String: String] {
@@ -179,20 +183,20 @@ public struct ReportView: Sendable {
     /// Tokens per hour over the observed part of this quota window's current cycle. Token history before the local ledger
     /// begins is not guessed at.
     public func tokensPerHour(for agentId: String) -> Double? {
-        guard let report, let snapshot = report.snapshot(for: agentId),
+        guard counts(agentId), let report, let snapshot = report.snapshot(for: agentId),
               let consumers = report.consumerIdsByQuota[agentId] else { return nil }
         return QuotaMath.tokensPerHour(snapshot: snapshot, consumers: consumers, usage: report.usage, now: now)
     }
 
     /// What the window's reading and recent pace say about the rest of its cycle.
     public func outlook(for agentId: String) -> QuotaOutlook? {
-        guard let report, let snapshot = report.snapshot(for: agentId) else { return nil }
+        guard counts(agentId), let report, let snapshot = report.snapshot(for: agentId) else { return nil }
         return QuotaMath.outlook(snapshot: snapshot, insights: report.insightsByAgent[agentId], now: now)
     }
 
     /// The window's outlook in words.
     public func forecastHint(for agentId: String) -> String? {
-        guard let report, let snapshot = report.snapshot(for: agentId) else { return nil }
+        guard counts(agentId), let report, let snapshot = report.snapshot(for: agentId) else { return nil }
         return QuotaForecast.hint(snapshot: snapshot, insights: report.insightsByAgent[agentId], now: now)
     }
 

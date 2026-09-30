@@ -92,10 +92,10 @@ public struct QuotaAlertTracker: Sendable {
             // full by a point or two is not one.
             let restoredEarly = snapshot.remainingPct == 100 && snapshot.remainingPct - old.snapshot.remainingPct >= AlertPolicy.resetRise
             if cycleAdvanced || restoredEarly {
-                // The account's other windows are named by their readings alone, whatever their status or age.
+                // The account's other windows whose readings show a level and are exhausted until a later reset.
                 let otherExhausted = quotaAgents.filter {
                     $0.vendor == agent.vendor && $0.account?.id == agent.account?.id && $0.id != agent.id &&
-                    report.snapshot(for: $0.id).map {
+                    report.assess(.window($0), now: now).showsLevel && report.snapshot(for: $0.id).map {
                         $0.remainingPct <= AlertPolicy.exhaustedRemaining && ($0.resetAt ?? .distantPast) > now
                     } == true
                 }.map(\.model)

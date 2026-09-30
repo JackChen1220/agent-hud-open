@@ -150,7 +150,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             font: showVendor ? Self.agentMenuFont : .menuFont(ofSize: 13),
             titleColor: row.isCurrentAccount ? .labelColor : .secondaryLabelColor, valueColor: valueColor, minimumWidth: Self.menuWidth
         )
-        // Every row's hint, whatever its account or reading.
         item.toolTip = store.quotaForecastHint(for: row.id)
         item.view?.toolTip = item.toolTip
         return item

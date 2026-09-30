@@ -165,8 +165,8 @@ final class ReportViewTests: XCTestCase {
         for row in store.rows {
             XCTAssertEqual(view.tokensPerHour(for: row.id), store.quotaTokensPerHour(for: row.id), name)
             XCTAssertEqual(view.forecastHint(for: row.id), store.quotaForecastHint(for: row.id), name)
-            XCTAssertEqual(view.outlook(for: row.id), store.report?.snapshot(for: row.id).map {
-                QuotaMath.outlook(snapshot: $0, insights: store.report?.insightsByAgent[row.id], now: store.now)
+            XCTAssertEqual(view.outlook(for: row.id), store.report?.snapshot(for: row.id).flatMap {
+                row.assessment.showsLevel ? QuotaMath.outlook(snapshot: $0, insights: store.report?.insightsByAgent[row.id], now: store.now) : nil
             }, name)
         }
         XCTAssertEqual(view.sessions.map(\.session), store.sessions, name)

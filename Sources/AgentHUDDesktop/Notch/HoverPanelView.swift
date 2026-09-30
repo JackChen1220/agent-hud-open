@@ -304,7 +304,7 @@ private struct ProviderQuotaBlock: View {
                                   showReset: store.settings.settings.showResetCountdown, showVendor: false,
                                   insights: store.report?.insightsByAgent[row.id],
                                   tokensPerHour: store.quotaTokensPerHour(for: row.id),
-                                  forecastHint: section.isCurrent ? store.quotaForecastHint(for: row.id) : nil,
+                                  forecastHint: store.quotaForecastHint(for: row.id),
                                   isLoading: store.isLoading)
                         .opacity(section.isCurrent ? 1 : 0.55)
                 }
@@ -532,12 +532,20 @@ struct ModelUsageRow: View {
 }
 
 /// What a quota row's measures read at `now`: the share used, the burn rate from its window's insights and the rate
-/// tokens are spent at, each with the detail shown beside it.
+/// tokens are spent at, each with the detail shown beside it. A row whose reading shows no level has no burn rate,
+/// projection or token rate.
 struct QuotaRowMetrics {
     let row: AgentRow
     let insights: UsageInsights?
     let now: Date
     let tokensPerHour: Double?
+
+    init(row: AgentRow, insights: UsageInsights?, now: Date, tokensPerHour: Double?) {
+        self.row = row
+        self.insights = row.assessment.showsLevel ? insights : nil
+        self.now = now
+        self.tokensPerHour = row.assessment.showsLevel ? tokensPerHour : nil
+    }
 
     func value(_ metric: IslandQuotaMetric) -> String? {
         switch metric {
@@ -556,6 +564,7 @@ struct QuotaRowMetrics {
         case .quota:
             return row.resetLabel(now: now)
         case .burnRate:
+            guard row.assessment.showsLevel else { return "—" }
             if row.usedPct == 100 { return L10n.text("已耗尽", "Exhausted") }
             if let exhaustionTimeLabel { return exhaustionTimeLabel }
             if let projected = projectedAtReset {
