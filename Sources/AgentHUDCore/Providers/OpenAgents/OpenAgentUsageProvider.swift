@@ -213,9 +213,9 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
         for result in quotas {
             let pool = result.credential.pool
             if let error = result.notice {
-                // Shown under its client (OpenCode for Go). The pool's account holds back the pool's rows; the vendor's other
-                // pools were read on their own.
-                let key = pool.provider == "OpenCode Go" ? "OpenCode" : pool.provider
+                // Shown under its vendor. The pool's account holds back the pool's rows; the vendor's other pools were read
+                // on their own.
+                let key = pool.provider
                 notices[key] = [notices[key], "\(pool.label): \(error)"].compactMap { $0 }.joined(separator: " · ")
             }
             if result.isActive {

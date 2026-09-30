@@ -188,14 +188,13 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
                                cacheReadTokens: t.cachedInputTokens, observedAt: now, workingDirectory: t.cwd,
                                subagentTranscripts: descendants(of: t.id!), lastActivityAt: t.lastEventAt)
         }
-        var notices = Dictionary(uniqueKeysWithValues: selected.compactMap { source, reading -> (String, String)? in
-            failures[source].map { (reading.limits.providerAccount(home: source).id, $0) }
-        })
-        for (source, message) in failures where readings[source] == nil {
-            notices[source == piHome ? "Pi" : "Codex login"] = message
-        }
-        let notice = notices.isEmpty ? nil : notices.values.sorted().joined(separator: " · ")
-        let sourceNotices = selected.isEmpty ? notice.map { ["Codex": $0] } ?? [:] : notices
+        // An account's failed read is its own, on its observation. A home that failed before it was ever read is a notice
+        // under Codex, and a pass that read no account at all is Codex's failed read.
+        let unread = failures.filter { readings[$0.key] == nil }.map(\.value).sorted()
+        let messages = (selected.compactMap { failures[$0.0] } + unread).sorted()
+        let notice = messages.isEmpty ? nil : messages.joined(separator: " · ")
+        let failed = selected.isEmpty ? notice.map { ["Codex": $0] } ?? [:] : [:]
+        let sourceNotices = selected.isEmpty || unread.isEmpty ? failed : ["Codex": unread.joined(separator: " · ")]
         let consumerIds = Set(consumers.map(\.id) + sessions.map(\.agentId))
         // Pi's distinct account must not claim Codex transcript consumers. Pi owns its own token events.
         let nativeAccount = native?.limits.providerAccount(home: home).id
@@ -216,7 +215,7 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
                            notice: notice, discoveredAgents: windows.map { $0.row.descriptor }, consumers: consumers,
                            indexing: indexed.indexing, insightsByAgent: byAgent,
                            subscriptions: native?.limits.plan.map { ["Codex": $0] } ?? [:],
-                           sourceNotices: sourceNotices, readingIssues: sourceNotices.mapValues(ReadingIssue.readFailed),
+                           sourceNotices: sourceNotices, quotaNotices: failed, readingIssues: failed.mapValues(ReadingIssue.readFailed),
                            consumerIdsByQuota: consumerIdsByQuota, codexResetCredits: selected.count == 1 ? selected.first?.1.limits.rateLimitResetCredits : nil,
                            codexResetCreditsObservedAt: selected.count == 1 && selected.first?.1.limits.rateLimitResetCredits != nil ? selected.first?.1.at : nil,
                            completions: indexed.sessions.flatMap { $0.transcript.completions ?? [] },

@@ -79,6 +79,9 @@ final class PiCodexTests: XCTestCase {
         XCTAssertEqual(report.quotaNotice(for: pi), "Pi offline")
         XCTAssertEqual(report.accounts?["Codex"]?.first { $0.account == b.providerAccount(home: "pi") }?.readingIssue, .readFailed("Pi offline"),
                        "the failure is the Pi account's own")
+        XCTAssertEqual(report.sourceNotices, [:], "no other account shows it")
+        XCTAssertEqual(report.readingIssues, [:])
+        XCTAssertEqual(report.notice, "Pi offline")
         XCTAssertEqual(report.snapshot(for: pi.id)?.updatedAt, now, "failure never renews the old reading")
         XCTAssertEqual(report.accounts?["Codex"]?.count, 2)
     }
@@ -101,6 +104,27 @@ final class PiCodexTests: XCTestCase {
         XCTAssertEqual(tracker.update(report: second, agents: second.discoveredAgents, now: clock.now).alerts.count, 2)
         let count = await history.count
         XCTAssertEqual(count, 6, "three windows sampled twice, irrespective of client count")
+    }
+
+    /// A Pi login that fails before it was ever read is a notice under Codex, which holds nothing back: not the native
+    /// account's windows, and not the Pi client's own sessions.
+    func testAPiLoginThatWasNeverReadIsANoticeUnderCodex() async throws {
+        let a = try PiCodexClient.parse(Data(Self.payload.utf8), expectedAccount: "workspace"), now = now
+        let provider = CodexUsageProvider(readLimits: { a }, transcripts: CodexTranscriptStore(roots: []), history: QuotaHistoryStore(),
+                                          clock: { now }, readPiLimits: { throw UsageProviderError("Pi offline") })
+        await provider.refreshAccountUsage(historyHours: 24)
+        let report = try await provider.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(report.sourceNotices, ["Codex": "Pi offline"])
+        XCTAssertEqual(report.readingIssues, [:])
+        XCTAssertEqual(report.quotaNotices, [:])
+        let native = try XCTUnwrap(report.discoveredAgents.first)
+        XCTAssertEqual(report.status(of: .window(native)), .normal)
+        let pi = AgentDescriptor(id: "pi-model:kimi-k2", vendor: "Pi", model: "kimi-k2", source: "", enabled: true)
+        let earlier = UsageReport(generatedAt: now.addingTimeInterval(-600), snapshots: [], sessions: [
+            LiveSession(id: "pi-session", agentId: pi.id, task: "task", terminal: nil, startedAt: now.addingTimeInterval(-3600),
+                        endedAt: now.addingTimeInterval(-600), pctOfWindow: nil, tokensIn: 1, tokensOut: 1)
+        ], consumers: [pi])
+        XCTAssertEqual(report.retainingReadings(from: earlier).sessions.map(\.id), [], "the Pi client's last sessions are not kept")
     }
 
     private actor Steps {

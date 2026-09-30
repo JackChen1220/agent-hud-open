@@ -24,7 +24,7 @@ enum SourceDetector {
             }
             let hasSessions = report.consumers.contains { $0.vendor == vendor }
             let plan = report.subscriptions[vendor]
-            if let notice = report.sourceNotices[vendor] {
+            if let notice = report.sourceNotices[vendor] ?? (vendor == "OpenCode" ? report.sourceNotices["OpenCode Go"] : nil) {
                 return SourceStatus(id: source.id, name: source.name, detail: notice,
                     state: hasQuota || hasSessions || plan != nil ? .ready(plan: plan) : .unavailable)
             }
