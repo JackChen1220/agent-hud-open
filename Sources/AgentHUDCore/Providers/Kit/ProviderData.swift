@@ -67,6 +67,8 @@ struct ProviderQuota: Sendable {
         var duration: TimeInterval? = nil
         /// The window's short name (`WindowNames`); nil shows its full name.
         var shortLabel: String? = nil
+        /// False for a window scoped to a subset of the plan's models or features (`AgentDescriptor.allModels`).
+        var allModels = true
     }
     var windows: [Window] = []
     var plan: String? = nil
@@ -95,7 +97,7 @@ struct ProviderQuota: Sendable {
         let account = resolvedAccount(source)
         return zip(windows, WindowNames.distinct(windows.map(\.shortLabel))).map { window, short in
             Window(id: account.windowID(window.id), label: window.label, remaining: window.remaining, reset: window.reset,
-                   duration: window.duration, shortLabel: short)
+                   duration: window.duration, shortLabel: short, allModels: window.allModels)
         }
     }
 }

@@ -63,16 +63,17 @@ struct CopilotClient: Sendable {
             let credits = (usageBased || item["token_based_billing"].boolValue == true) && (key == "premium_interactions" || key == "chat" && free)
             let name = names(key, credits: credits)
             quota.windows.append(.init(id: "copilot:\(key)", label: name.full, remaining: min(100, max(0, percent)),
-                                       reset: own ?? reset, shortLabel: name.short))
+                                       reset: own ?? reset, shortLabel: name.short, allModels: planWide(key, credits: credits)))
         }
         // Free accounts report remaining and monthly counts instead of snapshots.
         if quota.windows.isEmpty, let limited = response["limited_user_quotas"].objectValue {
             let reset = date(response["limited_user_reset_date"].stringValue)
             for key in keys(limited) {
                 guard let remaining = number(limited[key]!), let total = number(response["monthly_quotas"][key]), total > 0 else { continue }
-                let name = names(key, credits: usageBased && free && key == "chat")
-                quota.windows.append(.init(id: "copilot:\(key)", label: name.full,
-                                           remaining: min(100, max(0, remaining / total * 100)), reset: reset, shortLabel: name.short))
+                let credits = usageBased && free && key == "chat"
+                let name = names(key, credits: credits)
+                quota.windows.append(.init(id: "copilot:\(key)", label: name.full, remaining: min(100, max(0, remaining / total * 100)),
+                                           reset: reset, shortLabel: name.short, allModels: planWide(key, credits: credits)))
             }
         }
         return quota
@@ -91,6 +92,12 @@ struct CopilotClient: Sendable {
             let name = key.replacingOccurrences(of: "_", with: " ").capitalized
             return (name, WindowNames.leading(name))
         }
+    }
+
+    /// Chat messages and code completions each limit one feature; premium requests or AI credits, which a Free plan's
+    /// chat counts too under usage-based billing, are the plan's.
+    static func planWide(_ key: String, credits: Bool) -> Bool {
+        credits || (key != "chat" && key != "completions")
     }
 
     static func date(_ text: String?) -> Date? {

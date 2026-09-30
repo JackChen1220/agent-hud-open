@@ -83,7 +83,7 @@ actor CursorClient {
         let main = plan["enabled"].boolValue == false ? nil : plan["totalPercentUsed"].numberValue ?? ratio(plan)
         // Cursor's own names for its usage pools and limits. Its first pool is its own models, which Cursor calls
         // first-party, so the short name says so, where "Cursor Models" would read as the whole vendor; the other pool,
-        // third-party models, follows.
+        // third-party models, follows. The two pools each limit some of the plan's models; the rest are plan-wide.
         let rows: [(String, String, String, Double?)] = [
             ("cursor", L10n.text("包含用量", "Included usage"), L10n.text("包含用量", "Included"), main),
             ("cursor:models", L10n.text("Cursor 模型", "Cursor Models"), L10n.text("第一方模型", "First-party"),
@@ -99,7 +99,7 @@ actor CursorClient {
         for (id, label, short, used) in rows {
             guard let used, used.isFinite, used >= 0 else { continue }
             result.windows.append(.init(id: id, label: label, remaining: QuotaMath.remaining(usedPercent: used), reset: end, duration: duration,
-                                        shortLabel: short))
+                                        shortLabel: short, allModels: id != "cursor:models" && id != "cursor:third-party"))
         }
         if result.windows.isEmpty {
             result.displayNotice = L10n.text("Cursor 已连接，当前计划未提供额度比例", "Cursor is connected; this plan reports no quota percentage")

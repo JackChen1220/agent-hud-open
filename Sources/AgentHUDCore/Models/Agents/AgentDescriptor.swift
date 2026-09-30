@@ -18,9 +18,10 @@ public struct AgentDescriptor: Hashable, Codable, Sendable, Identifiable {
     public let billingPool: BillingPool?
     /// The account whose quota this row shows. Nil for token consumers, API rows and placeholders.
     public let account: ProviderAccount?
-    /// False for a quota window that limits one model family or product, such as Claude's weekly window of one family or a
-    /// Codex bucket other than `codex`; true for a window over all of the account's models, for every other row, and for
-    /// rows saved before the flag existed.
+    /// Whether a quota window is its provider's plan-wide quota. False for a window that limits a subset of the plan's
+    /// models or features: Claude's weekly window of one family, a Codex bucket other than `codex`, Cursor's Cursor Models
+    /// and Other Models pools, an Antigravity group's window where the account has several groups, GitHub Copilot's chat
+    /// and code completions, and GLM's MCP window. True for every other row, and for rows saved before the flag existed.
     public let allModels: Bool
 
     public init(

@@ -116,11 +116,13 @@ struct AntigravityClient: Sendable {
                     reset: DateParsing.internet(bucket["resetTime"].stringValue), duration: duration)))
             }
         }
-        // One group's windows are the account's main set, known by their period alone; with several groups a window is
-        // known by its group's word, and by its period too where the group has more than one window.
+        // One group's windows are the account's main set, known by their period alone and plan-wide; with several groups
+        // a window limits its group's models and is known by its group's word, and by its period too where the group has
+        // more than one window.
         let counts = Dictionary(grouping: found, by: \.group).mapValues(\.count)
         result.windows = found.map { entry in
             var window = entry.window
+            window.allModels = counts.count == 1
             let period = WindowNames.Period(seconds: window.duration)
             if counts.count == 1 {
                 window.shortLabel = period?.shortName
@@ -164,7 +166,13 @@ struct AntigravityClient: Sendable {
             if pools[family].map({ window.remaining < $0.remaining }) ?? true { pools[family] = window }
         }
         let plan = status["userTier"]["name"].stringValue ?? status["planStatus"]["planInfo"]["planName"].stringValue
-        return ProviderQuota(windows: pools.keys.sorted().compactMap { pools[$0] }, plan: plan)
+        // Several families' quotas each limit their own models, as several groups' windows do.
+        let windows = pools.keys.sorted().compactMap { pools[$0] }.map { pool in
+            var window = pool
+            window.allModels = pools.count == 1
+            return window
+        }
+        return ProviderQuota(windows: windows, plan: plan)
     }
 }
 

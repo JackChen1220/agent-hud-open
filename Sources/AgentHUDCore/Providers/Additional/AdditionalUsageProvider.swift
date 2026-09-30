@@ -163,7 +163,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
         let notice = [quotaNotice, quota.displayNotice, local.notice, hookNotice].compactMap { $0 }.joined(separator: " · ")
         let descriptors = windows.map {
             AgentDescriptor(id: $0.id, vendor: source.vendor, model: $0.label, shortModel: $0.shortLabel ?? $0.label,
-                            source: L10n.sourceAdditionalUsage, enabled: true, account: account)
+                            source: L10n.sourceAdditionalUsage, enabled: true, account: account, allModels: $0.allModels)
         }
         let consumerIDs = Set(consumers.map(\.id))
         let quotaIDs = Set(windows.map(\.id) + agents.filter { $0.vendor == source.vendor }.map(\.id))

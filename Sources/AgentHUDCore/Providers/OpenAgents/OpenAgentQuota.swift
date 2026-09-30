@@ -40,11 +40,13 @@ struct OpenAgentQuotaClient: Sendable {
         var quota = ProviderQuota()
         /// A window's full name is its period in the vendor's own words and then its plan; the pool it belongs to is the
         /// account's label, not the window's. Its short name is its period.
-        func add(_ key: String, _ name: (full: String, short: String), _ used: Double, reset: Date?, duration: Double?) throws {
+        func add(_ key: String, _ name: (full: String, short: String), _ used: Double, reset: Date?, duration: Double?,
+                 allModels: Bool = true) throws {
             guard used.isFinite, used >= 0 else { throw ProviderFailure.format }
             let plan = quota.plan.flatMap { $0.isEmpty ? nil : " · " + $0 } ?? ""
             quota.windows.append(.init(id: credential.pool.windowID(key), label: name.full + plan,
-                remaining: QuotaMath.remaining(usedPercent: used), reset: reset, duration: duration, shortLabel: name.short))
+                remaining: QuotaMath.remaining(usedPercent: used), reset: reset, duration: duration, shortLabel: name.short,
+                allModels: allModels))
         }
         switch credential.service {
         case .kimi, .kimiGlobal:
@@ -129,7 +131,8 @@ struct OpenAgentQuotaClient: Sendable {
                    let period = WindowNames.Period(seconds: window.duration) {
                     name.short = (window.type == "CREDIT_LIMIT" ? "Credits " : "Tokens ") + period.afterWord
                 }
-                try add(window.key, name, window.used, reset: window.reset, duration: window.duration)
+                // The MCP window limits tool calls, not the plan's models.
+                try add(window.key, name, window.used, reset: window.reset, duration: window.duration, allModels: window.type != "TIME_LIMIT")
             }
         }
         guard !quota.windows.isEmpty, Set(quota.windows.map(\.id)).count == quota.windows.count else { throw ProviderFailure.format }
