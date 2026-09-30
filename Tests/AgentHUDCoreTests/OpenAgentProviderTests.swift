@@ -414,6 +414,7 @@ final class OpenAgentProviderTests: XCTestCase {
         let read = try XCTUnwrap(report.discoveredAgents.first { $0.billingPool == working.pool })
         XCTAssertEqual(report.snapshot(for: failed.id)?.remainingPct, 70, "the failed pool keeps its last reading")
         XCTAssertNotNil(report.quotaNotice(for: failed))
+        XCTAssertEqual(report.accounts?["Kimi"]?.first { $0.account.id == failed.account?.id }?.readingIssue?.kind, .readFailed)
         XCTAssertEqual(report.snapshot(for: read.id)?.remainingPct, 40)
         XCTAssertNil(report.quotaNotice(for: read), "the vendor's other pool is not held back")
         XCTAssertNil(report.quotaNotice(vendor: "Kimi"))

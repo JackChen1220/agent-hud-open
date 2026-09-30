@@ -84,11 +84,13 @@ public actor DeepSeekUsageProvider: UsageProvider, LedgerRecording {
             if let estimate = costs.logs[session.path] { sessionCosts["deepseek:\(session.transcript.id!)"] = estimate }
         }
         let billing = APIBilling(vendor: "DeepSeek", balances: balance?.balances ?? [], isAvailable: balance?.isAvailable,
-                                 updatedAt: balanceAt, costs: costs.buckets, sessionCosts: sessionCosts, notice: balanceNotice)
+                                 updatedAt: balanceAt, costs: costs.buckets, sessionCosts: sessionCosts, notice: balanceNotice,
+                                 readingIssue: balanceNotice.map(ReadingIssue.readFailed))
         return UsageReport(generatedAt: now, snapshots: [], sessions: sessions,
                            notice: notice.isEmpty ? nil : notice, discoveredAgents: installed ? discovered : [], consumers: consumers,
                            indexing: indexed.indexing,
                            sourceNotices: notice.isEmpty ? [:] : ["DeepSeek": notice], quotaNotices: balanceNotice.map { ["DeepSeek": $0] } ?? [:],
+                           readingIssues: balanceNotice.map { ["DeepSeek": .readFailed($0)] } ?? [:],
                            billing: installed ? [billing] : [],
                            completions: indexed.sessions.flatMap { $0.transcript.completions ?? [] },
                            turns: indexed.sessions.flatMap { $0.transcript.sessionTurns })

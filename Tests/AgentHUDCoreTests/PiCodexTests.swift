@@ -77,6 +77,8 @@ final class PiCodexTests: XCTestCase {
         let pi = try XCTUnwrap(report.discoveredAgents.first { $0.account == b.providerAccount(home: "pi") })
         XCTAssertNil(report.quotaNotice(for: native))
         XCTAssertEqual(report.quotaNotice(for: pi), "Pi offline")
+        XCTAssertEqual(report.accounts?["Codex"]?.first { $0.account == b.providerAccount(home: "pi") }?.readingIssue, .readFailed("Pi offline"),
+                       "the failure is the Pi account's own")
         XCTAssertEqual(report.snapshot(for: pi.id)?.updatedAt, now, "failure never renews the old reading")
         XCTAssertEqual(report.accounts?["Codex"]?.count, 2)
     }

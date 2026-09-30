@@ -57,6 +57,33 @@ final class CombinedProviderTests: XCTestCase {
         XCTAssertEqual(combined.usage, codex.usage)
     }
 
+    /// Each vendor's reading issues join the combined report under the vendor. A source that does not type its issues
+    /// gives its notices about readings, or every notice when it does not tell them apart, as failed reads, and a source
+    /// that failed, or said what went wrong without filing it under a vendor, failed to read.
+    func testReadingIssuesJoinByVendorAndUntypedNoticesReadAsFailedReads() async throws {
+        func report(sourceNotices: [String: String] = [:], quotaNotices: [String: String]? = nil,
+                    readingIssues: [String: ReadingIssue]? = nil, notice: String? = nil) -> UsageReport {
+            UsageReport(generatedAt: now, snapshots: [], sessions: [], notice: notice, sourceNotices: sourceNotices,
+                        quotaNotices: quotaNotices, readingIssues: readingIssues)
+        }
+        let provider = CombinedUsageProvider([
+            .init("Claude", Source(report: nil)),
+            .init("Kimi", Source(report: report(sourceNotices: ["Kimi": "logs unreadable"], quotaNotices: [:], readingIssues: [:]))),
+            .init("Cursor", Source(report: report(sourceNotices: ["Cursor": "quota failed · logs unreadable"],
+                                                  quotaNotices: ["Cursor": "quota failed"]))),
+            .init("Grok", Source(report: report(sourceNotices: ["Grok": "offline"]))),
+            .init("Pi", Source(report: report(notice: "Pi could not be read"))),
+            .init("GLM", Source(report: report(sourceNotices: ["GLM": "identity"], quotaNotices: ["GLM": "identity"],
+                                               readingIssues: ["GLM": .unverified("identity")]))),
+        ])
+        let combined = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 48)
+        XCTAssertEqual(combined.readingIssues, ["Claude": .readFailed("signed out"), "Cursor": .readFailed("quota failed"),
+                                                "Grok": .readFailed("offline"), "Pi": .readFailed("Pi could not be read"),
+                                                "GLM": .unverified("identity")])
+        XCTAssertEqual(combined.quotaNotices, ["Claude": "signed out", "Cursor": "quota failed", "Grok": "offline",
+                                               "Pi": "Pi could not be read", "GLM": "identity"], "the notice text is still written")
+    }
+
     @MainActor
     func testPeriodsAndActivityCombineRawTokensAcrossVendors() async throws {
         let provider = CombinedUsageProvider([.init("Claude", Source(report: report("claude", tokens: 100))),

@@ -74,11 +74,15 @@ public struct UsageReport: Hashable, Codable, Sendable {
     /// Unlike an empty inventory, which keeps earlier accounts as last readings, their readings, rows and settings retire at once.
     public let forgottenAccountProviders: Set<String>?
     public let sourceNotices: [String: String]
-    /// The part of `sourceNotices` about readings, by vendor: a quota or balance read that failed or could not be verified,
-    /// which holds back that vendor's alerts, status levels and retained sessions. A billing pool's rows answer to their own
-    /// account's notice instead. Notices about local logs and hooks are only in `sourceNotices`. Nil when a report does not
-    /// tell them apart, so that all of its source notices count.
+    /// The part of `sourceNotices` about readings, by vendor: a quota or balance read that failed or could not be verified.
+    /// Notices about local logs and hooks are only in `sourceNotices`. Nil when a report does not tell them apart, so that
+    /// all of its source notices count. Written beside `readingIssues` for readers of the notice text.
     public let quotaNotices: [String: String]?
+    /// What each vendor's provider said about its readings: a quota or balance read that failed or could not be verified,
+    /// which holds back that vendor's alerts, status levels and retained sessions. A billing pool's rows answer to their own
+    /// account's issue instead. Nil in a report that does not type its issues, whose `quotaNotices` then count as failed
+    /// reads.
+    public let readingIssues: [String: ReadingIssue]?
     /// Consumer ids covered by each quota row. Providers own the relationship between model and quota ids.
     public let consumerIdsByQuota: [String: Set<String>]
     public let billing: [APIBilling]
@@ -107,6 +111,7 @@ public struct UsageReport: Hashable, Codable, Sendable {
         subscriptions: [String: String] = [:],
         sourceNotices: [String: String] = [:],
         quotaNotices: [String: String]? = nil,
+        readingIssues: [String: ReadingIssue]? = nil,
         consumerIdsByQuota: [String: Set<String>] = [:],
         billing: [APIBilling] = [],
         codexResetCredits: CodexResetCredits? = nil,
@@ -137,6 +142,7 @@ public struct UsageReport: Hashable, Codable, Sendable {
         self.subscriptions = subscriptions
         self.sourceNotices = sourceNotices
         self.quotaNotices = quotaNotices
+        self.readingIssues = readingIssues
         self.consumerIdsByQuota = consumerIdsByQuota
         self.indexing = indexing
         self.generatedAt = generatedAt

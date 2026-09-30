@@ -438,6 +438,8 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         let failed = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 48)
         XCTAssertEqual(failed.snapshot(for: row.id)?.remainingPct, 5, "the last reading stays shown")
         XCTAssertNotNil(failed.quotaNotice(for: row))
+        XCTAssertEqual(failed.readingIssues?["Cursor"]?.kind, .readFailed)
+        XCTAssertNil(low.readingIssues?["Cursor"], "a notice about the client's logs is not an issue with its reading")
         store.replace(report: failed)
         store.now = readings.now
         XCTAssertEqual(store.rows.map(\.level), [nil], "a failed read still takes the window out of the glow")

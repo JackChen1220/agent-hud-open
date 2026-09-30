@@ -64,6 +64,49 @@ final class RestartCopyTests: XCTestCase {
         XCTAssertEqual(try answers(restored), expected)
     }
 
+    /// A copy written with typed issues reads back to the same statuses, keeps them through the report's own copies, and
+    /// still carries every notice's text where a version that reads no issues looks for it.
+    @MainActor
+    func testATypedCopyReadsBackAndStillCarriesTheNoticeText() throws {
+        let pool = ProviderAccount(pool: pools[0])
+        let source = UsageReport(generatedAt: now, snapshots: [], sessions: [], discoveredAgents: rows,
+            sourceNotices: ["Grok": "Sign in to Grok CLI, then refresh quota"], quotaNotices: ["Grok": "Sign in to Grok CLI, then refresh quota"],
+            readingIssues: ["Grok": .readFailed("Sign in to Grok CLI, then refresh quota")],
+            billing: [APIBilling(vendor: "DeepSeek", balances: [], isAvailable: nil, updatedAt: nil, notice: "Balance could not be read",
+                                 readingIssue: .readFailed("Balance could not be read"))],
+            accounts: ["Kimi": [AccountObservation(account: pool, observedAt: now, quotaNotice: "identity unconfirmed",
+                                                   readingIssue: .unverified("identity unconfirmed"))]])
+        let data = try JSONEncoder().encode(source.restartCopy)
+        let restored = try JSONDecoder().decode(UsageReport.self, from: data)
+        let subjects: [ReadingSubject] = [.window(rows[2]), .window(rows[4]), .account(source.accounts!["Kimi"]![0]), .balance(source.billing[0])]
+        XCTAssertEqual(subjects.map { restored.status(of: $0) }, [.readFailed(reason: "Sign in to Grok CLI, then refresh quota"),
+                                                                 .unverified(reason: "identity unconfirmed"),
+                                                                 .unverified(reason: "identity unconfirmed"),
+                                                                 .readFailed(reason: "Balance could not be read")])
+        XCTAssertEqual(subjects.map { restored.status(of: $0) }, subjects.map { source.status(of: $0) })
+        // The report's own copies keep every issue.
+        let kept = source.startingRowClocks().retainingReadings(from: source)
+        XCTAssertEqual(kept.readingIssues, source.readingIssues)
+        XCTAssertEqual(kept.accounts?["Kimi"]?.map(\.readingIssue), [.unverified("identity unconfirmed")])
+        XCTAssertEqual(kept.billing.map(\.readingIssue), [.readFailed("Balance could not be read")])
+        XCTAssertEqual(source.accounts!["Kimi"]![0].with(isCurrent: false).readingIssue, .unverified("identity unconfirmed"))
+        XCTAssertEqual(CombinedUsageProvider.mergeBilling(source.billing).map(\.readingIssue), [.readFailed("Balance could not be read")])
+        // A version that reads no issues finds each notice where it always did.
+        let older = try JSONDecoder().decode(NoticeFields.self, from: data)
+        XCTAssertEqual(older.quotaNotices, ["Grok": "Sign in to Grok CLI, then refresh quota"])
+        XCTAssertEqual(older.accounts["Kimi"]?.map(\.quotaNotice), ["identity unconfirmed"])
+        XCTAssertEqual(older.billing.map(\.notice), ["Balance could not be read"])
+    }
+
+    /// The notice fields of `last-usage-report.json` as a version that reads no issues decodes them.
+    private struct NoticeFields: Decodable {
+        struct Account: Decodable { let quotaNotice: String? }
+        struct Billing: Decodable { let notice: String? }
+        let quotaNotices: [String: String]?
+        let accounts: [String: [Account]]
+        let billing: [Billing]
+    }
+
     // MARK: Fixtures
 
     private var later: Date { now.addingTimeInterval(300) }

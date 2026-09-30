@@ -22,16 +22,22 @@ public struct APIBilling: Hashable, Codable, Sendable, Identifiable {
     public let costs: [CostBucket]
     /// Estimated cost of each session by currency; a currency is absent when one of its requests had no price in it.
     public let sessionCosts: [String: [String: Decimal]]
+    /// The reason of `readingIssue`, written beside it for readers of the notice text; a balance saved without a typed
+    /// issue counts it as a failed read.
     public let notice: String?
+    /// A failed balance read keeps the last balance and its time.
+    public let readingIssue: ReadingIssue?
     public var billingPool: BillingPool? = nil
     public var id: String { billingPool?.id ?? vendor }
     public var displayName: String { (billingPool?.provider ?? vendor) + " · API" }
     public var currency: String { balances.first?.currency ?? "CNY" }
 
     public init(vendor: String, balances: [AccountBalance], isAvailable: Bool?, updatedAt: Date?, costs: [CostBucket] = [],
-                sessionCosts: [String: [String: Decimal]] = [:], notice: String?, billingPool: BillingPool? = nil) {
+                sessionCosts: [String: [String: Decimal]] = [:], notice: String?, readingIssue: ReadingIssue? = nil,
+                billingPool: BillingPool? = nil) {
         self.vendor = vendor; self.balances = balances; self.isAvailable = isAvailable
-        self.updatedAt = updatedAt; self.costs = costs; self.sessionCosts = sessionCosts; self.notice = notice; self.billingPool = billingPool
+        self.updatedAt = updatedAt; self.costs = costs; self.sessionCosts = sessionCosts; self.notice = notice
+        self.readingIssue = readingIssue; self.billingPool = billingPool
     }
 
     /// The sum over periods overlapping `interval`; unknown when any of them lacks a price in `currency`.

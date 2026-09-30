@@ -491,6 +491,8 @@ final class DeepSeekProviderTests: XCTestCase {
         let report = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 48)
         XCTAssertEqual(report.sessions.count, 1)
         XCTAssertEqual(report.sourceNotices["DeepSeek"], "offline")
+        XCTAssertEqual(report.billing[0].readingIssue, .readFailed("offline"))
+        XCTAssertEqual(report.readingIssues, ["DeepSeek": .readFailed("offline")])
         XCTAssertTrue(report.billing[0].balances.isEmpty)
         XCTAssertNil(report.billing[0].estimatedCost(currency: "CNY"))
         XCTAssertEqual(report.billing[0].estimatedCost(currency: "CNY", during: DateInterval(start: now.addingTimeInterval(900), duration: 10)), 0,

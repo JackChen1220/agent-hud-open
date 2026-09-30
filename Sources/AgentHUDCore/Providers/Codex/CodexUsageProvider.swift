@@ -195,6 +195,7 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
             notices[source == piHome ? "Pi" : "Codex login"] = message
         }
         let notice = notices.isEmpty ? nil : notices.values.sorted().joined(separator: " · ")
+        let sourceNotices = selected.isEmpty ? notice.map { ["Codex": $0] } ?? [:] : notices
         let consumerIds = Set(consumers.map(\.id) + sessions.map(\.agentId))
         // Pi's distinct account must not claim Codex transcript consumers. Pi owns its own token events.
         let nativeAccount = native?.limits.providerAccount(home: home).id
@@ -207,14 +208,15 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
         let observations = selected.map { source, reading in
             AccountObservation(account: reading.limits.providerAccount(home: source), home: source,
                 label: reading.limits.account?.email, plan: reading.limits.plan, observedAt: reading.at,
-                quotaNotice: failures[source], resetCredits: reading.limits.rateLimitResetCredits,
+                quotaNotice: failures[source], readingIssue: failures[source].map(ReadingIssue.readFailed),
+                resetCredits: reading.limits.rateLimitResetCredits,
                 aliases: reading.limits.partialKeys)
         }
         return UsageReport(generatedAt: now, snapshots: snapshots, sessions: sessions,
                            notice: notice, discoveredAgents: windows.map { $0.row.descriptor }, consumers: consumers,
                            indexing: indexed.indexing, insightsByAgent: byAgent,
                            subscriptions: native?.limits.plan.map { ["Codex": $0] } ?? [:],
-                           sourceNotices: selected.isEmpty ? notice.map { ["Codex": $0] } ?? [:] : notices,
+                           sourceNotices: sourceNotices, readingIssues: sourceNotices.mapValues(ReadingIssue.readFailed),
                            consumerIdsByQuota: consumerIdsByQuota, codexResetCredits: selected.count == 1 ? selected.first?.1.limits.rateLimitResetCredits : nil,
                            codexResetCreditsObservedAt: selected.count == 1 && selected.first?.1.limits.rateLimitResetCredits != nil ? selected.first?.1.at : nil,
                            completions: indexed.sessions.flatMap { $0.transcript.completions ?? [] },

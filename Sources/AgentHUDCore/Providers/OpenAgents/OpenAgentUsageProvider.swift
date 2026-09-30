@@ -228,7 +228,8 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
                 // A reading that failed without a sign-out keeps the account current, at its last reading, with the reason.
                 if result.isActive {
                     accounts[pool.provider, default: []].append(AccountObservation(account: ProviderAccount(pool: pool), plan: result.plan,
-                        observedAt: result.readAt ?? result.at, quotaNotice: result.notice))
+                        observedAt: result.readAt ?? result.at, quotaNotice: result.notice,
+                        readingIssue: result.notice.map(ReadingIssue.readFailed)))
                 }
                 continue
             }
@@ -238,7 +239,7 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
             if result.isActive {
                 // A reading whose account the service could not confirm is not verified either.
                 accounts[pool.provider, default: []].append(AccountObservation(account: ProviderAccount(pool: pool), plan: quota.plan,
-                    observedAt: result.at, quotaNotice: result.notice))
+                    observedAt: result.at, quotaNotice: result.notice, readingIssue: result.notice.map(ReadingIssue.unverified)))
             }
             for window in quota.windows {
                 snapshots.append(.init(agentId: window.id, remainingPct: window.remaining, resetAt: window.reset,
@@ -258,7 +259,7 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
             discoveredAgents: descriptors, consumers: consumers.values.sorted { $0.id < $1.id },
             indexing: local.indexing, insightsByAgent: insights, subscriptions: plans, sourceNotices: notices,
             // Every reading belongs to one pool, whose account carries its notice: none is the whole vendor's.
-            quotaNotices: [:], consumerIdsByQuota: links,
+            quotaNotices: [:], readingIssues: [:], consumerIdsByQuota: links,
             completions: local.sessions.flatMap(\.completions), turns: local.sessions.flatMap(\.turns), services: services,
             activeQuotaPoolIDs: cached == nil ? nil : activePools, accounts: cached == nil ? nil : accounts)
     }

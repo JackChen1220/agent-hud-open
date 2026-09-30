@@ -35,7 +35,8 @@ public struct UsageChanges: Hashable, Sendable {
         completions = new.completions.filter { !known.contains($0.id) }
         inventory = old?.discoveredAgents != new.discoveredAgents || old?.consumers != new.consumers || old?.accounts != new.accounts
             || old?.services != new.services || old?.activeQuotaPoolIDs != new.activeQuotaPoolIDs || old?.notice != new.notice
-            || old?.sourceNotices != new.sourceNotices || old?.quotaNotices != new.quotaNotices || old?.indexing != new.indexing
+            || old?.sourceNotices != new.sourceNotices || old?.quotaNotices != new.quotaNotices || old?.readingIssues != new.readingIssues
+            || old?.indexing != new.indexing
     }
 
     private static func costs(_ report: UsageReport) -> [String: [CostBucket]] {
@@ -47,10 +48,14 @@ public struct UsageChanges: Hashable, Sendable {
         let updatedAt: Date?
         let isAvailable: Bool?
         let notice: String?
+        let readingIssue: ReadingIssue?
     }
 
     private static func balances(_ report: UsageReport) -> [String: BalanceReading] {
-        Dictionary(report.billing.map { ($0.id, BalanceReading(balances: $0.balances, updatedAt: $0.updatedAt, isAvailable: $0.isAvailable, notice: $0.notice)) },
+        Dictionary(report.billing.map {
+            ($0.id, BalanceReading(balances: $0.balances, updatedAt: $0.updatedAt, isAvailable: $0.isAvailable, notice: $0.notice,
+                                   readingIssue: $0.readingIssue))
+        },
                    uniquingKeysWith: { first, _ in first })
     }
 }

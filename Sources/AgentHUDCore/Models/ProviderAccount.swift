@@ -62,9 +62,12 @@ public struct AccountObservation: Hashable, Codable, Sendable, Identifiable {
     public let observedAt: Date
     /// The client is currently signed in to this account. Other accounts show their last reading only.
     public let isCurrent: Bool
+    /// The reason of `readingIssue`, written beside it for readers of the notice text; an observation saved without a
+    /// typed issue counts it as a failed read.
+    public let quotaNotice: String?
     /// A failed quota read keeps the last observation, but cannot confirm quota events; neither can a reading whose
     /// account the provider could not confirm.
-    public let quotaNotice: String?
+    public let readingIssue: ReadingIssue?
     /// Codex credits belong to this account, even when several clients are signed in.
     public let resetCredits: CodexResetCredits?
     /// Keys this account was filed under while its identity was incomplete, such as a Codex workspace read without its
@@ -72,8 +75,8 @@ public struct AccountObservation: Hashable, Codable, Sendable, Identifiable {
     public let aliases: [String]?
 
     public init(account: ProviderAccount, home: String = "", label: String? = nil, plan: String? = nil,
-                observedAt: Date, isCurrent: Bool = true, quotaNotice: String? = nil, resetCredits: CodexResetCredits? = nil,
-                aliases: [String]? = nil) {
+                observedAt: Date, isCurrent: Bool = true, quotaNotice: String? = nil, readingIssue: ReadingIssue? = nil,
+                resetCredits: CodexResetCredits? = nil, aliases: [String]? = nil) {
         self.account = account
         self.home = home
         self.label = label.flatMap { $0.isEmpty ? nil : $0 }
@@ -81,6 +84,7 @@ public struct AccountObservation: Hashable, Codable, Sendable, Identifiable {
         self.observedAt = observedAt
         self.isCurrent = isCurrent
         self.quotaNotice = quotaNotice
+        self.readingIssue = readingIssue
         self.resetCredits = resetCredits
         self.aliases = aliases.flatMap { $0.isEmpty ? nil : $0 }
     }
@@ -89,7 +93,8 @@ public struct AccountObservation: Hashable, Codable, Sendable, Identifiable {
 
     public func with(isCurrent: Bool) -> AccountObservation {
         AccountObservation(account: account, home: home, label: label, plan: plan, observedAt: observedAt,
-                           isCurrent: isCurrent, quotaNotice: quotaNotice, resetCredits: resetCredits, aliases: aliases)
+                           isCurrent: isCurrent, quotaNotice: quotaNotice, readingIssue: readingIssue, resetCredits: resetCredits,
+                           aliases: aliases)
     }
 
     /// The account's email or name, else a short form of its id.

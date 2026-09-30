@@ -77,6 +77,8 @@ final class KimiQuotaIdentityTests: XCTestCase {
         let first = try await retained.fetchAccountAndLocalUsage(agents: [], historyHours: 24)
         XCTAssertEqual(first.snapshots.count, 4) // Identical quota values are not identity proof.
         XCTAssertNotNil(first.sourceNotices["Kimi"])
+        XCTAssertEqual(first.accounts?["Kimi"]?.compactMap(\.readingIssue?.kind), [.unverified],
+                       "a reading whose account could not be confirmed is unverified")
         XCTAssertEqual(Set(first.discoveredAgents.compactMap { $0.billingPool?.evidence }), [.account, .credential])
         let suite = "KimiQuotaIdentityTests.\(UUID())"
         let defaults = UserDefaults(suiteName: suite)!

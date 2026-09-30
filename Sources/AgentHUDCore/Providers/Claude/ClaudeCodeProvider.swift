@@ -202,6 +202,7 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
             insightsByAgent: insightsByAgent,
             subscriptions: plan.map { ["Claude": $0] } ?? [:],
             sourceNotices: notice.map { ["Claude": $0] } ?? [:],
+            readingIssues: notice.map { ["Claude": .readFailed($0)] } ?? [:],
             consumerIdsByQuota: consumerIdsByQuota,
             completions: sessions.flatMap(\.completions),
             turns: candidates.compactMap(\.reading.turn),

@@ -175,6 +175,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
             notice: notice.isEmpty ? nil : notice, discoveredAgents: descriptors, consumers: consumers,
             indexing: local.indexing, insightsByAgent: insights, subscriptions: quota.plan.map { [source.vendor: $0] } ?? [:],
             sourceNotices: notice.isEmpty ? [:] : [source.vendor: notice], quotaNotices: quotaNotice.map { [source.vendor: $0] } ?? [:],
+            readingIssues: quotaNotice.map { [source.vendor: .readFailed($0)] } ?? [:],
             consumerIdsByQuota: Dictionary(uniqueKeysWithValues: quotaIDs.map { ($0, consumerIDs) }),
             completions: local.sessions.flatMap(\.completions) + hookCompletions, turns: local.sessions.flatMap(\.turns),
             accounts: quota.isSignedIn ? [source.vendor: [AccountObservation(account: account, label: quota.label, plan: quota.plan, observedAt: observedAt)]] : nil,

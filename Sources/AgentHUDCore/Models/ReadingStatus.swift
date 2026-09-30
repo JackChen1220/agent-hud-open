@@ -135,16 +135,23 @@ public extension UsageReport {
         }
     }
 
-    /// A vendor's status: its notice about a quota or balance reading, which a report that does not tell such notices
-    /// apart gives for every source notice.
+    /// A vendor's status: its issue with a quota or balance reading. A report that does not type its issues gives its
+    /// notice about such a reading as a failed read, and one that does not tell such notices apart every source notice.
     internal func vendorStatus(_ vendor: String) -> ReadingStatus {
-        (quotaNotices ?? sourceNotices)[vendor].map { .readFailed(reason: $0) } ?? .normal
+        if let readingIssues { return readingIssues[vendor]?.status ?? .normal }
+        return (quotaNotices ?? sourceNotices)[vendor].map { .readFailed(reason: $0) } ?? .normal
+    }
+
+    /// The issues a report's providers gave, or for a report that does not type them, its notices about readings as
+    /// failed reads.
+    internal var typedReadingIssues: [String: ReadingIssue] {
+        readingIssues ?? (quotaNotices ?? sourceNotices).mapValues(ReadingIssue.readFailed)
     }
 }
 
 extension AccountObservation {
-    /// The account's own status.
-    var ownStatus: ReadingStatus { quotaNotice.map { .readFailed(reason: $0) } ?? .normal }
+    /// The account's own status; an observation saved without a typed issue gives its notice as a failed read.
+    var ownStatus: ReadingStatus { readingIssue?.status ?? quotaNotice.map { .readFailed(reason: $0) } ?? .normal }
 
     /// Whether this reading lists every window of its account, so that a window it leaves out has ended: the client is
     /// signed in to the account and its own read succeeded.
@@ -152,6 +159,6 @@ extension AccountObservation {
 }
 
 extension APIBilling {
-    /// The balance's own status.
-    var ownStatus: ReadingStatus { notice.map { .readFailed(reason: $0) } ?? .normal }
+    /// The balance's own status; a balance saved without a typed issue gives its notice as a failed read.
+    var ownStatus: ReadingStatus { readingIssue?.status ?? notice.map { .readFailed(reason: $0) } ?? .normal }
 }

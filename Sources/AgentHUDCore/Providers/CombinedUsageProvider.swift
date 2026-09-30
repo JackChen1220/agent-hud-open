@@ -111,15 +111,18 @@ public struct CombinedUsageProvider: UsageProvider {
         }
         await ledger.commitPass()
         let reports = results.compactMap { $0.1 }
-        var notices: [String: String] = [:], quotaNotices: [String: String] = [:]
+        var notices: [String: String] = [:], quotaNotices: [String: String] = [:], issues: [String: ReadingIssue] = [:]
         for (index, report, error) in results {
             if let report {
                 notices.merge(report.sourceNotices, uniquingKeysWith: { _, new in new })
                 quotaNotices.merge(report.quotaNotices ?? report.sourceNotices, uniquingKeysWith: { _, new in new })
+                issues.merge(report.typedReadingIssues, uniquingKeysWith: { _, new in new })
             }
+            // A source that failed, or said what went wrong without filing it under a vendor, failed to read.
             if let message = error ?? (report?.sourceNotices.isEmpty == true ? report?.notice : nil) {
                 notices[vendors[index].vendor] = message
                 quotaNotices[vendors[index].vendor] = message
+                issues[vendors[index].vendor] = .readFailed(message)
             }
         }
         guard !reports.isEmpty else { throw UsageProviderError(notices.keys.sorted().map { "\($0): \(notices[$0]!)" }.joined(separator: " · ")) }
@@ -146,7 +149,7 @@ public struct CombinedUsageProvider: UsageProvider {
                            indexing: progress.isEmpty ? nil : IndexProgress(done: progress.reduce(0) { $0 + $1.done }, total: progress.reduce(0) { $0 + $1.total }),
                            insightsByAgent: reports.reduce(into: [:]) { $0.merge($1.insightsByAgent, uniquingKeysWith: { _, new in new }) },
                            subscriptions: reports.reduce(into: [:]) { $0.merge($1.subscriptions, uniquingKeysWith: { _, new in new }) }, sourceNotices: notices,
-                           quotaNotices: quotaNotices,
+                           quotaNotices: quotaNotices, readingIssues: issues,
                            consumerIdsByQuota: reports.reduce(into: [:]) { $0.merge($1.consumerIdsByQuota, uniquingKeysWith: { $0.union($1) }) },
                            billing: Self.mergeBilling(reports.flatMap(\.billing)), codexResetCredits: reports.first { $0.codexResetCredits != nil }?.codexResetCredits,
                            codexResetCreditsObservedAt: reports.first { $0.codexResetCredits != nil }?.codexResetCreditsObservedAt,
@@ -219,7 +222,7 @@ public struct CombinedUsageProvider: UsageProvider {
                 .first { !$0.costs.isEmpty || !$0.sessionCosts.isEmpty } ?? latest
             return APIBilling(vendor: latest.billingPool?.provider ?? latest.vendor, balances: latest.balances, isAvailable: latest.isAvailable,
                 updatedAt: latest.updatedAt, costs: costs.costs, sessionCosts: costs.sessionCosts,
-                notice: latest.notice, billingPool: latest.billingPool)
+                notice: latest.notice, readingIssue: latest.readingIssue, billingPool: latest.billingPool)
         }.sorted { $0.id < $1.id }
     }
 

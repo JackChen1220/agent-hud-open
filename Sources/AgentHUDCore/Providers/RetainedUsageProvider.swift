@@ -59,7 +59,8 @@ extension UsageReport {
         UsageReport(generatedAt: generatedAt, snapshots: snapshots, sessions: sessions,
                     notice: notice, discoveredAgents: discoveredAgents, consumers: consumers, usage: usage,
                     indexing: indexing, insightsByAgent: insightsByAgent, subscriptions: subscriptions, sourceNotices: sourceNotices,
-                    quotaNotices: quotaNotices, consumerIdsByQuota: consumerIdsByQuota, billing: billing, codexResetCredits: codexResetCredits,
+                    quotaNotices: quotaNotices, readingIssues: readingIssues, consumerIdsByQuota: consumerIdsByQuota, billing: billing,
+                    codexResetCredits: codexResetCredits,
                     codexResetCreditsObservedAt: codexResetCreditsObservedAt, services: services, activeQuotaPoolIDs: activeQuotaPoolIDs,
                     accounts: accounts, forgottenAccountProviders: forgottenAccountProviders, periods: periods,
                     rowSeenAt: rowSeenAt)
@@ -70,7 +71,7 @@ extension UsageReport {
         UsageReport(generatedAt: generatedAt, snapshots: snapshots, sessions: sessions, notice: notice,
                     discoveredAgents: discoveredAgents, consumers: consumers, usage: usage, indexing: indexing,
                     insightsByAgent: insightsByAgent, subscriptions: subscriptions, sourceNotices: sourceNotices, quotaNotices: quotaNotices,
-                    consumerIdsByQuota: consumerIdsByQuota, billing: billing, codexResetCredits: codexResetCredits,
+                    readingIssues: readingIssues, consumerIdsByQuota: consumerIdsByQuota, billing: billing, codexResetCredits: codexResetCredits,
                     codexResetCreditsObservedAt: codexResetCreditsObservedAt, completions: completions, turns: turns,
                     services: services, activeQuotaPoolIDs: activeQuotaPoolIDs, accounts: accounts,
                     forgottenAccountProviders: forgottenAccountProviders, sessionUsage: sessionUsage, periods: periods,
@@ -117,7 +118,8 @@ extension UsageReport {
         let retainedBilling = billing.map { value -> APIBilling in
             guard value.updatedAt == nil, let old = previous.billing.first(where: { $0.id == value.id }) else { return value }
             return APIBilling(vendor: value.vendor, balances: old.balances, isAvailable: old.isAvailable,
-                updatedAt: old.updatedAt, costs: value.costs, sessionCosts: value.sessionCosts, notice: value.notice, billingPool: value.billingPool)
+                updatedAt: old.updatedAt, costs: value.costs, sessionCosts: value.sessionCosts, notice: value.notice,
+                readingIssue: value.readingIssue, billingPool: value.billingPool)
         } + previous.billing.filter { !billingIDs.contains($0.id) }
         let knownAgents = UsageAggregation.consumersUnion([discoveredAgents, consumers, previous.discoveredAgents, previous.consumers])
         // A source whose read or quota reading failed keeps its last sessions; a notice about its local logs or hooks does not.
@@ -135,7 +137,7 @@ extension UsageReport {
             indexing: indexing,
             insightsByAgent: previous.insightsByAgent.filter { !retiredWindowIDs.contains($0.key) }.merging(insightsByAgent, uniquingKeysWith: { _, new in new }),
             subscriptions: previous.subscriptions.filter { !retiredPoolIDs.contains($0.key) }.merging(subscriptions, uniquingKeysWith: { _, new in new }),
-            sourceNotices: sourceNotices, quotaNotices: quotaNotices,
+            sourceNotices: sourceNotices, quotaNotices: quotaNotices, readingIssues: readingIssues,
             consumerIdsByQuota: previous.consumerIdsByQuota.filter { !retiredWindowIDs.contains($0.key) }.merging(consumerIdsByQuota, uniquingKeysWith: { _, new in new }),
             billing: retainedBilling, codexResetCredits: codexResetCredits ?? (sameCurrentAccount(as: previous, provider: "Codex") ? previous.codexResetCredits : nil),
             codexResetCreditsObservedAt: codexResetCredits != nil ? codexResetCreditsObservedAt

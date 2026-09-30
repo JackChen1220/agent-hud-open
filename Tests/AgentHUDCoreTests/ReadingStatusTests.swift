@@ -9,9 +9,10 @@ final class ReadingStatusTests: XCTestCase {
     private let account = ProviderAccount.identified(provider: "Codex", user: "a@example.com", workspace: nil)!
     private let pool = BillingPool(provider: "Kimi", realm: "CN", product: .plan, scope: "scope", evidence: .account, entitlement: "kimi-code")
 
-    /// Where a window's notice comes from.
+    /// Where a window's notice comes from. The typed cases carry the notice text beside the issue, as providers write it.
     private enum Notice: CaseIterable {
         case none, account, vendorQuota, vendorDisplay, legacyVendor, poolAccount, poolVendor
+        case typedAccountUnverified, typedVendor, typedPoolUnverified
     }
 
     func testTheAssessmentAgreesWithEachSurfacesRuleOverAGrid() {
@@ -28,6 +29,9 @@ final class ReadingStatusTests: XCTestCase {
                             let quotaNotice = Self.quotaNotice(report, agent)
                             let window = report.assess(.window(agent), now: now)
                             XCTAssertEqual(window.status.reason, quotaNotice, name)
+                            if notice == .typedAccountUnverified || notice == .typedPoolUnverified {
+                                XCTAssertEqual(window.status, .unverified(reason: "account failed"), name)
+                            }
                             XCTAssertEqual(window.isCurrentAccount, report.isCurrent(agent), name)
                             // The row's level.
                             let level = report.isCurrent(agent) && quotaNotice == nil
@@ -92,20 +96,24 @@ final class ReadingStatusTests: XCTestCase {
     /// One window's reading with its account, `age` old, and the notice the case names.
     private func reading(_ notice: Notice, isCurrent: Bool, age: TimeInterval, resetIn: TimeInterval?,
                          remaining: Double) -> (UsageReport, AgentDescriptor, AccountObservation) {
-        let pooled = [.poolAccount, .poolVendor].contains(notice)
+        let pooled = [.poolAccount, .poolVendor, .typedPoolUnverified].contains(notice)
         let vendor = pooled ? "Kimi" : "Codex"
         let owner = pooled ? ProviderAccount(pool: pool) : account
         let agent = AgentDescriptor(id: owner.windowID("5h"), vendor: vendor, model: "5h", source: "", enabled: true,
                                     billingPool: pooled ? pool : nil, account: owner)
         let at = now.addingTimeInterval(-age)
+        let unverified = [.typedAccountUnverified, .typedPoolUnverified].contains(notice)
         let observation = AccountObservation(account: owner, observedAt: at, isCurrent: isCurrent,
-                                             quotaNotice: [.account, .poolAccount].contains(notice) ? "account failed" : nil)
-        let vendorNotice = [.vendorQuota, .vendorDisplay, .legacyVendor, .poolVendor].contains(notice) ? [vendor: "vendor notice"] : [:]
+                                             quotaNotice: [.account, .poolAccount].contains(notice) || unverified ? "account failed" : nil,
+                                             readingIssue: unverified ? .unverified("account failed") : nil)
+        let vendorNotice = [.vendorQuota, .vendorDisplay, .legacyVendor, .poolVendor, .typedVendor].contains(notice)
+            ? [vendor: "vendor notice"] : [:]
         return (UsageReport(generatedAt: now, snapshots: [UsageSnapshot(agentId: agent.id, remainingPct: remaining,
                                                                           resetAt: resetIn.map(now.addingTimeInterval),
                                                                           windowDuration: 5 * 3600, updatedAt: at)],
                             sessions: [], discoveredAgents: [agent], sourceNotices: vendorNotice,
                             quotaNotices: notice == .legacyVendor ? nil : notice == .vendorDisplay ? [:] : vendorNotice,
+                            readingIssues: notice == .typedVendor ? vendorNotice.mapValues(ReadingIssue.readFailed) : nil,
                             accounts: [vendor: [observation]]),
                 agent, observation)
     }
