@@ -106,18 +106,18 @@ Reads never run in parallel: the usage store runs one pass of source reads or on
 
 | Concept | Code |
 | --- | --- |
-| Token kinds and dimensions, bar buckets | `Sources/AgentHUDCore/Models/TokenKinds.swift`, `Sources/AgentHUDCore/Logic/ChartData.swift` |
-| List prices, platforms, context windows | `Sources/AgentHUDCore/Models/ModelCatalog.swift`, `ModelPriceList.swift`, `PriceRegions.swift` |
-| Today, seven and thirty days | `Sources/AgentHUDCore/Models/UsagePeriods.swift`, `Store/UsageLedger.swift` |
-| Alert levels, thresholds and reading age, status colors | `Sources/AgentHUDCore/Models/AlertPolicy.swift`, `Sources/AgentHUDCore/Logic/StatusLevel.swift` |
-| Reading status and assessment | `Sources/AgentHUDCore/Models/ReadingStatus.swift` |
+| Token kinds and dimensions, bar buckets | `Sources/AgentHUDCore/Models/Usage/TokenKinds.swift`, `Sources/AgentHUDCore/Logic/ChartData.swift` |
+| List prices, platforms, context windows | `Sources/AgentHUDCore/Models/Catalog/ModelCatalog.swift`, `ModelPriceList.swift`, `PriceRegions.swift` |
+| Today, seven and thirty days | `Sources/AgentHUDCore/Models/Usage/UsagePeriods.swift`, `Ledger/UsageLedger.swift` |
+| Alert levels, thresholds and reading age, status colors | `Sources/AgentHUDCore/Logic/Alerts/AlertPolicy.swift`, `StatusLevel.swift` |
+| Reading status and assessment | `Sources/AgentHUDCore/Models/Accounts/ReadingStatus.swift` |
 | Which rows are present, levels, glow segments, menu figure and hints | `Sources/AgentHUDCore/Logic/ReportView.swift` |
-| Alert tracker, added usage resets, island events, forecast | `Sources/AgentHUDCore/Logic/QuotaAlerts.swift`, `ResetCreditGrants.swift`, `IslandEvents.swift`, `QuotaForecast.swift` |
-| Event union, analytics, history retention | `Sources/AgentHUDCore/Store/UsageAggregation.swift`, `QuotaHistoryStore.swift`, `Sources/AgentHUDCore/Logic/UsageAnalytics.swift` |
-| A window's remaining share, insights, outlook, projection and token rate | `Sources/AgentHUDCore/Logic/QuotaMath.swift` |
-| Session liveness and its limits, retained readings | `Sources/AgentHUDCore/Logic/SessionPhase.swift`, `Sources/AgentHUDCore/Models/LiveSession.swift`, `Sources/AgentHUDCore/Providers/RetainedUsageProvider.swift` |
-| Session breakdown | `Sources/AgentHUDCore/Models/SessionUsage.swift`, `Store/UsageLedger.swift`, `Providers/CombinedUsageProvider.swift` |
-| Accounts, current and previous readings, settings migration | `Sources/AgentHUDCore/Models/ProviderAccount.swift`, `ClientHome.swift`, `Sources/AgentHUDCore/Providers/RetainedUsageProvider.swift`, `Sources/AgentHUDCore/Store/SettingsStore.swift` |
+| Alert tracker, added usage resets, island events, forecast | `Sources/AgentHUDCore/Logic/Alerts/QuotaAlerts.swift`, `ResetCreditGrants.swift`, `IslandEvents.swift`, `Logic/Quota/QuotaForecast.swift` |
+| Event union, analytics, history retention | `Sources/AgentHUDCore/Providers/Kit/UsageAggregation.swift`, `Ledger/QuotaHistoryStore.swift`, `Logic/Quota/UsageAnalytics.swift` |
+| A window's remaining share, insights, outlook, projection and token rate | `Sources/AgentHUDCore/Logic/Quota/QuotaMath.swift` |
+| Session liveness and its limits, retained readings | `Sources/AgentHUDCore/Logic/SessionPhase.swift`, `Sources/AgentHUDCore/Models/Sessions/LiveSession.swift`, `Sources/AgentHUDCore/Providers/RetainedUsageProvider.swift` |
+| Session breakdown | `Sources/AgentHUDCore/Models/Sessions/SessionUsage.swift`, `Ledger/UsageLedger.swift`, `Providers/CombinedUsageProvider.swift` |
+| Accounts, current and previous readings, settings migration | `Sources/AgentHUDCore/Models/Accounts/ProviderAccount.swift`, `Providers/Kit/ClientHome.swift`, `Sources/AgentHUDCore/Providers/RetainedUsageProvider.swift`, `Sources/AgentHUDCore/Store/SettingsStore.swift` |
 
 ## Related
 

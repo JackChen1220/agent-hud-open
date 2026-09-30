@@ -55,11 +55,11 @@ Normal start-up already runs `SessionObservers.configure(executable:enabled:)` f
 | Concept | Code |
 | --- | --- |
 | Switch parsing | `Sources/AgentHUDDesktop/App/LaunchOptions.swift` |
-| One copy at a time | `Sources/AgentHUDCore/Store/InstanceLock.swift`, `Sources/AgentHUDDesktop/App/SingleInstance.swift` |
-| Adapter commands and hook handlers | `Sources/AgentHUDCore/Providers/Shared/HookEntry.swift` |
+| One copy at a time | `Sources/AgentHUDCore/System/InstanceLock.swift`, `Sources/AgentHUDDesktop/App/SingleInstance.swift` |
+| Adapter commands and hook handlers | `Sources/AgentHUDCore/Hooks/HookEntry.swift` |
 | Probes | `Sources/AgentHUDCore/Store/UsageProbe.swift`, `Sources/AgentHUDOpenApp/main.swift` |
 | Snapshot rendering | `Sources/AgentHUDDesktop/Debug/SnapshotRunner.swift` |
-| Real-window interaction tests | `Tests/AgentHUDDesktopTests/IslandAnimationTests.swift`, `IslandHoverTests.swift`, `AgentSettingsInteractionTests.swift` |
+| Real-window interaction tests | `Tests/AgentHUDDesktopTests/Notch/Island/IslandAnimationTests.swift`, `IslandHoverTests.swift`, `Settings/AgentSettingsInteractionTests.swift` |
 | Build script and targets | `scripts/build-app.sh`, `Makefile` |
 
 ## Related

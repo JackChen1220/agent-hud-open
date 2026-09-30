@@ -120,17 +120,18 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 | Concept | Code |
 | --- | --- |
 | JSON values, record coding | `Sources/AgentHUDSupport/JSONValue.swift`, `RecordCoding.swift` |
-| Provider protocol, combination, retention, observers | `Sources/AgentHUDCore/Providers/UsageProvider.swift`, `CombinedUsageProvider.swift`, `RetainedUsageProvider.swift`, `SessionObservers.swift` |
-| Per-client providers | `Sources/AgentHUDCore/Providers/<Client>/` |
-| Models and calculations | `Sources/AgentHUDCore/Models/`, `Sources/AgentHUDCore/Logic/` |
-| Vendor names, client and window names, app bundle IDs | `Sources/AgentHUDCore/Models/VendorCatalog.swift` |
-| Collection pipeline, signals and hooks; change sets | `Sources/AgentHUDCore/Store/UsageCollector.swift`, `FileChangeMonitor.swift`; `Sources/AgentHUDCore/Models/UsageChanges.swift` |
-| Stores and data directory | `Sources/AgentHUDCore/Store/UsageStore.swift`, `SettingsStore.swift`, `QuotaHistoryStore.swift`, `AppSupport.swift` |
+| Provider protocol, combination, retention, observers | `Sources/AgentHUDCore/Providers/UsageProvider.swift`, `CombinedUsageProvider.swift`, `RetainedUsageProvider.swift`; `Sources/AgentHUDCore/Hooks/SessionObservers.swift` |
+| Per-client providers, and the toolbox they share: JSON, files, HTTP, SQLite, log stores | `Sources/AgentHUDCore/Providers/<Client>/`; `Sources/AgentHUDCore/Providers/Kit/`, `Providers/Kit/Logs/` |
+| Models: usage, sessions, accounts, agents, catalog, settings; calculations: quota, alerts, what the Mac shows | `Sources/AgentHUDCore/Models/<Area>/`; `Sources/AgentHUDCore/Logic/`, `Logic/Quota/`, `Logic/Alerts/` |
+| Durations, token counts, dates and languages as written | `Sources/AgentHUDCore/Formatting/` |
+| Vendor names, client and window names, app bundle IDs | `Sources/AgentHUDCore/Models/Catalog/VendorCatalog.swift` |
+| Collection pipeline, signals and hooks; change sets | `Sources/AgentHUDCore/Store/UsageCollector.swift`, `System/FileChangeMonitor.swift`, `Models/Usage/UsageChanges.swift` |
+| Stores and data directory | `Sources/AgentHUDCore/Store/UsageStore.swift`, `SettingsStore.swift`, `Ledger/QuotaHistoryStore.swift`, `System/AppSupport.swift`; the usage ledger in `Sources/AgentHUDCore/Ledger/` |
 | Application object, launch options, host pages | `Sources/AgentHUDDesktop/App/DesktopApplication.swift`, `LaunchOptions.swift`, `Settings/DesktopSettingsPage.swift` |
-| One copy at a time | `Sources/AgentHUDCore/Store/InstanceLock.swift`, `Sources/AgentHUDDesktop/App/SingleInstance.swift` |
-| Island alerts: decision and presentation | `Sources/AgentHUDCore/Logic/IslandEvents.swift`, `QuotaAlerts.swift`; `Sources/AgentHUDDesktop/Notch/IslandController.swift`, `IslandAlert.swift` |
+| One copy at a time | `Sources/AgentHUDCore/System/InstanceLock.swift`, `Sources/AgentHUDDesktop/App/SingleInstance.swift` |
+| Island alerts: decision and presentation | `Sources/AgentHUDCore/Logic/Alerts/IslandEvents.swift`, `QuotaAlerts.swift`; `Sources/AgentHUDDesktop/Notch/Island/IslandController.swift`, `Notch/Alerts/IslandAlert.swift` |
 | Standalone entry, launch assembly and probe | `Sources/AgentHUDOpenApp/main.swift`; `Sources/AgentHUDCore/Store/UsageAssembly.swift`, `UsageProbe.swift` |
-| Hook and adapter commands, hook installation and records, the socket to hook processes, child processes | `Sources/AgentHUDCore/Providers/Shared/HookEntry.swift`, `HookInstaller.swift`, `HookInbox.swift`, `HookCommand.swift`; `Sources/AgentHUDCore/Store/UnixSocket.swift`, `ChildProcess.swift` |
+| Hook and adapter commands, hook installation and records, the socket to hook processes, child processes | `Sources/AgentHUDCore/Hooks/HookEntry.swift`, `HookInstaller.swift`, `HookInbox.swift`, `HookCommand.swift`; `Sources/AgentHUDCore/System/UnixSocket.swift`, `ChildProcess.swift` |
 | Build, boundary check, CI | `scripts/build-app.sh`, `scripts/check-source-boundaries.py`, `.github/workflows/ci.yml` |
 
 ## Related

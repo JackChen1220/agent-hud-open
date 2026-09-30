@@ -156,12 +156,12 @@ Files in the data directory ([architecture](architecture.md#storage)). None cont
 
 | Area | Code | Tests (`swift test --filter <ClassName>`; synthetic fixtures, no credentials or network) |
 | --- | --- | --- |
-| Claude Code | `Sources/AgentHUDCore/Providers/Claude/`; the notification hook in `Providers/Shared/AttentionHooks.swift` | `ClaudeEngineTests`, `ISO8601FastTests`, `ClaudeUsageParseTests`, `ClaudeTranscriptTests`, `AccumulatorCompactionTests`, `CooperativeIndexingTests`, `ClaudeCodeProviderTests`, `SubscriptionTests`, `AttentionHookTests` |
+| Claude Code | `Sources/AgentHUDCore/Providers/Claude/`; the notification hook in `Hooks/AttentionHooks.swift` | `ClaudeEngineTests`, `ISO8601FastTests`, `ClaudeUsageParseTests`, `ClaudeTranscriptTests`, `AccumulatorCompactionTests`, `CooperativeIndexingTests`, `ClaudeCodeProviderTests`, `SubscriptionTests`, `AttentionHookTests` |
 | Codex, DeepSeek | `Sources/AgentHUDCore/Providers/Codex/`, `DeepSeek/` | `CodexProviderTests`, `DeepSeekProviderTests` |
-| Antigravity, Cursor, Grok | `Sources/AgentHUDCore/Providers/Antigravity/`, `Cursor/`, `Grok/`; shared HTTP, SQLite and hooks in `Additional/` | `AdditionalProviderTests`, `CompletionHooksTests` |
+| Antigravity, Cursor, Grok | `Sources/AgentHUDCore/Providers/Antigravity/`, `Cursor/`, `Grok/`; shared HTTP and SQLite in `Providers/Kit/`, stop hooks in `Hooks/CompletionHooks.swift` | `AdditionalProviderTests`, `CompletionHooksTests` |
 | OpenCode, Kimi, GLM, Pi | `Sources/AgentHUDCore/Providers/OpenAgents/` | `OpenAgentProviderTests`, `KimiQuotaIdentityTests`, `PiSessionObserverTests` |
 | GitHub Copilot CLI, OpenClaw, Hermes Agent, ZCode, CodeBuddy, WorkBuddy, Qwen Code | `Sources/AgentHUDCore/Providers/Copilot/`, `OpenClaw/`, `Hermes/`, `ZCode/`, `TencentBuddy/`, `Qwen/`; per-client layouts through `Additional/LocalSessionLayout.swift` | `CopilotProviderTests`, `OpenClawProviderTests`, `HermesProviderTests`, `ZCodeProviderTests`, `TencentBuddyProviderTests`, `QwenProviderTests` |
-| Cross-provider | `Sources/AgentHUDCore/Providers/CombinedUsageProvider.swift`, `RetainedUsageProvider.swift`, `Sources/AgentHUDCore/Models/BillingPool.swift`, `ProviderAccount.swift`; log stores and parsing helpers in `Providers/Shared/` | `LedgerFileStoreTests`, `ProviderAccountTests`, `CombinedProviderTests`, `RetainedUsageProviderTests`, `UsageRefreshTests`, `LiveStatusTests`, `SessionSourceTests`, `QuotaHistoryStoreTests`, `UsageAnalyticsTests` |
+| Cross-provider | `Sources/AgentHUDCore/Providers/CombinedUsageProvider.swift`, `RetainedUsageProvider.swift`, `Sources/AgentHUDCore/Models/Accounts/BillingPool.swift`, `ProviderAccount.swift`; parsing helpers in `Providers/Kit/`, log stores in `Providers/Kit/Logs/` | `LedgerFileStoreTests`, `ProviderAccountTests`, `CombinedProviderTests`, `RetainedUsageProviderTests`, `UsageRefreshTests`, `LiveStatusTests`, `SessionSourceTests`, `QuotaHistoryStoreTests`, `UsageAnalyticsTests` |
 
 ## Upstream references
 
