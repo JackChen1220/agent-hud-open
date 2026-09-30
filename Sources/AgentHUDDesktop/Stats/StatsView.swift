@@ -168,15 +168,21 @@ struct StatsView: View {
     }
 
     private func sessionCount(_ theme: Theme) -> some View {
-        let sessions = store.listedSessions(source: sessionSource, activeOnly: activeOnly)
-        let running = sessions.filter(store.isSessionLive).count
+        let counts = Self.sessionCounts(store, source: sessionSource, activeOnly: activeOnly)
+        let listed = counts.listed, running = counts.running
         return HStack(spacing: 6) {
             Circle().fill(running > 0 ? theme.status(.ok) : theme.tertiary).frame(width: 6, height: 6)
-            Text(activeOnly ? L10n.text("近 24 小时 \(sessions.count) 个 · \(running) 个运行中", "\(sessions.count) in 24 hours · \(running) running")
-                            : L10n.text("近 7 天 \(sessions.count) 个 · \(running) 个运行中", "\(sessions.count) in 7 days · \(running) running"))
+            Text(activeOnly ? L10n.text("近 24 小时 \(listed) 个 · \(running) 个运行中", "\(listed) in 24 hours · \(running) running")
+                            : L10n.text("近 7 天 \(listed) 个 · \(running) 个运行中", "\(listed) in 7 days · \(running) running"))
         }
         .font(.ui(11))
         .foregroundStyle(theme.secondary)
+    }
+
+    /// How many sessions the list shows, and how many of them are running.
+    static func sessionCounts(_ store: UsageStore, source: SessionSource?, activeOnly: Bool) -> (listed: Int, running: Int) {
+        let sessions = store.listedSessions(source: source, activeOnly: activeOnly)
+        return (sessions.count, sessions.filter(store.isSessionLive).count)
     }
 
     /// Which token kinds the charts count: what calls added, everything, or any kinds picked one by one.

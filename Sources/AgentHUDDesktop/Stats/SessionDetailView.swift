@@ -33,8 +33,9 @@ struct SessionDetailView: View {
 
     private var header: some View {
         let source = store.sessionSource(session)
-        let dot = store.isSessionWaiting(session) ? theme.status(.warning)
-            : store.isSessionLive(session) ? AgentPalette.swiftUIColor(index: store.consumerPaletteIndex(session.agentId)) : theme.dotEnded
+        let kind = Self.dot(session, store: store)
+        let dot = kind == .waiting ? theme.status(.warning)
+            : kind == .running ? AgentPalette.swiftUIColor(index: store.consumerPaletteIndex(session.agentId)) : theme.dotEnded
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Circle().fill(dot).frame(width: 8, height: 8)
@@ -42,7 +43,7 @@ struct SessionDetailView: View {
                 Text(store.consumerName(session.agentId)).font(.ui(12, .semibold))
                 Text(source.name).font(.ui(12)).foregroundStyle(theme.secondary)
                 Spacer(minLength: 8)
-                Text(store.sessionStatusLabel(session)).font(.tabular(12)).foregroundStyle(theme.secondary)
+                Text(Self.statusLabel(session, store: store)).font(.tabular(12)).foregroundStyle(theme.secondary)
             }
             Text(session.task)
                 .font(.ui(16, .semibold))
@@ -62,6 +63,16 @@ struct SessionDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .card(theme, padding: EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14))
+    }
+
+    /// The header's dot: blocked on the user, running in its agent's colour, else grey.
+    static func dot(_ session: LiveSession, store: UsageStore) -> SessionDot {
+        store.isSessionWaiting(session) ? .waiting : store.isSessionLive(session) ? .running : .ended
+    }
+
+    /// The header's state, as the store words it.
+    static func statusLabel(_ session: LiveSession, store: UsageStore) -> String {
+        store.sessionStatusLabel(session)
     }
 
     /// Project, start time and how long the session has run.

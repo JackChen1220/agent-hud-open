@@ -148,8 +148,8 @@ struct HoverPanelView: View {
     /// different question. When nothing is running, the sessions that ended most recently take the same rows.
     /// The header opens the statistics window's Sessions page, a row that session's own page.
     private var sessionLine: some View {
-        let running = store.liveSessions
-        let shown = Array((running.isEmpty ? store.sessions : running).prefix(Self.sessionRowLimit))
+        let rows = Self.sessionRows(store)
+        let running = rows.running, shown = rows.shown
         return VStack(alignment: .leading, spacing: 6) {
             Button { openSessions() } label: {
                 HStack(spacing: 8) {
@@ -171,7 +171,7 @@ struct HoverPanelView: View {
                 ForEach(shown) { session in
                     Button { openSessions(session.id) } label: {
                         HStack(spacing: 8) {
-                            Circle().fill(sessionDot(session)).frame(width: 6, height: 6)
+                            Circle().fill(sessionDotColor(session)).frame(width: 6, height: 6)
                             Text("\(Self.shortTask(session.task)) · \(session.terminal ?? "—")")
                                 .lineLimit(1)
                                 .truncationMode(.tail)
@@ -184,9 +184,9 @@ struct HoverPanelView: View {
                     }
                     .help(session.task)
                 }
-                if running.count > shown.count {
+                if rows.more > 0 {
                     Button { openSessions() } label: {
-                        Text(L10n.text("还有 \(running.count - shown.count) 个", "+\(running.count - shown.count) more"))
+                        Text(L10n.text("还有 \(rows.more) 个", "+\(rows.more) more"))
                             .foregroundStyle(theme.secondary)
                     }
                 }
@@ -205,11 +205,26 @@ struct HoverPanelView: View {
         onOpenStats()
     }
 
+    /// Every running session, else the most recent ones, up to `sessionRowLimit`; and how many running sessions the rows
+    /// leave out.
+    static func sessionRows(_ store: UsageStore) -> (running: [LiveSession], shown: [LiveSession], more: Int) {
+        let running = store.liveSessions
+        let shown = Array((running.isEmpty ? store.sessions : running).prefix(sessionRowLimit))
+        return (running, shown, max(0, running.count - shown.count))
+    }
+
     /// A running session wears its agent's colour, one blocked on the user the warning colour, and an ended one grey.
-    private func sessionDot(_ session: LiveSession) -> Color {
-        if store.isSessionWaiting(session) { return theme.status(.warning) }
-        guard store.isSessionLive(session) else { return theme.dotEnded }
-        return AgentPalette.swiftUIColor(index: store.consumerPaletteIndex(session.agentId))
+    static func sessionDot(_ session: LiveSession, store: UsageStore) -> SessionDot {
+        if store.isSessionWaiting(session) { return .waiting }
+        return store.isSessionLive(session) ? .running : .ended
+    }
+
+    private func sessionDotColor(_ session: LiveSession) -> Color {
+        switch Self.sessionDot(session, store: store) {
+        case .waiting: return theme.status(.warning)
+        case .running: return AgentPalette.swiftUIColor(index: store.consumerPaletteIndex(session.agentId))
+        case .ended: return theme.dotEnded
+        }
     }
 
     private var footer: some View {

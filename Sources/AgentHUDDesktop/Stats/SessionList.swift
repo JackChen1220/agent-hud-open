@@ -37,9 +37,9 @@ struct SessionList: View {
             } else {
                 let groups = Self.groups(sessions, store: store, today: today, calendar: calendar)
                 ForEach(Array(groups.enumerated()), id: \.element.day) { index, group in
-                    let running = group.sessions.filter(store.isSessionLive).count
-                    let open = (group.day == today || running > 0) != flipped.contains(group.day)
-                    dayHeader(group.day, sessions: group.sessions, running: running, open: open, notesTurns: index == 0,
+                    let day = Self.dayState(group.day, sessions: group.sessions, today: today, store: store)
+                    let open = day.opens != flipped.contains(group.day)
+                    dayHeader(group.day, sessions: group.sessions, running: day.running, open: open, notesTurns: index == 0,
                               today: today, calendar: calendar)
                     if open { cards(group.sessions) }
                 }
@@ -60,6 +60,13 @@ struct SessionList: View {
         let earlier = sessions.filter { $0.startedAt < first }
         return store.sessionsByDay(sessions.filter { $0.startedAt >= first }, calendar: calendar)
             + (earlier.isEmpty ? [] : [(day: Date.distantPast, sessions: earlier)])
+    }
+
+    /// How many of a day's sessions are running, and whether the day starts open: today does, and so does any day with a
+    /// session still running.
+    static func dayState(_ day: Date, sessions: [LiveSession], today: Date, store: UsageStore) -> (running: Int, opens: Bool) {
+        let running = sessions.filter(store.isSessionLive).count
+        return (running, day == today || running > 0)
     }
 
     /// Sessions in one card, each opening its page.
@@ -210,6 +217,11 @@ struct SessionsTodayCard: View {
     }
 }
 
+/// The dot a session wears in the island, on its card and on its page: blocked on the user, running, or neither.
+enum SessionDot: Equatable {
+    case waiting, running, ended
+}
+
 /// One session as the phone lists it: its state, title and tokens with sub-agents'; model, project and cost; each recent
 /// turn's new tokens; its state, turns and how long the turn has run or how long ago it was active, and how full its
 /// context is. A click opens its page.
@@ -221,7 +233,8 @@ struct SessionCard: View {
 
     var body: some View {
         let usage = store.sessionUsage(session), tokens = store.sessionTokens(session)
-        let waiting = store.isSessionWaiting(session), running = !waiting && store.isSessionLive(session)
+        let kind = Self.dot(session, store: store)
+        let waiting = kind == .waiting, running = kind == .running
         let dot = waiting ? theme.status(.warning) : running ? theme.status(.ok) : theme.dotEnded
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
@@ -245,7 +258,7 @@ struct SessionCard: View {
                 TurnSparkline(usage: usage, theme: theme).frame(height: 22).padding(.leading, 15).padding(.top, 2)
             }
             HStack(spacing: 8) {
-                Text(status(usage, waiting: waiting, running: running)).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                Text(status(usage, dot: kind)).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
                 if let usage, let context = usage.contextTokens {
                     Text(L10n.text("上下文", "Context"))
                     if let fill = usage.contextFill {
@@ -295,14 +308,31 @@ struct SessionCard: View {
     }
 
     /// The state as the phone is told it, the turns, and how long the turn in flight has run or how long ago the session
-    /// was last active. Without live status there is no state.
-    private func status(_ usage: SessionUsage?, waiting: Bool, running: Bool) -> String {
-        let state = waiting ? L10n.text("等待批准", "Needs approval") : running ? L10n.text("运行中", "Running")
-            : store.liveStatusEnabled(for: session) ? L10n.text("等你回复", "Waiting for you") : nil
+    /// was last active.
+    private func status(_ usage: SessionUsage?, dot: SessionDot) -> String {
         let turns = usage.flatMap { $0.turnCount > 0 ? L10n.text("\($0.turnCount) 轮", $0.turnCount == 1 ? "1 turn" : "\($0.turnCount) turns") : nil }
-        let elapsed = waiting || running ? Countdown.format(store.now.timeIntervalSince(store.sessionTurnStart(session)))
-            : Self.age(store.now.timeIntervalSince(store.sessionLastActivity(session)))
-        return [state, turns, elapsed].compactMap { $0 }.joined(separator: " · ")
+        let interval = store.now.timeIntervalSince(Self.elapsedStart(session, dot: dot, store: store))
+        let elapsed = dot == .ended ? Self.age(interval) : Countdown.format(interval)
+        return [Self.state(session, dot: dot, store: store), turns, elapsed].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// Blocked on the user, else running, else neither.
+    static func dot(_ session: LiveSession, store: UsageStore) -> SessionDot {
+        store.isSessionWaiting(session) ? .waiting : store.isSessionLive(session) ? .running : .ended
+    }
+
+    /// The state as the phone is told it. Without live status there is no state.
+    static func state(_ session: LiveSession, dot: SessionDot, store: UsageStore) -> String? {
+        switch dot {
+        case .waiting: return L10n.text("等待批准", "Needs approval")
+        case .running: return L10n.text("运行中", "Running")
+        case .ended: return store.liveStatusEnabled(for: session) ? L10n.text("等你回复", "Waiting for you") : nil
+        }
+    }
+
+    /// What the elapsed time counts from: the start of the turn in flight, else the session's last activity.
+    static func elapsedStart(_ session: LiveSession, dot: SessionDot, store: UsageStore) -> Date {
+        dot == .ended ? store.sessionLastActivity(session) : store.sessionTurnStart(session)
     }
 
     /// How long ago, as the phone says it: in seconds, minutes, hours, then days.
