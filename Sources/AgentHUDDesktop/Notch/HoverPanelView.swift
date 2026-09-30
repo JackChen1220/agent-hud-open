@@ -303,6 +303,7 @@ private struct ProviderQuotaBlock: View {
                     ModelUsageRow(row: row, now: store.now, metric: metric,
                                   showReset: store.settings.settings.showResetCountdown, showVendor: false,
                                   insights: store.report?.insightsByAgent[row.id],
+                                  outlook: store.view.outlook(for: row.id),
                                   tokensPerHour: store.quotaTokensPerHour(for: row.id),
                                   forecastHint: store.quotaForecastHint(for: row.id),
                                   isLoading: store.isLoading)
@@ -429,6 +430,7 @@ struct ModelUsageRow: View {
     let showReset: Bool
     var showVendor = true
     var insights: UsageInsights?
+    var outlook: QuotaOutlook?
     var tokensPerHour: Double?
     var forecastHint: String?
     var theme: Theme = .island
@@ -454,7 +456,7 @@ struct ModelUsageRow: View {
         let value = metricValue
         let metricColor = switch metric {
         case .quota: color
-        case .burnRate: exhaustsBeforeReset == nil ? theme.status(.ok) : theme.status(.warning)
+        case .burnRate: runsOut ? theme.status(.warning) : theme.status(.ok)
         case .tokens: theme.status(.ok)
         }
         let valueColor = row.level == nil ? theme.secondary : metricColor
@@ -471,7 +473,7 @@ struct ModelUsageRow: View {
             ProgressTrack(fraction: (row.usedPct ?? 0) / 100,
                           projectedFraction: metric == .burnRate ? projectedUsedPct / 100 : nil,
                           fill: isLoading || row.level == nil ? theme.secondary : color,
-                          projectionFill: exhaustsBeforeReset == nil ? theme.secondary : theme.status(.warning),
+                          projectionFill: runsOut ? theme.status(.warning) : theme.secondary,
                           track: theme.track, isLoading: isLoading)
                 .frame(height: 4)
             Text(value ?? "—")
@@ -482,7 +484,7 @@ struct ModelUsageRow: View {
             if showsDetail {
                 Text(metricDetail)
                     .font(.tabular(12))
-                    .foregroundStyle(metric == .burnRate && exhaustsBeforeReset != nil ? theme.status(.warning) : theme.secondary)
+                    .foregroundStyle(metric == .burnRate && runsOut ? theme.status(.warning) : theme.secondary)
                     .lineLimit(1)
                     .frame(width: 96, alignment: .trailing)
                     .contentTransition(.numericText())
@@ -497,7 +499,7 @@ struct ModelUsageRow: View {
     }
 
     private var metrics: QuotaRowMetrics {
-        QuotaRowMetrics(row: row, insights: insights, now: now, tokensPerHour: tokensPerHour)
+        QuotaRowMetrics(row: row, insights: insights, outlook: outlook, now: now, tokensPerHour: tokensPerHour)
     }
 
     private var metricValue: String? { metrics.value(metric) }
@@ -506,7 +508,7 @@ struct ModelUsageRow: View {
 
     private var metricDetail: String { metrics.detail(metric, isLoading: isLoading) }
 
-    private var exhaustsBeforeReset: Date? { metrics.exhaustsBeforeReset }
+    private var runsOut: Bool { metrics.runsOut }
 
     private var exhaustionTimeLabel: String? { metrics.exhaustionTimeLabel }
 
@@ -519,7 +521,7 @@ struct ModelUsageRow: View {
 
     private var projectedUsedPct: Double {
         guard metric == .burnRate else { return row.usedPct ?? 0 }
-        return exhaustsBeforeReset == nil ? projectedAtReset ?? row.usedPct ?? 0 : 100
+        return runsOut ? 100 : projectedAtReset ?? row.usedPct ?? 0
     }
 
     private var nameText: Text {
@@ -532,17 +534,20 @@ struct ModelUsageRow: View {
 }
 
 /// What a quota row's measures read at `now`: the share used, the burn rate from its window's insights and the rate
-/// tokens are spent at, each with the detail shown beside it. A row whose reading shows no level has no burn rate,
-/// projection or token rate.
+/// tokens are spent at, each with the detail shown beside it. The burn rate's detail, colour and projection follow the
+/// window's outlook as Core weighs it (`ReportView.outlook(for:)`), so the row and the hover hint agree. A row whose
+/// reading shows no level has no burn rate, outlook, projection or token rate.
 struct QuotaRowMetrics {
     let row: AgentRow
     let insights: UsageInsights?
+    let outlook: QuotaOutlook?
     let now: Date
     let tokensPerHour: Double?
 
-    init(row: AgentRow, insights: UsageInsights?, now: Date, tokensPerHour: Double?) {
+    init(row: AgentRow, insights: UsageInsights?, outlook: QuotaOutlook?, now: Date, tokensPerHour: Double?) {
         self.row = row
         self.insights = row.assessment.showsLevel ? insights : nil
+        self.outlook = row.assessment.showsLevel ? outlook : nil
         self.now = now
         self.tokensPerHour = row.assessment.showsLevel ? tokensPerHour : nil
     }
@@ -564,23 +569,24 @@ struct QuotaRowMetrics {
         case .quota:
             return row.resetLabel(now: now)
         case .burnRate:
-            guard row.assessment.showsLevel else { return "—" }
-            if let remaining = row.remainingPct, remaining <= AlertPolicy.exhaustedRemaining { return L10n.text("已耗尽", "Exhausted") }
+            guard let outlook else { return "—" }
+            // The row gives the time the rest runs out at, where the hint gives how long it lasts.
             if let exhaustionTimeLabel { return exhaustionTimeLabel }
-            if let projected = projectedAtReset { return QuotaForecast.byReset(projected) }
-            if insights?.burnRatePctPerHour == 0 { return L10n.text("暂无消耗", "No usage") }
-            return L10n.text("记录不足", "Insufficient data")
+            return QuotaForecast.text(of: outlook, projectedUsedAtReset: projectedAtReset) ?? "—"
         case .tokens:
             return tokensPerHour.map { TokenFormat.short(Int(($0 * 24).rounded())) + L10n.text(" / 天", " / day") } ?? "—"
         }
     }
 
-    /// Time at which this pace consumes the rest, only when that happens before the provider resets the window.
+    /// Time at which this pace consumes the rest, only when the outlook has that happen before the window resets.
     var exhaustsBeforeReset: Date? {
-        guard let exhaustion = QuotaMath.exhaustion(insights: insights, resetAt: row.resetAt, now: now),
-              exhaustion.beforeReset else { return nil }
-        return now.addingTimeInterval(exhaustion.interval)
+        guard case .exhausts(let interval, beforeReset: true) = outlook else { return nil }
+        return now.addingTimeInterval(interval)
     }
+
+    /// Whether the window has run out, or runs out before its reset at this pace: the burn rate then wears the warning
+    /// colour and the projection reaches the end of the track.
+    var runsOut: Bool { outlook == .exhausted || exhaustsBeforeReset != nil }
 
     var exhaustionTimeLabel: String? {
         guard let date = exhaustsBeforeReset else { return nil }
@@ -590,9 +596,11 @@ struct QuotaRowMetrics {
             .locale(Locale(identifier: L10n.resolved == .zhHans ? "zh_CN" : "en_GB")))
     }
 
-    /// Used by the reset at the existing burn rate; the UI does not invent a second forecast.
+    /// Used by the reset at the existing burn rate, when the outlook has the rest last past the reset; the UI does not
+    /// invent a second forecast.
     var projectedAtReset: Double? {
-        row.usedPct.flatMap { QuotaMath.projectedUsedAtReset(usedPct: $0, insights: insights, resetAt: row.resetAt, now: now) }
+        guard case .exhausts(_, beforeReset: false) = outlook else { return nil }
+        return row.usedPct.flatMap { QuotaMath.projectedUsedAtReset(usedPct: $0, insights: insights, resetAt: row.resetAt, now: now) }
     }
 }
 

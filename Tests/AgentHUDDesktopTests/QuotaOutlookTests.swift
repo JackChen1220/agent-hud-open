@@ -52,7 +52,7 @@ final class QuotaOutlookTests: XCTestCase {
         var hint: String?
         /// How far ahead the island row puts the window running out before its reset.
         var exhaustsIn: TimeInterval?
-        /// The share the island row projects to be used by the reset.
+        /// The share the island row projects to be used by the reset of a window that lasts past it.
         var projected: Double?
         /// The island row's burn-rate detail.
         var detail: String
@@ -64,22 +64,23 @@ final class QuotaOutlookTests: XCTestCase {
         let hour = hour
         /// The weekday and time `interval` from now, as the island row writes a nearby exhaustion in this Mac's time zone.
         func at(_ interval: TimeInterval) -> String { ChartData.weekdayTime(now.addingTimeInterval(interval)) }
+        // The row says what the hint says, except that it gives the time a window runs out at before its reset.
         let expected: [(String, Outlook)] = [
-            ("untimed", .init(hint: nil, exhaustsIn: 5 * hour, projected: nil, detail: at(5 * hour), tokensPerHour: nil)),
-            ("exhausted", .init(hint: "Exhausted", exhaustsIn: nil, projected: 100, detail: "Exhausted", tokensPerHour: 1000)),
+            ("untimed", .init(hint: nil, exhaustsIn: nil, projected: nil, detail: "—", tokensPerHour: nil)),
+            ("exhausted", .init(hint: "Exhausted", exhaustsIn: nil, projected: nil, detail: "Exhausted", tokensPerHour: 1000)),
             // Half a point left is exhausted.
-            ("nearlyExhausted", .init(hint: "Exhausted", exhaustsIn: 3 * 60, projected: 100, detail: "Exhausted", tokensPerHour: 1000)),
-            ("noCycle", .init(hint: "No estimate", exhaustsIn: nil, projected: 70, detail: "70% by reset", tokensPerHour: nil)),
+            ("nearlyExhausted", .init(hint: "Exhausted", exhaustsIn: nil, projected: nil, detail: "Exhausted", tokensPerHour: 1000)),
+            ("noCycle", .init(hint: "No estimate", exhaustsIn: nil, projected: nil, detail: "No estimate", tokensPerHour: nil)),
             ("noInsights", .init(hint: "Insufficient data", exhaustsIn: nil, projected: nil, detail: "Insufficient data", tokensPerHour: 1000)),
-            ("noUsage", .init(hint: "No usage", exhaustsIn: nil, projected: 50, detail: "50% by reset", tokensPerHour: 1000)),
+            ("noUsage", .init(hint: "No usage", exhaustsIn: nil, projected: nil, detail: "No usage", tokensPerHour: 1000)),
             ("insufficientData", .init(hint: "Insufficient data", exhaustsIn: nil, projected: nil, detail: "Insufficient data", tokensPerHour: 1000)),
-            ("zeroTimeToExhaust", .init(hint: "Insufficient data", exhaustsIn: nil, projected: 70, detail: "70% by reset", tokensPerHour: 1000)),
-            ("infiniteTime", .init(hint: "Insufficient data", exhaustsIn: nil, projected: 70, detail: "70% by reset", tokensPerHour: 1000)),
-            ("exhaustsBeforeReset", .init(hint: "Exhausts ~1h", exhaustsIn: hour, projected: 100, detail: at(hour), tokensPerHour: 1000)),
+            ("zeroTimeToExhaust", .init(hint: "Insufficient data", exhaustsIn: nil, projected: nil, detail: "Insufficient data", tokensPerHour: 1000)),
+            ("infiniteTime", .init(hint: "Insufficient data", exhaustsIn: nil, projected: nil, detail: "Insufficient data", tokensPerHour: 1000)),
+            ("exhaustsBeforeReset", .init(hint: "Exhausts ~1h", exhaustsIn: hour, projected: nil, detail: at(hour), tokensPerHour: 1000)),
             ("exhaustsAfterReset", .init(hint: "70% by reset", exhaustsIn: nil, projected: 70, detail: "70% by reset", tokensPerHour: 1000)),
             // A reading whose reset passed shows no level, so the row gives it no burn rate or token rate.
             ("resetPassed", .init(hint: "Insufficient data", exhaustsIn: nil, projected: nil, detail: "—", tokensPerHour: nil)),
-            ("weekly", .init(hint: "Exhausts ~50h", exhaustsIn: 50 * hour, projected: 100, detail: at(50 * hour), tokensPerHour: 1167)),
+            ("weekly", .init(hint: "Exhausts ~50h", exhaustsIn: 50 * hour, projected: nil, detail: at(50 * hour), tokensPerHour: 1167)),
             ("fullWindow", .init(hint: "Insufficient data", exhaustsIn: nil, projected: nil, detail: "Insufficient data", tokensPerHour: 1000)),
         ]
         XCTAssertEqual(expected.map { $0.0 }, grid.map(\.name))
@@ -94,6 +95,10 @@ final class QuotaOutlookTests: XCTestCase {
                                        detail: metrics.detail(.burnRate, isLoading: false),
                                        tokensPerHour: store.quotaTokensPerHour(for: window.name)), outlook, name)
             }
+            // The burn rate wears the warning colour, and its projection fills the track, for a window that ran out or runs
+            // out before its reset.
+            XCTAssertEqual(try grid.map(\.name).filter { try metrics($0, in: store).runsOut },
+                           ["exhausted", "nearlyExhausted", "exhaustsBeforeReset", "weekly"])
         }
     }
 
@@ -161,7 +166,7 @@ final class QuotaOutlookTests: XCTestCase {
     /// The island row's measures of one window, built from the store as the panel builds them.
     @MainActor
     private func metrics(_ id: String, in store: UsageStore) throws -> QuotaRowMetrics {
-        QuotaRowMetrics(row: try XCTUnwrap(store.row(for: id)), insights: store.report?.insightsByAgent[id], now: store.now,
-                        tokensPerHour: store.quotaTokensPerHour(for: id))
+        QuotaRowMetrics(row: try XCTUnwrap(store.row(for: id)), insights: store.report?.insightsByAgent[id],
+                        outlook: store.view.outlook(for: id), now: store.now, tokensPerHour: store.quotaTokensPerHour(for: id))
     }
 }
