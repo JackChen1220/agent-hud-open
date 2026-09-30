@@ -131,7 +131,7 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 | One copy at a time | `Sources/AgentHUDCore/System/InstanceLock.swift`, `Sources/AgentHUDDesktop/App/SingleInstance.swift` |
 | Island alerts: decision and presentation | `Sources/AgentHUDCore/Logic/Alerts/IslandEvents.swift`, `QuotaAlerts.swift`; `Sources/AgentHUDDesktop/Notch/Island/IslandController.swift`, `Notch/Alerts/IslandAlert.swift` |
 | Standalone entry, launch assembly and probe | `Sources/AgentHUDOpenApp/main.swift`; `Sources/AgentHUDCore/Store/UsageAssembly.swift`, `UsageProbe.swift` |
-| Hook and adapter commands, hook installation and records, the socket to hook processes, child processes | `Sources/AgentHUDCore/Hooks/HookEntry.swift`, `HookInstaller.swift`, `HookInbox.swift`, `HookCommand.swift`; `Sources/AgentHUDCore/System/UnixSocket.swift`, `ChildProcess.swift` |
+| Hook and adapter commands, hook installation and records, the socket to hook processes, child processes | `Sources/AgentHUDCore/Hooks/HookEntry.swift`, `HookInstaller.swift`, `HookInbox.swift`, `HookCommand.swift`; `Sources/AgentHUDCore/System/UnixSocket.swift`, `UnixSocketListener.swift`, `ChildProcess.swift` |
 | Build, boundary check, CI | `scripts/build-app.sh`, `scripts/check-source-boundaries.py`, `.github/workflows/ci.yml` |
 
 ## Related
