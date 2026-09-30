@@ -49,7 +49,7 @@ Which clients expose running and terminal turns, which of them say they are wait
 ### Pi observer
 
 - The standalone host installs or updates its extension under the Pi directory (`PI_CODING_AGENT_DIR`, default `~/.pi/agent`) whenever that directory exists; existing Pi processes need one `/reload`, new ones load it automatically. A same-named file that is not Agent HUD's is left alone.
-- The observer writes metadata-only turn snapshots, keeps retries, compaction and queued continuations inside one run until `agent_settled`, and reports a completion only for a successful final response; errors, cancellation and shutdown end activity without claiming success. A run with no shutdown event stops being live 30 minutes after its last snapshot; snapshots are kept 7 days.
+- The observer writes metadata-only turn snapshots, keeps retries, compaction and queued continuations inside one run until `agent_settled`, and reports a completion only for a successful final response; errors, cancellation and shutdown end activity without claiming success. While a run is active the observer refreshes its snapshot every 15 seconds; a run whose last snapshot is 120 seconds old stops being live and ends without claiming success. Snapshots are kept 7 days.
 - Token totals still come only from Pi's message transcripts; installing the observer replays no reminders and creates no usage events.
 
 ### Notification hook
