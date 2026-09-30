@@ -106,20 +106,14 @@ final class UsageInsightsTests: XCTestCase {
         assertInsights(report, ids, [.session: session, .weekly: weekly, .monthly: monthly])
     }
 
-    /// Kimi and GLM read readings and count caps over the statistics range, a week at the least: 169 hours reach the cap
-    /// just outside the week and 745 hours the one before it, while a week leaves out the 30-day window's cycle start.
-    func testKimiAndGLMFollowTheStatisticsRange() async throws {
+    /// Kimi and GLM read windows as Codex does, whatever the statistics range: caps count over the last week, and the
+    /// 30-day window reads from the start of its cycle.
+    func testKimiAndGLMReadWindowsAsCodexDoesWhateverTheStatisticsRange() async throws {
         let now = now
         let credentials = [OpenAgentCredentials.credential(.kimi, token: "kimi-key", client: "Kimi"),
                            OpenAgentCredentials.credential(.glmChina, token: "glm-key", client: "GLM")]
         let ids = credentials.flatMap { credential in Window.allCases.map { ($0, credential.pool.windowID($0.rawValue)) } }
-        let weekOnly = Insight(burn: 5.0 / 144, exhaustHours: 1872)
-        let expected: [(historyHours: Int, weekly: Insight, monthly: Insight)] = [
-            (48, weekly, weekOnly),
-            (169, Insight(burn: 10.0 / 30, exhaustHours: 180, capHits: 2, waitHours: 10.5, longestWaitHours: 10, longestWaitHoursAgo: 120), weekOnly),
-            (745, Insight(burn: 10.0 / 30, exhaustHours: 180, capHits: 3, waitHours: 11.5, longestWaitHours: 10, longestWaitHoursAgo: 120), monthly),
-        ]
-        for (hours, weekly, monthly) in expected {
+        for (hours, weekly, monthly) in [48, 169, 745].map({ ($0, weekly, monthly) }) {
             let provider = OpenAgentUsageProvider(credentials: { credentials }, sessions: { _ in .init() }, fetchQuota: { credential, _ in
                 ProviderQuota(windows: Window.allCases.map {
                     .init(id: credential.pool.windowID($0.rawValue), label: $0.rawValue, remaining: $0.remaining,

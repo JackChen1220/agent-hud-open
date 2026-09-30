@@ -162,7 +162,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
         var insights: [String: UsageInsights] = [:]
         for snapshot in snapshots {
             let readings = await history.samples(agentId: snapshot.agentId, since: QuotaMath.historyStart(for: snapshot, now: now))
-            insights[snapshot.agentId] = QuotaMath.insights(snapshot: snapshot, samples: readings, capsSince: weekAgo, now: now)
+            insights[snapshot.agentId] = QuotaMath.insights(snapshot: snapshot, samples: readings, now: now)
         }
         // Every notice is shown; only a quota reading that failed holds back the vendor's alerts, levels and retained sessions.
         let notice = [quotaNotice, quota.displayNotice, local.notice, hookNotice].compactMap { $0 }.joined(separator: " · ")

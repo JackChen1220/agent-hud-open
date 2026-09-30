@@ -565,7 +565,7 @@ struct QuotaRowMetrics {
             return row.resetLabel(now: now)
         case .burnRate:
             guard row.assessment.showsLevel else { return "—" }
-            if row.usedPct == 100 { return L10n.text("已耗尽", "Exhausted") }
+            if let remaining = row.remainingPct, remaining <= AlertPolicy.exhaustedRemaining { return L10n.text("已耗尽", "Exhausted") }
             if let exhaustionTimeLabel { return exhaustionTimeLabel }
             if let projected = projectedAtReset {
                 return L10n.text("重置时 \(Int(projected.rounded()))%", "\(Int(projected.rounded()))% by reset")

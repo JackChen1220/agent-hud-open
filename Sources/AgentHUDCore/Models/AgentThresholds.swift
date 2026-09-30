@@ -4,10 +4,8 @@ import Foundation
 public enum AlertPolicy {
     public static let warningUsed: Double = 70
     public static let criticalUsed: Double = 90
-    /// Remaining % at or below which a window is exhausted.
-    public static let exhaustedRemaining: Double = 0
-    /// Remaining % at or below which a stored reading counts as the window being at its cap.
-    public static let capRemaining: Double = 0.5
+    /// Remaining % at or below which a window is exhausted: for its alerts, its outlook, its row and its cap hits alike.
+    public static let exhaustedRemaining: Double = 0.5
     /// Old observations remain visible but must not generate new quota alerts.
     public static let maximumReadingAge: TimeInterval = 30 * 60
     /// Readings wobble by a point or two between queries; only a larger rise is a reset.

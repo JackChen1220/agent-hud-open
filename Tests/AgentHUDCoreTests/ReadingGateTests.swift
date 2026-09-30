@@ -162,7 +162,9 @@ final class ReadingGateTests: XCTestCase {
             ("an exhausted sibling read in the future", snapshot(weekly, remaining: 0, resetIn: 86400, at: now.addingTimeInterval(60)), []),
             ("an exhausted sibling whose reset has passed", snapshot(weekly, remaining: 0, resetIn: -60, at: now.addingTimeInterval(-60)), []),
             ("an exhausted sibling without a reset", snapshot(weekly, remaining: 0, resetIn: nil, at: now.addingTimeInterval(-60)), []),
-            ("a sibling with a fraction left", snapshot(weekly, remaining: 0.4, resetIn: 86400, at: now.addingTimeInterval(-60)), []),
+            ("a sibling with under half a point left", snapshot(weekly, remaining: 0.4, resetIn: 86400, at: now.addingTimeInterval(-60)),
+             ["Weekly"]),
+            ("a sibling with more than half a point left", snapshot(weekly, remaining: 0.6, resetIn: 86400, at: now.addingTimeInterval(-60)), []),
         ]
         let accounts = ["Codex": [AccountObservation(account: account, observedAt: now.addingTimeInterval(-60))]]
         for (name, sibling, expected) in cases {

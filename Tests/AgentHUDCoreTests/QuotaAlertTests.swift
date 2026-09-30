@@ -71,6 +71,17 @@ final class QuotaAlertTests: XCTestCase {
         XCTAssertTrue(feed(&initiallyEmpty, remaining: 0, elapsed: 0).exhaustedAgentIDs.isEmpty)
     }
 
+    /// A window with half a point or less left is exhausted, as its cap statistics count it; one with more is not yet.
+    func testHalfAPointLeftIsExhausted() {
+        for (remaining, exhausted) in [(0.6, false), (0.5, true), (0.2, true)] {
+            var tracker = QuotaAlertTracker()
+            _ = feed(&tracker, remaining: 50, elapsed: 0)
+            let update = feed(&tracker, remaining: remaining, elapsed: 120)
+            XCTAssertEqual(update.exhaustedAgentIDs == [agent.id], exhausted, "\(remaining)")
+            XCTAssertEqual(update.alerts.map(\.kind), [.exhaustion], "\(remaining)")
+        }
+    }
+
     func testForecastWarningDoesNotDuplicateAtCriticalButSystemThresholdStillWorks() {
         var tracker = QuotaAlertTracker()
         _ = feed(&tracker, remaining: 50, elapsed: 0)

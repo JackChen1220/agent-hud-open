@@ -173,14 +173,12 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
             )
         }
 
-        // 3. Insights from each window's readings of the last week; the session window gets them even without a reading.
-        let sessionSamples = await history.samples(agentId: sessionRowId, since: weekAgo)
-        var insightsByAgent: [String: UsageInsights] = account == nil ? [:] : [sessionRowId: QuotaMath.insights(
-            snapshot: snapshots.first { $0.agentId == sessionRowId }, samples: sessionSamples, capsSince: weekAgo, now: now)]
-        for row in windowRows where row.id != sessionRowId {
-            let samples = await history.samples(agentId: row.id, since: weekAgo)
-            insightsByAgent[row.id] = QuotaMath.insights(snapshot: snapshots.first { $0.agentId == row.id }, samples: samples,
-                                                         capsSince: weekAgo, now: now)
+        // 3. Insights from each window's stored readings; the session window gets them even without a reading.
+        var insightsByAgent: [String: UsageInsights] = [:]
+        for id in (account == nil ? [] : [sessionRowId]) + windowRows.map(\.id).filter({ $0 != sessionRowId }) {
+            let snapshot = snapshots.first { $0.agentId == id }
+            let samples = await history.samples(agentId: id, since: QuotaMath.historyStart(for: snapshot, now: now))
+            insightsByAgent[id] = QuotaMath.insights(snapshot: snapshot, samples: samples, now: now)
         }
         let consumerIds = Set(consumers.map(\.id) + listed.map(\.agentId))
         var consumerIdsByQuota: [String: Set<String>] = [:]

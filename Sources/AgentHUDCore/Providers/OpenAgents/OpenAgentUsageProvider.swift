@@ -242,16 +242,16 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
                     observedAt: result.at, quotaNotice: result.notice, readingIssue: result.notice.map(ReadingIssue.unverified)))
             }
             for window in quota.windows {
-                snapshots.append(.init(agentId: window.id, remainingPct: window.remaining, resetAt: window.reset,
-                    windowDuration: window.duration, updatedAt: result.at))
+                let snapshot = UsageSnapshot(agentId: window.id, remainingPct: window.remaining, resetAt: window.reset,
+                                             windowDuration: window.duration, updatedAt: result.at)
+                snapshots.append(snapshot)
                 descriptors.append(.init(id: window.id, vendor: pool.provider, model: window.label + (quota.plan.map { " · " + $0 } ?? ""),
                     source: result.credential.clients.sorted().joined(separator: ", "), enabled: true, billingPool: pool,
                     account: ProviderAccount(pool: pool)))
                 // Historical records lacking a pool must not inherit the current credential's quota.
                 links[window.id] = Set(events.filter { $0.attribution?.pool == pool }.map(\.agentId))
-                // Readings and cap hits over the statistics range, a week at the least.
-                let readings = await history.samples(agentId: window.id, since: since)
-                insights[window.id] = QuotaMath.insights(snapshot: snapshots.last, samples: readings, capsSince: since, now: now)
+                let readings = await history.samples(agentId: window.id, since: QuotaMath.historyStart(for: snapshot, now: now))
+                insights[window.id] = QuotaMath.insights(snapshot: snapshot, samples: readings, now: now)
             }
         }
         return UsageReport(generatedAt: now, snapshots: snapshots, sessions: live,

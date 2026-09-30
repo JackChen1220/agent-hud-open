@@ -67,7 +67,8 @@ final class QuotaOutlookTests: XCTestCase {
         let expected: [(String, Outlook)] = [
             ("untimed", .init(hint: nil, exhaustsIn: 5 * hour, projected: nil, detail: at(5 * hour), tokensPerHour: nil)),
             ("exhausted", .init(hint: "Exhausted", exhaustsIn: nil, projected: 100, detail: "Exhausted", tokensPerHour: 1000)),
-            ("nearlyExhausted", .init(hint: "Exhausts ~3m", exhaustsIn: 3 * 60, projected: 100, detail: at(3 * 60), tokensPerHour: 1000)),
+            // Half a point left is exhausted.
+            ("nearlyExhausted", .init(hint: "Exhausted", exhaustsIn: 3 * 60, projected: 100, detail: "Exhausted", tokensPerHour: 1000)),
             ("noCycle", .init(hint: "No estimate", exhaustsIn: nil, projected: 70, detail: "70% by reset", tokensPerHour: nil)),
             ("noInsights", .init(hint: "Insufficient data", exhaustsIn: nil, projected: nil, detail: "Insufficient data", tokensPerHour: 1000)),
             ("noUsage", .init(hint: "No usage", exhaustsIn: nil, projected: 50, detail: "50% by reset", tokensPerHour: 1000)),

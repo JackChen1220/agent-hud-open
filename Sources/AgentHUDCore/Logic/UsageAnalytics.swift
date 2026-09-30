@@ -52,7 +52,7 @@ public enum UsageAnalytics {
     }
 
     /// Times the window hit its cap (remaining ≤ `threshold`) and how long each outage lasted.
-    public static func capStats(samples: [QuotaSample], threshold: Double = AlertPolicy.capRemaining, now: Date) -> CapStats {
+    public static func capStats(samples: [QuotaSample], threshold: Double = AlertPolicy.exhaustedRemaining, now: Date) -> CapStats {
         let sorted = samples.sorted { $0.timestamp < $1.timestamp }
         var hits = 0
         var total: TimeInterval = 0

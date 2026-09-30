@@ -153,7 +153,7 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
         var byAgent: [String: UsageInsights] = [:]
         for snapshot in snapshots {
             let samples = await history.samples(agentId: snapshot.agentId, since: QuotaMath.historyStart(for: snapshot, now: now))
-            byAgent[snapshot.agentId] = QuotaMath.insights(snapshot: snapshot, samples: samples, capsSince: weekAgo, now: now)
+            byAgent[snapshot.agentId] = QuotaMath.insights(snapshot: snapshot, samples: samples, now: now)
         }
         // Spawned agents and guardians keep rollouts of their own that name the thread that started them; a session's
         // breakdown takes every rollout below it.
