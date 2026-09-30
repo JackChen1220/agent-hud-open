@@ -480,6 +480,29 @@ final class DeepSeekProviderTests: XCTestCase {
         XCTAssertEqual(combined.billing, report.billing)
     }
 
+    func testABalanceSaysWhenItRunsOutFromItsReadingsSinceTheLastTopUp() async throws {
+        let dir = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let root = dir.appendingPathComponent("sessions")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        final class Account: @unchecked Sendable { var now: Date; var total = "8.85"; init(_ now: Date) { self.now = now } }
+        let account = Account(now), start = now
+        let provider = DeepSeekUsageProvider(directory: dir, transcripts: DeepSeekTranscriptStore(root: root), readBalance: {
+            try JSONDecoder().decode(DeepSeekBalance.self, from: Data(Self.balanceJSON.replacingOccurrences(of: "8.85", with: account.total).utf8))
+        }, clock: { account.now })
+        func runsOut() async throws -> Date? {
+            try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 24).billing.first?.balances.first?.runsOutAt
+        }
+        let first = try await runsOut()
+        XCTAssertNil(first, "one reading has no pace")
+        (account.now, account.total) = (start.addingTimeInterval(4 * 3600), "8.81")
+        let falling = try await runsOut()
+        XCTAssertEqual(try XCTUnwrap(falling).timeIntervalSince(account.now), 881 * 3600, accuracy: 0.001, "a cent an hour leaves 881 hours")
+        (account.now, account.total) = (start.addingTimeInterval(5 * 3600), "20.81")
+        let toppedUp = try await runsOut()
+        XCTAssertNil(toppedUp, "a top-up starts the trend again")
+    }
+
     func testBalanceFailureKeepsLocalDataAndUnpricedCostsStayUnknown() async throws {
         let dir = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

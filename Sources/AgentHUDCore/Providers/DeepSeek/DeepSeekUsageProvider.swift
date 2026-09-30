@@ -7,16 +7,22 @@ public actor DeepSeekUsageProvider: UsageProvider, LedgerRecording {
     private let clock: @Sendable () -> Date
     private let readBalance: @Sendable () async throws -> DeepSeekBalance?
     private let readProcessStarts: @Sendable () async -> [Date]
+    /// Where the balance's readings are kept for its trend.
+    private let ledger: UsageLedger
     private var lastBalance: (at: Date, result: Result<DeepSeekBalance?, UsageProviderError>)?
+    /// When each currency's balance runs out, as of the last reading.
+    private var runsOut: [String: Date] = [:]
     private var lastProcessStarts: (at: Date, starts: [Date])?
 
     public init(directory: URL, transcripts: DeepSeekTranscriptStore,
                 readBalance: @escaping @Sendable () async throws -> DeepSeekBalance? = { nil },
                 readProcessStarts: @escaping @Sendable () async -> [Date] = { [] },
+                ledger: UsageLedger = .inMemory(),
                 clock: @escaping @Sendable () -> Date = { Date() }) {
         self.directory = directory; self.transcripts = transcripts; self.clock = clock
         self.readBalance = readBalance
         self.readProcessStarts = readProcessStarts
+        self.ledger = ledger
     }
 
     public static func standard(ledger: UsageLedger) -> DeepSeekUsageProvider {
@@ -24,8 +30,11 @@ public actor DeepSeekUsageProvider: UsageProvider, LedgerRecording {
         return DeepSeekUsageProvider(directory: directory, transcripts: DeepSeekTranscriptStore(
             root: directory.appendingPathComponent("sessions"), ledger: ledger),
             readBalance: { try await DeepSeekBalanceClient(directory: directory).fetch() },
-            readProcessStarts: { await DeepSeekRuntime.processStarts(directory: directory) })
+            readProcessStarts: { await DeepSeekRuntime.processStarts(directory: directory) }, ledger: ledger)
     }
+
+    /// The billing account the balance's readings are kept under, as its cost buckets are.
+    static let billing = "DeepSeek"
 
     public nonisolated var watchedDirectories: [URL]? { [transcripts.root] }
     public func fileChanges(_ paths: Set<String>?) async { await transcripts.fileChanges(paths) }
@@ -33,8 +42,19 @@ public actor DeepSeekUsageProvider: UsageProvider, LedgerRecording {
     public func refreshAccountUsage(historyHours: Int) async {
         guard DeepSeekLocator.isInstalled(directory: directory) else { return }
         let now = clock()
-        do { lastBalance = (now, .success(try await readBalance())) }
-        catch {
+        do {
+            let balance = try await readBalance()
+            lastBalance = (now, .success(balance))
+            runsOut = [:]
+            guard let balance else { return }
+            let ledger = ledger
+            _ = try? await ledger.write { try $0.appendBalances(balance.balances, billing: Self.billing, at: now) }
+            for item in balance.balances {
+                let samples = (try? await ledger.balanceSamples(billing: Self.billing, currency: item.currency,
+                                                                since: now.addingTimeInterval(-BalanceTrend.lookback))) ?? []
+                runsOut[item.currency] = BalanceTrend.runsOutAt(samples, at: now)
+            }
+        } catch {
             if Task.isCancelled { return }
             lastBalance = (now, .failure(UsageProviderError(error.localizedDescription)))
         }
@@ -81,7 +101,10 @@ public actor DeepSeekUsageProvider: UsageProvider, LedgerRecording {
         for session in indexed.sessions {
             if let estimate = costs.logs[session.path] { sessionCosts["deepseek:\(session.transcript.id!)"] = estimate }
         }
-        let billing = APIBilling(vendor: "DeepSeek", balances: balance?.balances ?? [], isAvailable: balance?.isAvailable,
+        let balances = (balance?.balances ?? []).map {
+            AccountBalance(currency: $0.currency, total: $0.total, granted: $0.granted, toppedUp: $0.toppedUp, runsOutAt: runsOut[$0.currency])
+        }
+        let billing = APIBilling(vendor: "DeepSeek", balances: balances, isAvailable: balance?.isAvailable,
                                  updatedAt: balanceAt, costs: costs.buckets, sessionCosts: sessionCosts, notice: balanceNotice,
                                  readingIssue: balanceNotice.map(ReadingIssue.readFailed))
         return UsageReport(generatedAt: now, snapshots: [], sessions: sessions,

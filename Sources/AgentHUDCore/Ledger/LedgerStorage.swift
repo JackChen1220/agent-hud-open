@@ -80,6 +80,18 @@ final class LedgerStorage {
                     """)
             }
         }
+        if version < 4 {
+            // An API balance's readings, for the pace it falls at.
+            try connection.transaction {
+                try connection.execute("""
+                    CREATE TABLE IF NOT EXISTS balance_sample (
+                        billing TEXT NOT NULL, currency TEXT NOT NULL, observed_ms INTEGER NOT NULL, amount_pico INTEGER NOT NULL,
+                        PRIMARY KEY (billing, currency, observed_ms)) WITHOUT ROWID;
+                    CREATE INDEX IF NOT EXISTS balance_sample_time ON balance_sample (observed_ms);
+                    PRAGMA user_version = 4;
+                    """)
+            }
+        }
         try connection.query("SELECT id, name FROM agent") { row in
             let id = row.int(0), name = row.text(1) ?? ""
             agents[name] = id

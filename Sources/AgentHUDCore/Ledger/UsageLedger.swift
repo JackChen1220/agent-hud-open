@@ -162,6 +162,7 @@ public actor UsageLedger {
     public func expire(now: Date) throws {
         let cutoff = LedgerWriter.bucket(RecordCoding.milliseconds(now.addingTimeInterval(-Self.retention)))
         let samples = now.addingTimeInterval(-QuotaHistoryStore.retention).timeIntervalSinceReferenceDate
+        let balances = RecordCoding.milliseconds(now.addingTimeInterval(-BalanceTrend.lookback))
         _ = try write { writer in
             let connection = writer.storage.connection
             try connection.run("DELETE FROM usage_event WHERE timestamp_ms < ?", [.integer(cutoff)])
@@ -170,6 +171,7 @@ public actor UsageLedger {
             try connection.run("DELETE FROM cost_bucket WHERE start_ms < ?", [.integer(cutoff)])
             try connection.run("DELETE FROM session_mark WHERE at_ms < ?", [.integer(cutoff)])
             try connection.run("DELETE FROM quota_sample WHERE observed_at < ?", [.real(samples)])
+            try connection.run("DELETE FROM balance_sample WHERE observed_ms < ?", [.integer(balances)])
             try connection.run("""
                 DELETE FROM contribution WHERE NOT EXISTS (SELECT 1 FROM usage_event WHERE contribution_id = contribution.id)
                 AND NOT EXISTS (SELECT 1 FROM cost_amount WHERE contribution_id = contribution.id)
@@ -400,6 +402,17 @@ public actor UsageLedger {
             SELECT observed_at, remaining FROM quota_sample WHERE scope = ? AND window_id = ? AND observed_at >= ? ORDER BY observed_at
             """, [.text(scope), .text(windowID), .real(since.timeIntervalSinceReferenceDate)]) { row in
             result.append(QuotaSample(agentId: windowID, timestamp: Date(timeIntervalSinceReferenceDate: row.double(0)), remainingPct: row.double(1)))
+        }
+        return result
+    }
+
+    /// A billing account's readings of its balance in `currency` from `since` on, oldest first. The ledger keeps a day of them.
+    public func balanceSamples(billing: String, currency: String, since: Date) throws -> [BalanceSample] {
+        var result: [BalanceSample] = []
+        try storage.connection.query("""
+            SELECT observed_ms, amount_pico FROM balance_sample WHERE billing = ? AND currency = ? AND observed_ms >= ? ORDER BY observed_ms
+            """, [.text(billing), .text(currency), .integer(RecordCoding.milliseconds(since))]) { row in
+            result.append(BalanceSample(timestamp: RecordCoding.date(row.int(0)), amount: Decimal(row.int(1)) / 1_000_000_000_000))
         }
         return result
     }

@@ -99,7 +99,7 @@ Reads never run in parallel: the usage store runs one pass of source reads or on
 - Kimi, GLM and OpenCode Go rows are retired — readings, cached rows and display settings — once a completed credential scan finds their credentials expired, removed or rejected; a temporary network failure retires nothing.
 - A row no provider has reported for 30 days retires with its reading, whatever stopped it: a client uninstalled, a window the service dropped, a vendor no longer read. Until a provider reports a row it is not shown anywhere, and its stored display switch and position wait for it.
 - One rule (`ReportView.isPresent`) decides whether a row is present in the panel, the menu, Settings and the report kept across passes: a provider reported it within 30 days, its account is in its provider's inventory, and its plan pool is active. What no report says counts as present, so before the first read every row shows, plan pools included, and a row without an account leaves once its provider identifies accounts.
-- Quota histories keep 30 days.
+- Quota histories keep 30 days, and an API balance's readings one day, for its trend (`BalanceTrend`): the time it runs out at the pace it fell since the first of that day's readings, or since its latest rise, a top-up. Readings spanning less than three hours, a balance that did not fall and one at or below zero give no estimate; each balance carries its estimate as of its reading (`AccountBalance.runsOutAt`).
 - A session whose source never says what its turn is doing leaves the running indicator 120 s after its last observation; one whose source reports a running turn keeps it until the turn ends, or until 30 minutes without an observation say its client is gone. Either way it stays in history without an invented end time.
 
 ## Code map
@@ -115,6 +115,7 @@ Reads never run in parallel: the usage store runs one pass of source reads or on
 | Alert tracker, added usage resets, island events, forecast | `Sources/AgentHUDCore/Logic/Alerts/QuotaAlerts.swift`, `ResetCreditGrants.swift`, `IslandEvents.swift`, `Logic/Quota/QuotaForecast.swift` |
 | Event union, analytics, history retention | `Sources/AgentHUDCore/Providers/Kit/UsageAggregation.swift`, `Ledger/QuotaHistoryStore.swift`, `Logic/Quota/UsageAnalytics.swift` |
 | A window's remaining share, insights, outlook, projection and token rate | `Sources/AgentHUDCore/Logic/Quota/QuotaMath.swift` |
+| A balance's trend | `Sources/AgentHUDCore/Logic/Quota/BalanceTrend.swift`, `Ledger/BalanceSample.swift` |
 | Session liveness and its limits, retained readings | `Sources/AgentHUDCore/Logic/SessionPhase.swift`, `Sources/AgentHUDCore/Models/Sessions/LiveSession.swift`, `Sources/AgentHUDCore/Providers/RetainedUsageProvider.swift` |
 | Session breakdown | `Sources/AgentHUDCore/Models/Sessions/SessionUsage.swift`, `Ledger/UsageLedger.swift`, `Providers/CombinedUsageProvider.swift` |
 | Accounts, current and previous readings, settings migration | `Sources/AgentHUDCore/Models/Accounts/ProviderAccount.swift`, `Providers/Kit/ClientHome.swift`, `Sources/AgentHUDCore/Providers/RetainedUsageProvider.swift`, `Sources/AgentHUDCore/Store/SettingsStore.swift` |

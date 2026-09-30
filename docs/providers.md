@@ -140,7 +140,7 @@ Files in the data directory ([architecture](architecture.md#storage)). None cont
 
 | File | Contents |
 | --- | --- |
-| `usage-ledger.sqlite` | Per log file the client's parse position and session summary, or the sessions of a file parsed whole; token events grouped by session with their estimated cost and, where logged, their context window; the prompts and compactions of each log; the 15-minute usage and cost totals kept exact as events arrive, change or leave; the largest prompt each model was seen with; quota readings per provider |
+| `usage-ledger.sqlite` | Per log file the client's parse position and session summary, or the sessions of a file parsed whole; token events grouped by session with their estimated cost and, where logged, their context window; the prompts and compactions of each log; the 15-minute usage and cost totals kept exact as events arrive, change or leave; the largest prompt each model was seen with; quota readings per provider; the last day of API balance readings per currency |
 | `last-usage-report.json` | The retained report without turns and completions, restored at start; rewritten at most every 5 minutes |
 | `engine/`, `turn-completions/<source>/`, `attention/<source>/`, `open-agent-identities.json`, `codex-identities.json` | Claude Code engine working directory; the completion-hook inbox; the notification-hook inbox, holding each session's pending request and the client's own notification text; confirmed Kimi identities as hashes; the email each Codex home's workspace last came with, by home and workspace hash |
 
