@@ -119,6 +119,32 @@ final class SessionViewTests: XCTestCase {
                        "another provider's turn dates a Claude session but gives it no state or message")
     }
 
+    /// A session's newest turn is the one that started last, a turn without a start counting from when it was observed,
+    /// then the one observed last, and of equals the later listed, whatever order its client listed them in; the message
+    /// is the newest turn's that carries one. Sessions whose last events are equal go by vendor, then id.
+    @MainActor
+    func testTheNewestTurnStartedLastAndEqualLastEventsGoByVendorThenId() throws {
+        let store = try makeStore()
+        show([session("started-earlier", observed: -30), session("startless", observed: -30), session("tied", observed: -30),
+              session("heard-later", observed: -30), session("a-codex", agent: "codex-model:gpt-5", ended: -600, observed: -600),
+              session("b-claude", ended: -600, observed: -600)], turns: [
+            turn("started-earlier", .running, id: "a", started: -100, observed: -50, message: "Newer"),
+            turn("started-earlier", .completed, id: "b", started: -200, observed: -40, message: "Older"),
+            turn("startless", .completed, id: "a", started: -300, observed: -250),
+            turn("startless", .running, id: "b", started: nil, observed: -100),
+            turn("tied", .completed, id: "a", started: -100, observed: -50, message: "First"),
+            turn("tied", .completed, id: "b", started: -100, observed: -50, message: "Second"),
+            turn("heard-later", .running, id: "a", started: -100, observed: -20),
+            turn("heard-later", .completed, id: "b", started: -100, observed: -60),
+        ], in: store)
+        let view = store.view
+        XCTAssertEqual(["started-earlier", "startless", "tied", "heard-later"].map { view.session($0)?.turn?.turnID }, ["a", "b", "b", "a"])
+        XCTAssertEqual(view.session("started-earlier")?.message, "Newer")
+        XCTAssertEqual(view.session("tied")?.message, "Second")
+        XCTAssertEqual(view.session("heard-later")?.phase.state, .running)
+        XCTAssertEqual(store.sessions.suffix(2).map(\.id), ["b-claude", "a-codex"])
+    }
+
     /// The logo queue lists every row's vendor, once per row, then the vendors of sessions whose last event is at most a
     /// day old, when their live status is on and a vendor is known. A session still running whose last event is older
     /// counts as working without a place in the queue.

@@ -11,15 +11,15 @@ public struct ReportView: Sendable {
         public let session: LiveSession
         /// The session's vendor, from the consumer its model is, a settings row, a report row or its id, and its client.
         public let source: SessionSource
-        /// The newest turn: the last one listed from the session's vendor, or from any provider without a vendor.
+        /// The newest turn from the session's vendor, or from any provider without a vendor (`ReportView.newest(_:)`).
         public let turn: SessionTurn?
         /// When the session last did something: its newest turn event from any provider, or its end when that is later;
         /// without turns, its end, or while in flight the reading that last saw it. A permission request waiting for an
         /// answer is an event too, and so are the prompt and the Stop hook of a hook turn that takes the reading's place.
         public let lastEventAt: Date
-        /// What the agent last said: the message of the last turn listed that carries one, from the providers `turn`
-        /// comes from, or what it said at the Stop hook of a hook turn that takes the reading's place. Nil while live
-        /// status is off.
+        /// What the agent last said: the message of the newest turn that carries one, from the providers `turn` comes
+        /// from, or what it said at the Stop hook of a hook turn that takes the reading's place. Nil while live status is
+        /// off.
         public let message: String?
         /// Whether live status is on for the session's vendor; a session without a vendor answers to no vendor's switch.
         public let liveStatus: Bool
@@ -43,7 +43,8 @@ public struct ReportView: Sendable {
     /// Status per enabled row that has one, in glow order, each balance once. Rows without a reading stay out of the glow.
     public let levels: [StatusLevel]
     /// Newest first, by the last event each source reported: a prompt, a reply, a tool result or an approval request. A
-    /// running session nothing has been heard from for half an hour sits below one that just answered.
+    /// running session nothing has been heard from for half an hour sits below one that just answered. Sessions with the
+    /// same last event are ordered by vendor, then id.
     public let sessions: [Session]
 
     private let report: UsageReport?
@@ -109,7 +110,9 @@ public struct ReportView: Sendable {
         self.billing = billing
         self.levels = levels
         sessions = (report?.sessions ?? []).map { Self.read($0, index: index, settings: settings, now: now) }.sorted {
-            $0.lastEventAt == $1.lastEventAt ? $0.id < $1.id : $0.lastEventAt > $1.lastEventAt
+            if $0.lastEventAt != $1.lastEventAt { return $0.lastEventAt > $1.lastEventAt }
+            let lhs = $0.source.vendor ?? "", rhs = $1.source.vendor ?? ""
+            return lhs == rhs ? $0.id < $1.id : lhs < rhs
         }
     }
 
@@ -254,23 +257,34 @@ public struct ReportView: Sendable {
         }
     }
 
+    /// The newest of a session's turns: the one that started last, a turn without a start counting from when it was
+    /// observed, then the one observed last; of equals, the later listed.
+    static func newest(_ turns: [SessionTurn]) -> SessionTurn? {
+        turns.reduce(nil) { newest, turn in
+            guard let newest else { return turn }
+            return (turn.startedAtMs ?? turn.observedAtMs, turn.observedAtMs) >= (newest.startedAtMs ?? newest.observedAtMs, newest.observedAtMs)
+                ? turn : newest
+        }
+    }
+
     private static func read(_ session: LiveSession, index: Index, settings: Settings, now: Date) -> Session {
         let vendor = index.vendors[session.agentId] ?? SessionSource.vendor(impliedBy: session.agentId)
         let provider = vendor?.lowercased()
         let turns = (index.turns[session.id] ?? []).filter { provider == nil || $0.provider.lowercased() == provider }
+        let turn = newest(turns)
         let asked = index.requests[session.id]
         var lastEventAt = max(session.lastEvent(turnAt: index.lastTurnEvents[session.id]), asked ?? .distantPast)
         let liveStatus = settings.liveStatusEnabled(for: vendor ?? "")
-        var phase = SessionPhase(session: session, turn: turns.last, lastEventAt: lastEventAt, liveStatus: liveStatus, now: now)
-        var message = turns.last { $0.message != nil }?.message
+        var phase = SessionPhase(session: session, turn: turn, lastEventAt: lastEventAt, liveStatus: liveStatus, now: now)
+        var message = newest(turns.filter { $0.message != nil })?.message
         if liveStatus, let hook = index.hooks[session.id],
            let hooked = SessionPhase.hooked(hook, over: phase, lastEventAt: lastEventAt, now: now) {
             phase = hooked
             lastEventAt = max(lastEventAt, hook.endedAt ?? hook.startedAt)
             message = hook.message ?? message
         }
-        if liveStatus, asked != nil { phase = phase.awaitingApproval(session, turn: turns.last) }
-        return Session(session: session, source: SessionSource(vendor: vendor, client: session.client), turn: turns.last,
+        if liveStatus, asked != nil { phase = phase.awaitingApproval(session, turn: turn) }
+        return Session(session: session, source: SessionSource(vendor: vendor, client: session.client), turn: turn,
                        lastEventAt: lastEventAt, message: liveStatus ? message : nil, liveStatus: liveStatus, phase: phase)
     }
 }
