@@ -205,21 +205,24 @@ public struct CodexTranscript: Codable, Sendable {
         return marks
     }
 
-    /// Whether this rollout, modified at `modifiedAt`, has its session in flight at `now`, by the rollout rule of
-    /// `SessionPhase.read(_:rule:at:)`. The limits are `SessionPhase.Limits`; `freshness` and `abandonedAfter` are not read.
+    /// Whether this rollout has its session in flight at `now`, by the rollout rule of `SessionPhase.read(_:rule:at:)`.
+    /// Quiet counts from the rollout's newest event, so `modifiedAt` is not read; nor are `freshness` and
+    /// `abandonedAfter`, since the limits are `SessionPhase.Limits`.
     public func isLive(now: Date, modifiedAt: Date, freshness: TimeInterval = SessionPhase.Limits.quiet,
                        abandonedAfter: TimeInterval = UsageRefresh.abandonedTurnTimeout) -> Bool {
-        SessionPhase.read(evidence(modifiedAt: modifiedAt), rule: .rollout, at: now).inFlight
+        SessionPhase.read(evidence, rule: .rollout, at: now).inFlight
     }
 
-    /// What this rollout says about its session: its newest turn, one without an id included, and when it was written. A
-    /// guardian's rollout, and one without any activity, wrote nothing that counts.
-    func evidence(modifiedAt: Date) -> SessionPhase.SourceEvidence {
-        SessionPhase.SourceEvidence(turn: turns?.last.map { turn in
+    /// What this rollout says about its session: its newest turn, one without an id included, and its newest event: the
+    /// latest of its counted activity and that turn's last event. A guardian's rollout, and one without any activity,
+    /// recorded nothing that counts.
+    var evidence: SessionPhase.SourceEvidence {
+        let newest = turns?.last
+        return SessionPhase.SourceEvidence(turn: newest.map { turn in
             SessionTurn(provider: "codex", sessionID: id ?? "", turnID: turn.id ?? "", state: turn.state,
                         startedAtMs: turn.startedAt.map(RecordCoding.milliseconds),
                         observedAtMs: RecordCoding.milliseconds(turn.observedAt), message: turn.message)
-        }, lastWriteAt: isInternal || lastActivityAt == nil ? nil : modifiedAt)
+        }, lastWriteAt: isInternal ? nil : lastActivityAt.map { max($0, newest?.observedAt ?? $0) })
     }
 
     public var sessionTurns: [SessionTurn] {

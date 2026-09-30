@@ -51,7 +51,8 @@ public struct SessionPhase: Hashable, Sendable {
         /// A Pi run whose observer snapshot is this old is over; the observer refreshes it every 15 seconds while the run
         /// is active.
         public static let heartbeat: TimeInterval = 120
-        /// A running DeepSeek turn whose log is this quiet is checked against the processes that hold its profile.
+        /// A running DeepSeek turn whose log has recorded no event for this long is checked against the processes that hold
+        /// its profile.
         public static let processCheck: TimeInterval = 120
         /// The process table behind that check is read again at most this often.
         public static let processRecheck: TimeInterval = 30
@@ -67,9 +68,9 @@ public struct SessionPhase: Hashable, Sendable {
         /// the turn start; a log that never said what its turn is doing is in flight until it has been quiet for
         /// `Limits.quiet`. A session also runs while any of its sub-agents does.
         case transcript
-        /// A log that follows its turns but is dated as a file, as a Codex rollout is: a newest turn in flight stays so
-        /// until the file has been left unwritten for `Limits.abandoned`, and a rollout that never logged a turn is in
-        /// flight until it has for `Limits.quiet`. One that wrote nothing is never in flight.
+        /// A log of events that follow its turns, as a Codex rollout is: a newest turn in flight stays so until the log has
+        /// recorded no event for `Limits.abandoned`, and a log that never recorded a turn is in flight until it has recorded
+        /// none for `Limits.quiet`. One that recorded nothing is never in flight.
         case rollout
         /// A log whose client's process can be checked, as DeepSeek Harness's can: a newest turn in flight of a log that
         /// recorded something stays so however quiet the log is, unless the process table, when it was read, holds no
@@ -97,8 +98,8 @@ public struct SessionPhase: Hashable, Sendable {
     public struct SourceEvidence: Hashable, Sendable {
         /// The newest turn the source recorded for the session.
         public var turn: SessionTurn?
-        /// When the source last wrote anything for the session: a log's last line of any kind or last event, or a rollout's
-        /// modification date. Nil when it wrote nothing that counts.
+        /// When the source last recorded anything for the session: a log's last line of any kind, or its newest event. Nil
+        /// when it recorded nothing that counts. Quiet always counts from here, never from a file's modification date.
         public var lastWriteAt: Date?
         /// The newest line of the session's sub-agents that are themselves in flight; nil when none is.
         public var subagentsAt: Date?

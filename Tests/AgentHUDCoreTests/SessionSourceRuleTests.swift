@@ -194,25 +194,39 @@ final class SessionSourceRuleTests: XCTestCase, @unchecked Sendable {
         return transcript
     }
 
-    func testACodexRolloutIsInFlightByItsNewestTurnAndItsFileAge() {
+    func testACodexRolloutIsInFlightByItsNewestTurnAndItsNewestEvent() {
         let ages: [TimeInterval] = [119.999, 120, 1799.999, 1800]
         let tokens: [String: Any] = ["type": "token_count", "info": ["total_token_usage": ["input_tokens": 10, "output_tokens": 1]]]
-        let rollouts: [(name: String, rollout: CodexTranscript, live: [Bool])] = [
-            ("a guardian", rollout(guardian: true, [(codexStart("t1"), -10)]), [false, false, false, false]),
-            ("a rollout without activity", rollout([]), [false, false, false, false]),
-            ("no turn", rollout([(tokens, -10)]), [true, false, false, false]),
-            ("newest turn running", rollout([(codexStart("t1"), -10)]), [true, true, true, false]),
-            ("newest turn completed", rollout([(codexStart("t1"), -20), (["type": "task_complete", "turn_id": "t1"], -10)]),
+        let message: [String: Any] = ["type": "agent_message", "message": "Working on it"]
+        // The events of each rollout, the newest `age` seconds before the read, and whether it is in flight at each age.
+        let rollouts: [(name: String, rollout: (TimeInterval) -> CodexTranscript, live: [Bool])] = [
+            ("a guardian", { self.rollout(guardian: true, [(self.codexStart("t1"), -$0)]) }, [false, false, false, false]),
+            ("a rollout without activity", { _ in self.rollout([]) }, [false, false, false, false]),
+            ("no turn", { self.rollout([(tokens, -$0)]) }, [true, false, false, false]),
+            ("newest turn running", { self.rollout([(self.codexStart("t1"), -$0)]) }, [true, true, true, false]),
+            ("newest turn running, heard from since it started", { self.rollout([(self.codexStart("t1"), -7200), (message, -$0)]) },
+             [true, true, true, false]),
+            ("newest turn completed", { self.rollout([(self.codexStart("t1"), -$0 - 10), (["type": "task_complete", "turn_id": "t1"], -$0)]) },
              [false, false, false, false]),
-            ("newest turn aborted", rollout([(codexStart("t1"), -20), (["type": "turn_aborted", "turn_id": "t1"], -10)]),
+            ("newest turn aborted", { self.rollout([(self.codexStart("t1"), -$0 - 10), (["type": "turn_aborted", "turn_id": "t1"], -$0)]) },
              [false, false, false, false]),
         ]
         for item in rollouts {
-            XCTAssertEqual(ages.map { item.rollout.isLive(now: base, modifiedAt: at(-$0)) }, item.live, item.name)
+            XCTAssertEqual(ages.map { item.rollout($0).isLive(now: base, modifiedAt: base) }, item.live, item.name)
         }
-        // Quiet is the file's age, whatever its events say.
-        XCTAssertTrue(rollout([(codexStart("t1"), -7200)]).isLive(now: base, modifiedAt: at(-1)))
-        XCTAssertFalse(rollout([(codexStart("t1"), -1)]).isLive(now: base, modifiedAt: at(-1800)))
+        // Quiet is the newest event's age, whatever the file's date says.
+        XCTAssertFalse(rollout([(codexStart("t1"), -7200)]).isLive(now: base, modifiedAt: at(-1)))
+        XCTAssertTrue(rollout([(codexStart("t1"), -1)]).isLive(now: base, modifiedAt: at(-1800)))
+    }
+
+    func testARolloutWrittenWithoutNewEventsLeavesItsSessionEnded() async throws {
+        let dir = try directory(), now = base
+        try write(rolloutLines([(codexStart("t1"), -1800)]), to: dir.appendingPathComponent("rollout-stale.jsonl"), modified: at(-1))
+        let provider = CodexUsageProvider(readLimits: { throw UsageProviderError("signed out") }, transcripts: CodexTranscriptStore(roots: [dir]),
+                                          history: QuotaHistoryStore(), clock: { now })
+        let report = try await provider.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(report.sessions.map(\.endedAt), [at(-1800)],
+                       "a file written a second ago does not keep a turn last heard from half an hour ago running")
     }
 
     func testACodexTurnWithoutAnIdKeepsTheSessionInFlightBehindAFinishedReportedTurn() async throws {
@@ -260,7 +274,9 @@ final class SessionSourceRuleTests: XCTestCase, @unchecked Sendable {
 
     func testTheDeepSeekProcessTableIsReadForAQuietRunningTurnAtMostEvery30Seconds() async throws {
         let root = try directory()
-        try write(harness([("turn/start", ["turn": 1], -600)], id: "quiet"), to: root.appendingPathComponent("work/quiet/session.jsonl"), modified: base)
+        // The turn's last event is at `base`. A rename written later records no activity, so the file's date does not count.
+        try write(harness([("turn/start", ["turn": 1], 0), ("session/title", ["title": "Renamed"], 100)], id: "quiet"),
+                  to: root.appendingPathComponent("work/quiet/session.jsonl"), modified: at(100))
         final class Table: @unchecked Sendable { var starts: [Date] = []; var reads = 0 }
         let table = Table(), clock = Clock(base)
         let provider = DeepSeekUsageProvider(directory: root, transcripts: DeepSeekTranscriptStore(root: root),
@@ -270,12 +286,12 @@ final class SessionSourceRuleTests: XCTestCase, @unchecked Sendable {
             return try await provider.fetchUsage(agents: [], historyHours: 24).sessions.map(\.isLive)
         }
         var result = try await live(at: 119.999)
-        XCTAssertEqual(result, [true], "a log quiet for less than 120 s is not checked")
+        XCTAssertEqual(result, [true], "a log whose newest event is less than 120 s old is not checked")
         XCTAssertEqual(table.reads, 0)
         result = try await live(at: 120)
-        XCTAssertEqual(result, [false], "no Harness process holds the turn")
+        XCTAssertEqual(result, [false], "no Harness process holds the turn, though the file was written 20 s ago")
         XCTAssertEqual(table.reads, 1)
-        table.starts = [at(-601)]
+        table.starts = [at(-1)]
         result = try await live(at: 149.999)
         XCTAssertEqual(result, [false], "the last answer stands for 30 s")
         XCTAssertEqual(table.reads, 1)

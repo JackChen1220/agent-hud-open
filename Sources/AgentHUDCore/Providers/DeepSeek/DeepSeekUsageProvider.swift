@@ -93,12 +93,13 @@ public actor DeepSeekUsageProvider: UsageProvider, LedgerRecording {
                            turns: indexed.sessions.flatMap { $0.transcript.sessionTurns })
     }
 
-    /// Process starts only decide a running turn whose log went quiet, so the process table is inspected only then,
-    /// at most every 30 seconds. Nil means it was not consulted and the turn keeps running.
+    /// Process starts only decide a running turn whose log went quiet, so the process table is inspected only once a log
+    /// has recorded no event for a while, at most every 30 seconds. Nil means it was not consulted and the turn keeps
+    /// running.
     private func processStarts(for sessions: [DeepSeekTranscriptStore.Session], now: Date) async -> [Date]? {
         let quiet = sessions.contains { session in
             !session.transcript.isSubagent && session.transcript.sessionTurns.last?.state == .running
-                && now.timeIntervalSince(session.modifiedAt) >= SessionPhase.Limits.processCheck
+                && now.timeIntervalSince(session.transcript.lastActivityAt ?? session.modifiedAt) >= SessionPhase.Limits.processCheck
         }
         guard quiet else { lastProcessStarts = nil; return nil }
         if let last = lastProcessStarts, now.timeIntervalSince(last.at) < SessionPhase.Limits.processRecheck { return last.starts }

@@ -172,8 +172,7 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
             return paths.sorted()
         }
         let sessions = indexed.sessions.filter { !$0.transcript.isSubagent }.map { session in
-            (session: session, live: SessionPhase.read(session.transcript.evidence(modifiedAt: session.modifiedAt), rule: .rollout,
-                                                       at: now).inFlight)
+            (session: session, live: SessionPhase.read(session.transcript.evidence, rule: .rollout, at: now).inFlight)
         }.sorted { a, b in
             if a.live != b.live { return a.live }
             return (a.session.transcript.lastActivityAt ?? .distantPast) > (b.session.transcript.lastActivityAt ?? .distantPast)
