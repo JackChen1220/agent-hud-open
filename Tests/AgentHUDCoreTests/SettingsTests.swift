@@ -554,9 +554,10 @@ final class UsageStoreTests: XCTestCase {
             session("older", startedHoursAgo: 240, endedHoursAgo: 200),
             session("future", startedHoursAgo: -24),
         ]))
+        // A session read in flight is listed whenever it started, with its reading as its last event.
         for range in StatsRange.allCases {
             store.setStatsRange(range)
-            XCTAssertEqual(store.statsSessions.map(\.id), ["running", "recent", "today", "week"], "\(range)")
+            XCTAssertEqual(store.statsSessions.map(\.id), ["future", "running", "recent", "today", "week"], "\(range)")
         }
     }
 }

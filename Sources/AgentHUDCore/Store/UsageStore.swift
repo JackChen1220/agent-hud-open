@@ -338,11 +338,8 @@ public final class UsageStore {
     public var dataDate: Date { max(report?.generatedAt ?? now, checkedAt ?? .distantPast) }
     public var statsInterval: DateInterval { statsRange.interval(endingAt: dataDate) }
 
-    /// Sessions active in the last seven days, including ones that started before them, whatever range the charts show.
-    public var statsSessions: [LiveSession] {
-        let interval = StatsRange.days7.interval(endingAt: dataDate)
-        return sessions.filter { $0.startedAt <= interval.end && ($0.endedAt ?? now) >= interval.start }
-    }
+    /// `view.recentSessions`: the sessions whose last event is at most seven days old, whatever range the charts show.
+    public var statsSessions: [LiveSession] { view.recentSessions.map(\.session) }
 
     /// Whether live status is on for the session's vendor.
     public func liveStatusEnabled(for session: LiveSession) -> Bool { view.session(for: session).liveStatus }

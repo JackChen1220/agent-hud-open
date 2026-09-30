@@ -195,6 +195,15 @@ public struct ReportView: Sendable {
     /// The sessions in flight, newest first.
     public var liveSessions: [Session] { sessions.filter(\.phase.isInFlight) }
 
+    /// How long after its last event a session stays on the Sessions page.
+    static let listRecency: TimeInterval = 7 * 86400
+
+    /// The sessions whose last event is at most `listRecency` old, newest first: those the Sessions page lists.
+    public var recentSessions: [Session] {
+        let cutoff = now.addingTimeInterval(-Self.listRecency)
+        return sessions.filter { $0.lastEventAt >= cutoff }
+    }
+
     /// The vendors with work in flight. A session names the model it spends rather than the quota row it belongs to, so
     /// its vendor is resolved instead of its id being compared with a row's.
     public var workingVendors: Set<String> { Set(liveSessions.compactMap(\.source.vendor)) }

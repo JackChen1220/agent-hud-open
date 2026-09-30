@@ -139,10 +139,10 @@ final class SessionViewTests: XCTestCase {
         XCTAssertEqual(store.workingVendors, ["DeepSeek"])
     }
 
-    /// The week's list keeps a session that ended at the week's first instant and one that started at its last; a
-    /// millisecond outside either drops it.
+    /// The week's list keeps every session whose last event is at most seven days old, and drops one a millisecond older;
+    /// a session the island shows live is on it whenever it started.
     @MainActor
-    func testTheWeekListKeepsSessionsThatTouchTheWeeksEnds() throws {
+    func testTheWeekListKeepsSessionsWhoseLastEventIsAtMostSevenDaysOld() throws {
         let store = try makeStore()
         let week = 7 * 24 * hour
         show([
@@ -151,9 +151,8 @@ final class SessionViewTests: XCTestCase {
             session("starts-at-end", started: 0, observed: 0),
             session("starts-after", started: 0.001, observed: 0.001),
         ], in: store)
-        XCTAssertEqual(store.statsSessions.map(\.id), ["starts-at-end", "ends-at-start"])
-        XCTAssertEqual(store.liveSessions.map(\.id), ["starts-after", "starts-at-end"],
-                       "a session that starts after the data's end is live, though the week's list leaves it out")
+        XCTAssertEqual(store.statsSessions.map(\.id), ["starts-after", "starts-at-end", "ends-at-start"])
+        XCTAssertEqual(store.liveSessions.map(\.id), ["starts-after", "starts-at-end"])
     }
 
     /// A session's vendor is its consumer's, else that of a settings row with its id, switched off or not, else the one
