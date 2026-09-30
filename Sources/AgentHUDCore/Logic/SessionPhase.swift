@@ -66,6 +66,10 @@ public struct SessionPhase: Hashable, Sendable {
         /// the turn start; a log that never said what its turn is doing is in flight until it has been quiet for
         /// `Limits.quiet`. A session also runs while any of its sub-agents does.
         case transcript
+        /// A log that follows its turns but is dated as a file, as a Codex rollout is: a running newest turn is in flight
+        /// until the file has been left unwritten for `Limits.abandoned`, and a rollout that never logged a turn until
+        /// it has for `Limits.quiet`. One that wrote nothing is never in flight.
+        case rollout
     }
 
     /// A client's request for the user's approval, from its notification hook.
@@ -84,8 +88,8 @@ public struct SessionPhase: Hashable, Sendable {
     public struct SourceEvidence: Hashable, Sendable {
         /// The newest turn the source recorded for the session.
         public var turn: SessionTurn?
-        /// When the source last wrote anything for the session: a log's last line of any kind. Nil when it wrote nothing
-        /// that counts.
+        /// When the source last wrote anything for the session: a log's last line of any kind, or a rollout's modification
+        /// date. Nil when it wrote nothing that counts.
         public var lastWriteAt: Date?
         /// The newest line of the session's sub-agents that are themselves in flight; nil when none is.
         public var subagentsAt: Date?
@@ -123,6 +127,11 @@ public struct SessionPhase: Hashable, Sendable {
             return SourceReading(inFlight: fresh || evidence.subagentsAt != nil, turn: evidence.turn.map {
                 transcriptTurn($0, approval: evidence.approval, subagentsAt: evidence.subagentsAt)
             })
+        case .rollout:
+            guard let lastWriteAt = evidence.lastWriteAt else { return SourceReading(inFlight: false, turn: evidence.turn) }
+            let quiet = readAt.timeIntervalSince(lastWriteAt)
+            guard let turn = evidence.turn else { return SourceReading(inFlight: quiet < Limits.quiet, turn: nil) }
+            return SourceReading(inFlight: turn.state == .running && quiet < Limits.abandoned, turn: turn)
         }
     }
 

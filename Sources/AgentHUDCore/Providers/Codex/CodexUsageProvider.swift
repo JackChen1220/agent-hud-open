@@ -171,17 +171,19 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
             }
             return paths.sorted()
         }
-        let sessions = indexed.sessions.filter { !$0.transcript.isSubagent }.sorted { a, b in
-            let al = a.transcript.isLive(now: now, modifiedAt: a.modifiedAt), bl = b.transcript.isLive(now: now, modifiedAt: b.modifiedAt)
-            if al != bl { return al }
-            return (a.transcript.lastActivityAt ?? .distantPast) > (b.transcript.lastActivityAt ?? .distantPast)
-        }.map { session in
+        let sessions = indexed.sessions.filter { !$0.transcript.isSubagent }.map { session in
+            (session: session, live: SessionPhase.read(session.transcript.evidence(modifiedAt: session.modifiedAt), rule: .rollout,
+                                                       at: now).inFlight)
+        }.sorted { a, b in
+            if a.live != b.live { return a.live }
+            return (a.session.transcript.lastActivityAt ?? .distantPast) > (b.session.transcript.lastActivityAt ?? .distantPast)
+        }.map { session, live in
             let t = session.transcript
             return LiveSession(id: t.id!, agentId: "codex-model:\(t.model)",
                                task: session.title ?? t.task ?? t.cwd.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Codex",
                                terminal: t.cwd.map { URL(fileURLWithPath: $0).lastPathComponent },
                                startedAt: t.startedAt ?? session.modifiedAt,
-                               endedAt: t.isLive(now: now, modifiedAt: session.modifiedAt) ? nil : (t.lastActivityAt ?? session.modifiedAt),
+                               endedAt: live ? nil : (t.lastActivityAt ?? session.modifiedAt),
                                pctOfWindow: nil, tokensIn: t.inputTokens,
                                tokensOut: t.outputTokens, client: t.client, transcriptPath: session.path,
                                cacheReadTokens: t.cachedInputTokens, observedAt: now, workingDirectory: t.cwd,

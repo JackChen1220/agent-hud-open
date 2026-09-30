@@ -205,15 +205,21 @@ public struct CodexTranscript: Codable, Sendable {
         return marks
     }
 
-    /// Running means the newest turn is still going. A quiet rollout does not end it: one tool call can take minutes
-    /// without writing a line, and only silence long enough to mean the client is gone does. A rollout that never
-    /// logged a turn falls back to how recently it was written.
+    /// Whether this rollout, modified at `modifiedAt`, has its session in flight at `now`, by the rollout rule of
+    /// `SessionPhase.read(_:rule:at:)`. The limits are `SessionPhase.Limits`; `freshness` and `abandonedAfter` are not read.
     public func isLive(now: Date, modifiedAt: Date, freshness: TimeInterval = SessionPhase.Limits.quiet,
                        abandonedAfter: TimeInterval = UsageRefresh.abandonedTurnTimeout) -> Bool {
-        guard !isInternal, lastActivityAt != nil else { return false }
-        let quiet = now.timeIntervalSince(modifiedAt)
-        guard let running = turns?.last.map({ $0.state == .running }) else { return quiet < freshness }
-        return running && quiet < abandonedAfter
+        SessionPhase.read(evidence(modifiedAt: modifiedAt), rule: .rollout, at: now).inFlight
+    }
+
+    /// What this rollout says about its session: its newest turn, one without an id included, and when it was written. A
+    /// guardian's rollout, and one without any activity, wrote nothing that counts.
+    func evidence(modifiedAt: Date) -> SessionPhase.SourceEvidence {
+        SessionPhase.SourceEvidence(turn: turns?.last.map { turn in
+            SessionTurn(provider: "codex", sessionID: id ?? "", turnID: turn.id ?? "", state: turn.state,
+                        startedAtMs: turn.startedAt.map(RecordCoding.milliseconds),
+                        observedAtMs: RecordCoding.milliseconds(turn.observedAt), message: turn.message)
+        }, lastWriteAt: isInternal || lastActivityAt == nil ? nil : modifiedAt)
     }
 
     public var sessionTurns: [SessionTurn] {
