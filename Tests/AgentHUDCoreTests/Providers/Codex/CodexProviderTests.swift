@@ -331,7 +331,7 @@ final class CodexProviderTests: XCTestCase {
     }
 
     func testClientsTheCatalogDoesNotNameAreShownAsWritten() {
-        for (origin, source, expected) in [("codex_work_desktop", "vscode", "codex_work_desktop"), ("vibearound", "vscode", "vibearound"),
+        for (origin, source, expected) in [("codex_mcp_server", "mcp", "codex_mcp_server"), ("vibearound", "vscode", "vibearound"),
                                            ("codex_vscode", "vscode", "IDE"), ("Codex Desktop", "vscode", "Desktop")] {
             var t = CodexTranscript()
             ingest(&t, type: "session_meta", payload: ["id":"session", "cwd":"/project", "source":source, "originator":origin])
@@ -340,7 +340,27 @@ final class CodexProviderTests: XCTestCase {
         var legacy = CodexTranscript()
         ingest(&legacy, type: "session_meta", payload: ["id":"session", "cwd":"/project", "source":"vscode"])
         XCTAssertEqual(legacy.client, "IDE", "rollouts without an originator keep the extension's name")
-        XCTAssertTrue(VendorCatalog.unnamed["Codex client"]?.contains("codex_work_desktop") == true)
+        XCTAssertTrue(VendorCatalog.unnamed["Codex client"]?.contains("codex_mcp_server") == true)
+    }
+
+    /// Every name Codex gives one of its clients files the session under that client: the desktop app signed in to a work
+    /// workspace writes codex_work_desktop, and Codex's own code knows the desktop app as codex_desktop and its CLI as
+    /// codex_cli_rs and codex-cli.
+    func testEachOriginatorOfOneClientFilesItsSessionsUnderThatClient() {
+        let cases: [(origin: String, client: String, name: String)] = [
+            ("Codex Desktop", "Desktop", "Codex Desktop"), ("codex_work_desktop", "Desktop", "Codex Desktop"),
+            ("codex_desktop", "Desktop", "Codex Desktop"), ("codex_vscode", "IDE", "Codex IDE extension"), ("codex-tui", "CLI", "Codex CLI"),
+            ("codex_cli_rs", "CLI", "Codex CLI"), ("codex-cli", "CLI", "Codex CLI"), ("codex_exec", "CLI · exec", "Codex CLI"),
+        ]
+        for (origin, client, name) in cases {
+            var t = CodexTranscript()
+            ingest(&t, type: "session_meta", payload: ["id":"session", "cwd":"/project", "source":"vscode", "originator":origin])
+            XCTAssertEqual(t.client, client, origin)
+            let source = SessionSource(vendor: "Codex", client: t.client)
+            XCTAssertEqual(source.name, name, origin)
+        }
+        XCTAssertEqual(SessionSource(vendor: "Codex", client: "Desktop"), SessionSource(vendor: "Codex", client: VendorCatalog.client("codex_work_desktop", vendor: "Codex")),
+                       "one entry in the sessions filter")
     }
 
     func testWindowNamesComeFromTheCatalogOrTheService() throws {

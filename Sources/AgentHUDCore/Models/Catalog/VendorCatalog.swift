@@ -34,10 +34,13 @@ public enum VendorCatalog {
         "Claude": Entry(clients: [
             "cli": "Claude Code CLI", "claude-desktop": "Claude Code Desktop", "claude-vscode": "Claude Code IDE extension",
         ]),
-        // The ChatGPT app carries Codex under Codex's bundle ID. Rollouts name their client in `originator`.
+        // The ChatGPT app carries Codex under Codex's bundle ID. Rollouts name their client in `originator`: the desktop
+        // app writes Codex Desktop, or codex_work_desktop signed in to a work workspace, and Codex's own code knows it as
+        // codex_desktop too; the CLI's default is codex_cli_rs.
         "Codex": Entry(
             bundleIDs: ["com.openai.codex"],
-            clients: ["Codex Desktop": "Desktop", "codex_vscode": "IDE", "codex-tui": "CLI", "codex_exec": "CLI · exec"],
+            clients: ["Codex Desktop": "Desktop", "codex_work_desktop": "Desktop", "codex_desktop": "Desktop", "codex_vscode": "IDE",
+                      "codex-tui": "CLI", "codex_cli_rs": "CLI", "codex-cli": "CLI", "codex_exec": "CLI · exec"],
             windows: ["gpt-reserve": "Luna Reserve"], windowWords: ["gpt-reserve": "Reserve"]),
         "Cursor": Entry(bundleIDs: ["com.todesktop.230313mzl4w4u92"]),
         // An API balance, not a subscription: its rows stay out of the HUD until switched on.
