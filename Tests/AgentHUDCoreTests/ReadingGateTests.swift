@@ -148,7 +148,7 @@ final class ReadingGateTests: XCTestCase {
             XCTAssertEqual(report.quotaNotice(vendor: "Kimi"), vendorNotice, name)
             XCTAssertEqual(store.rows.map(\.level), [nil, .warning], name)
             XCTAssertEqual(rows.map { crossed.contains($0.id) }, [false, true], name)
-            XCTAssertEqual(store.rows.map { $0.account.map(store.accountLabel(for:)) }, ["Last read 1m ago", "Current account"], name)
+            XCTAssertEqual(store.rows.map { row in row.account.map { store.accountLabel(for: $0) } }, ["Last read 1m ago", "Current account"], name)
         }
     }
 
@@ -228,7 +228,7 @@ final class ReadingGateTests: XCTestCase {
         XCTAssertEqual(store.levels, [])
         XCTAssertEqual(store.rows.map(\.level), [nil, nil])
         XCTAssertEqual(store.rows.map(\.assessment.status), [.readFailed(reason: "offline"), .readFailed(reason: "offline")])
-        XCTAssertEqual(store.rows.compactMap(\.account).map(store.accountLabel(for:)), ["Last read 1m ago", "Last read 1m ago"])
+        XCTAssertEqual(store.rows.compactMap(\.account).map { store.accountLabel(for: $0) }, ["Last read 1m ago", "Last read 1m ago"])
         XCTAssertNil(store.maxUsedPct)
         XCTAssertEqual(store.rows.map { $0.resetLabel(now: now) }, ["2h 00m", "2h 00m"])
         store.lastError = nil
@@ -259,7 +259,7 @@ final class ReadingGateTests: XCTestCase {
         return Gates(notice: report.quotaNotice(for: window), level: row.level,
                      startsAlerts: !alerts.update(report: next, agents: [window], now: later).criticalAgentIDs.isEmpty,
                      startsCredits: !resets.update(report: next, now: later).isEmpty,
-                     menuFigure: store.maxUsedPct, status: row.account.map(store.accountLabel(for:)) ?? "no account",
+                     menuFigure: store.maxUsedPct, status: row.account.map { store.accountLabel(for: $0) } ?? "no account",
                      reset: row.resetLabel(now: now), hint: store.quotaForecastHint(for: window.id),
                      keepsLeftOutWindow: retained.snapshot(for: spark.id) != nil,
                      keepsLeftOutRow: settings.agents.contains { $0.id == spark.id },

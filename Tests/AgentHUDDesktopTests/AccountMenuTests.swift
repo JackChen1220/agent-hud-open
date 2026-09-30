@@ -134,7 +134,7 @@ final class AccountMenuTests: XCTestCase {
         XCTAssertEqual(store.enabledBilling.map { store.view.level(of: $0) }, [.critical, .critical, .critical, nil])
         XCTAssertEqual(items.map { $0.toolTip?.hasPrefix("Balance could not be read\nEst. cost") }, [false, false, false, true])
         XCTAssertEqual(StatusItemController.valueColor(.critical), NSColor(StatusPalette.textColor(for: .critical, light: SystemAppearance.isLight)))
-        XCTAssertEqual([StatusLevel.warning, .ok, nil].map(StatusItemController.valueColor), [.secondaryLabelColor, .secondaryLabelColor, .secondaryLabelColor])
+        XCTAssertEqual([StatusLevel.warning, .ok, nil].map { StatusItemController.valueColor($0) }, [.secondaryLabelColor, .secondaryLabelColor, .secondaryLabelColor])
     }
 
     /// The menu `StatusItemController` builds over `report` at `now`, in English, with the rows of `agents` shown.

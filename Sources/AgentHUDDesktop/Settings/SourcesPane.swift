@@ -22,7 +22,7 @@ struct SourcesPane: View {
         VStack(alignment: .leading, spacing: 24) {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(groups) { group in
-                    AgentSettingsCard(group: group, settings: settings, theme: theme, accountLabel: store.accountLabel(for:),
+                    AgentSettingsCard(group: group, settings: settings, theme: theme, accountLabel: { store.accountLabel(for: $0) },
                         isExpanded: Binding(get: { expanded.contains(group.id) }, set: { value in
                             if value { expanded.insert(group.id) } else { expanded.remove(group.id) }
                         }), dragging: $dragging)
@@ -39,7 +39,7 @@ struct AgentSettingsCard: View {
     let settings: SettingsStore
     let theme: Theme
     /// Whether an account is current or when it was last read, as its header in the panel says.
-    let accountLabel: (AccountObservation) -> String
+    let accountLabel: @MainActor (AccountObservation) -> String
     @Binding var isExpanded: Bool
     @Binding var dragging: AgentOrderDrag?
     private var canExpand: Bool { !group.agents.isEmpty || group.hasLiveStatus }
