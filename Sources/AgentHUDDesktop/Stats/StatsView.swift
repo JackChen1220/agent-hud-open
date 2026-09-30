@@ -281,3 +281,13 @@ final class StatsWindowController: HostedWindowController {
         window.setFrame(frame, display: true)
     }
 }
+
+private extension StatsTab {
+    /// The page's name in the window's picker.
+    var label: String {
+        switch self {
+        case .tokens: L10n.text("Token", "Tokens")
+        case .sessions: L10n.text("会话", "Sessions")
+        }
+    }
+}

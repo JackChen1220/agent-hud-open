@@ -1,3 +1,4 @@
+import AgentHUDCore
 import Foundation
 
 /// Motion effects for the dot and ASCII glow styles, ported from the ASCII HUD bar design. An effect scales each

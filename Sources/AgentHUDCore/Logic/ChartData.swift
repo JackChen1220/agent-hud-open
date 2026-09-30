@@ -39,18 +39,6 @@ public struct TokenDimensions: OptionSet, Hashable, Sendable {
     public func count(_ bucket: UsageBucket) -> Int { count(bucket.kinds) }
 }
 
-/// The statistics window's two pages: token charts, and the session list with each session's page.
-public enum StatsTab: Hashable, Sendable {
-    case tokens, sessions
-
-    public var label: String {
-        switch self {
-        case .tokens: L10n.text("Token", "Tokens")
-        case .sessions: L10n.text("会话", "Sessions")
-        }
-    }
-}
-
 public enum StatsRange: Int, CaseIterable, Sendable, Hashable {
     case hours5 = 5
     case hours24 = 24

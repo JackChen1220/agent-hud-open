@@ -1,3 +1,4 @@
+import AgentHUDCore
 import Foundation
 
 /// Geometry of the glow layer relative to the island it wraps.

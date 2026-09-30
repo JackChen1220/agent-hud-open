@@ -1,3 +1,4 @@
+import AgentHUDCore
 import Foundation
 
 /// Options for the dot and ASCII glow styles.

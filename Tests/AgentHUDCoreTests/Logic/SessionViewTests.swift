@@ -3,7 +3,7 @@ import XCTest
 @testable import AgentHUDCore
 
 /// What the store makes of a session: whether it is live or blocked on the user, its state, label and last message, the
-/// lists and vendors it counts in, how fast the glow breathes, and how sessions are ordered and given a vendor.
+/// lists and vendors it counts in, whether anything is in flight, and how sessions are ordered and given a vendor.
 final class SessionViewTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
     private let hour: TimeInterval = 3600
@@ -53,7 +53,6 @@ final class SessionViewTests: XCTestCase {
         var liveSessions: [String]
         var hasLiveSession: Bool
         var workingVendors: Set<String>
-        var breathSeconds: Double
     }
 
     /// A Claude session that started five hours ago, has ended two hours ago unless the source still has it in flight,
@@ -86,8 +85,7 @@ final class SessionViewTests: XCTestCase {
                 // is live.
                 let expected = Answers(live: row.live, waiting: row.live && newest == .waiting, state: newest.state, label: label,
                                        message: newest == .none || !row.liveStatus ? nil : "Earlier answer", liveSessions: row.live ? ["s"] : [],
-                                       hasLiveSession: row.live, workingVendors: row.live ? ["Claude"] : [],
-                                       breathSeconds: row.live ? 3 : 7)
+                                       hasLiveSession: row.live, workingVendors: row.live ? ["Claude"] : [])
                 XCTAssertEqual(answers(session, in: store), expected, "\(row) with the newest turn \(newest)")
             }
         }
@@ -210,10 +208,10 @@ final class SessionViewTests: XCTestCase {
         }, in: store)
         XCTAssertEqual(answers(vendorless, in: store), Answers(
             live: true, waiting: true, state: .waitingForApproval, label: "Needs approval", message: "Allow the edit?",
-            liveSessions: ["vendorless"], hasLiveSession: true, workingVendors: [], breathSeconds: 3))
+            liveSessions: ["vendorless"], hasLiveSession: true, workingVendors: []))
         XCTAssertEqual(answers(named, in: store), Answers(
             live: false, waiting: false, state: nil, label: "Live status off", message: nil,
-            liveSessions: ["vendorless"], hasLiveSession: true, workingVendors: [], breathSeconds: 3))
+            liveSessions: ["vendorless"], hasLiveSession: true, workingVendors: []))
     }
 
     /// A session whose client waits for an answer to a permission request waits for approval for as long as the client
@@ -327,8 +325,7 @@ final class SessionViewTests: XCTestCase {
     private func answers(_ session: LiveSession, in store: UsageStore) -> Answers {
         Answers(live: store.isSessionLive(session), waiting: store.isSessionWaiting(session), state: store.sessionState(session),
                 label: store.sessionStatusLabel(session), message: store.sessionMessage(session),
-                liveSessions: store.liveSessions.map(\.id), hasLiveSession: store.hasLiveSession, workingVendors: store.workingVendors,
-                breathSeconds: store.glowAppearance(light: false).breathSeconds)
+                liveSessions: store.liveSessions.map(\.id), hasLiveSession: store.hasLiveSession, workingVendors: store.workingVendors)
     }
 
     /// The grid's turns: an older finished one with the last message, then the newest.

@@ -424,22 +424,6 @@ public final class UsageStore {
 
     public var updatedAt: Date? { report?.generatedAt }
 
-    /// - screen: which display's glow to resolve; nothing asks for the default one.
-    public func glowAppearance(light: Bool, on screen: String? = nil) -> GlowAppearance {
-        let appearance = GlowAppearance.resolve(
-            levels: levels,
-            paused: isPaused || !isAccessAllowed,
-            anyAgentActive: hasLiveSession,
-            glow: settings.settings.glow(on: screen),
-            light: light
-        )
-        guard glowHidden else { return appearance }
-        return GlowAppearance(
-            stops: appearance.stops, peakOpacity: appearance.peakOpacity, troughOpacity: appearance.troughOpacity,
-            breathing: appearance.breathing, breathSeconds: appearance.breathSeconds, hidden: true
-        )
-    }
-
     // MARK: Consumers (token spenders, e.g. model families)
 
     /// Token spend is independent of which remaining-quota windows the user monitors.

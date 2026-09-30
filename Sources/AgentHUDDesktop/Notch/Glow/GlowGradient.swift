@@ -1,3 +1,4 @@
+import AgentHUDCore
 import Foundation
 
 public struct GradientStop: Hashable, Sendable {

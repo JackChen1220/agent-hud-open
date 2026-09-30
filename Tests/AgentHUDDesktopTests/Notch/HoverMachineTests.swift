@@ -1,5 +1,6 @@
 import XCTest
 @testable import AgentHUDCore
+@testable import AgentHUDDesktop
 
 final class HoverMachineTests: XCTestCase {
     let config = HoverMachine.Config(hoverDelay: 0.4, collapseDelay: 0.2)

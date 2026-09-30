@@ -48,24 +48,6 @@ public struct GlowSettings: Hashable, Codable, Sendable {
 
     public init() {}
 
-    /// Grid options with the pitch scaled like range and feather for small previews.
-    public func pattern(scale: Double = 1) -> GlowPattern {
-        GlowPattern(style: style, pitch: gridPitch * scale, core: gridCore, fade: gridFade,
-                    density: gridDensity, effect: effect)
-    }
-
-    /// The glow rect around an island. The blurred style uses range and feather; the grid styles size the
-    /// rect to the farthest dot, with no blur margin above the screen edge.
-    public func geometry(islandWidth: Double, islandHeight: Double, islandRadius: Double, scale: Double = 1) -> GlowGeometry {
-        guard style != .blur else {
-            return GlowGeometry.compute(islandWidth: islandWidth, islandHeight: islandHeight, islandRadius: islandRadius,
-                                        range: range * scale, blur: blur * scale)
-        }
-        let reach = GlowMatrix.reach(pitch: gridPitch * scale, core: gridCore, fade: gridFade)
-        return GlowGeometry.compute(islandWidth: islandWidth, islandHeight: islandHeight, islandRadius: islandRadius,
-                                    range: reach.rounded(.up), blur: 0)
-    }
-
     static func clamp(_ value: Double?, to range: ClosedRange<Double>, default fallback: Double) -> Double {
         guard let value, value.isFinite else { return fallback }
         return min(range.upperBound, max(range.lowerBound, value))

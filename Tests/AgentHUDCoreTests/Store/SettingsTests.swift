@@ -414,19 +414,6 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(store.rows.map(\.id), [claude.id])
     }
 
-    func testGlowFollowsPauseAndHide() async {
-        let store = makeStore()
-        await store.refresh()
-        XCTAssertTrue(store.glowAppearance(light: false).breathing)
-        store.pause(for: 3600)
-        XCTAssertTrue(store.isPaused)
-        XCTAssertFalse(store.glowAppearance(light: false).breathing)
-        store.resume()
-        XCTAssertFalse(store.isPaused)
-        store.glowHidden = true
-        XCTAssertTrue(store.glowAppearance(light: false).hidden)
-    }
-
     func testTokenChartsIncludeAllModelsRegardlessOfQuotaSwitches() {
         let store = makeStore()
         let hour = Calendar.current.dateInterval(of: .hour, for: Date())!.start

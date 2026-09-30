@@ -1,5 +1,6 @@
 import XCTest
 @testable import AgentHUDCore
+@testable import AgentHUDDesktop
 
 final class GlowGradientTests: XCTestCase {
     func testStopLocationsAreCentredPerAgent() {
@@ -58,6 +59,21 @@ final class GlowAppearanceTests: XCTestCase {
         let a = GlowAppearance.resolve(levels: [], paused: false, anyAgentActive: true, glow: GlowSettings())
         XCTAssertEqual(a.stops, GlowGradient.idleStops)
         XCTAssertFalse(a.hidden)
+    }
+
+    @MainActor
+    func testGlowFollowsPauseAndHide() async {
+        let defaults = UserDefaults(suiteName: "AgentHUDTests.\(UUID().uuidString)")!
+        let store = UsageStore(provider: DemoUsageProvider(), settings: SettingsStore(defaults: defaults, defaultAgents: DemoData.agents))
+        await store.refresh()
+        XCTAssertTrue(store.glowAppearance(light: false).breathing)
+        store.pause(for: 3600)
+        XCTAssertTrue(store.isPaused)
+        XCTAssertFalse(store.glowAppearance(light: false).breathing)
+        store.resume()
+        XCTAssertFalse(store.isPaused)
+        store.glowHidden = true
+        XCTAssertTrue(store.glowAppearance(light: false).hidden)
     }
 
     func testLegacyIdleKeysAreIgnored() throws {
