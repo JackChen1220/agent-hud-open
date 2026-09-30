@@ -41,10 +41,10 @@ final class IslandStoreTests: XCTestCase {
                        "a notice that holds nothing back still shows above a fine account; a pool never shows its vendor's")
     }
 
-    /// Only quota rows with a status level take part: a held back, signed-out or reset-passed reading does not, a reading
-    /// half an hour old does, and an API balance does not, although the glow gives its level a segment of its own.
+    /// The pulse and the colours share one list of segments: every row whose reading shows a level, a reading half an
+    /// hour old included, and every balance, each in its place. A held back, signed-out or reset-passed reading has none.
     @MainActor
-    func testTheAlertPulseCountsOnlyQuotaRowsThatShowALevel() throws {
+    func testTheAlertPulseAndTheColoursShareOneListOfSegments() throws {
         let suite = "IslandStoreTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let current = try XCTUnwrap(ProviderAccount.identified(provider: "Codex", user: "current@example.com", workspace: nil))
@@ -74,7 +74,7 @@ final class IslandStoreTests: XCTestCase {
             accounts: ["Codex": [.init(account: current, observedAt: now), .init(account: old, observedAt: now, isCurrent: false)]]))
         store.now = now
 
-        XCTAssertEqual(store.alertPulseVendors, ["Claude", "Claude", "Codex"])
-        XCTAssertEqual(store.levels, [.ok, .ok, .warning, .critical], "the balance's segment sits between those the pulse counts")
+        XCTAssertEqual(store.alertPulseVendors, ["Claude", "Claude", "DeepSeek", "Codex"])
+        XCTAssertEqual(store.levels, [.ok, .ok, .warning, .critical], "a Codex alert lights the segment that shows Codex's colour")
     }
 }

@@ -42,8 +42,15 @@ public struct ReportView: Sendable {
     public let rowGroups: [(vendor: String, rows: [AgentRow])]
     /// Account cards follow the agent switches: a billing pool's card its pool's rows, any other its vendor's.
     public let billing: [APIBilling]
-    /// Status per enabled row that has one, in glow order, each balance once. Rows without a reading stay out of the glow.
-    public let levels: [StatusLevel]
+    /// One part of the glow: a quota row's or an API account's level, and the vendor whose alerts light it.
+    public struct GlowSegment: Hashable, Sendable {
+        public let vendor: String
+        public let level: StatusLevel
+    }
+
+    /// The glow's parts in glow order: each enabled row whose reading shows a level, each balance once. The glow's colours
+    /// and an alert's pulse both come from this one list.
+    public let glowSegments: [GlowSegment]
     /// Newest first, by the last event each source reported: a prompt, a reply, a tool result or an approval request. A
     /// running session nothing has been heard from for half an hour sits below one that just answered. Sessions with the
     /// same last event are ordered by vendor, then id.
@@ -90,10 +97,11 @@ public struct ReportView: Sendable {
         }
         let quota = Dictionary(uniqueKeysWithValues: rows.compactMap { row in row.level.map { (row.id, $0) } })
         var seenAccounts: Set<String> = []
-        let levels = enabled.flatMap { model -> [StatusLevel] in
-            if !model.isAPIBilled { return quota[model.id].map { [$0] } ?? [] }
+        let segments = enabled.flatMap { model -> [GlowSegment] in
+            if !model.isAPIBilled { return quota[model.id].map { [GlowSegment(vendor: model.vendor, level: $0)] } ?? [] }
             return billing.filter { $0.contains(model) && seenAccounts.insert($0.id).inserted }.compactMap {
                 Self.level(of: $0, assessment: Self.assessment(of: $0, in: report, failure: failure, now: now))
+                    .map { GlowSegment(vendor: model.vendor, level: $0) }
             }
         }
         var order: [String] = []
@@ -114,7 +122,7 @@ public struct ReportView: Sendable {
         self.rows = rows
         rowGroups = order.map { ($0, groups[$0] ?? []) }
         self.billing = billing
-        self.levels = levels
+        glowSegments = segments
         sessions = (report?.sessions ?? []).map { Self.read($0, index: index, settings: settings, now: now) }.sorted {
             if $0.lastEventAt != $1.lastEventAt { return $0.lastEventAt > $1.lastEventAt }
             let lhs = $0.source.vendor ?? "", rhs = $1.source.vendor ?? ""
@@ -132,9 +140,12 @@ public struct ReportView: Sendable {
         return report.activeQuotaPoolIDs?[pool.provider]?.contains(pool.id) ?? true
     }
 
-    /// The vendor of each quota row that shows a status level, in row order. An alert's pulse lights the part of the glow
-    /// its vendor's entries take in this list.
-    public var alertPulseVendors: [String] { rows.filter { $0.level != nil }.map { $0.agent.vendor } }
+    /// Each glow segment's level, in glow order.
+    public var levels: [StatusLevel] { glowSegments.map(\.level) }
+
+    /// Each glow segment's vendor, in glow order. An alert's pulse lights the part of the glow its vendor's segments take,
+    /// the same part their colours take.
+    public var alertPulseVendors: [String] { glowSegments.map(\.vendor) }
 
     /// The most consumed window among those whose readings show a level, shown in the menu bar.
     public var maxUsedPct: Double? { rows.filter(\.assessment.showsLevel).compactMap(\.usedPct).max() }
