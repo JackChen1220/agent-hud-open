@@ -176,6 +176,59 @@ final class UsageRefreshTests: XCTestCase, @unchecked Sendable {
                        since.addingTimeInterval(UsageRefresh.accountInterval), "quiet says nothing about an account used elsewhere")
     }
 
+    func testOnlySessionsInFlightAndRunningTurnsAreReadAgainAsTheyAge() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000), ms = Int64(1_800_000_000_000)
+        func session(endedAgo: TimeInterval? = nil, readAgo: TimeInterval) -> LiveSession {
+            LiveSession(id: "s", agentId: "claude-model:test", task: "Task", terminal: nil, startedAt: now.addingTimeInterval(-3600),
+                        endedAt: endedAgo.map { now.addingTimeInterval(-$0) }, pctOfWindow: nil, tokensIn: 1, tokensOut: 1,
+                        observedAt: now.addingTimeInterval(-readAgo))
+        }
+        func turn(_ state: SessionTurn.State, observedAgo seconds: Int64) -> SessionTurn {
+            SessionTurn(provider: "claude", sessionID: "s", turnID: "t", state: state, startedAtMs: ms - 900_000, observedAtMs: ms - seconds * 1000)
+        }
+        let cases: [(name: String, sessions: [LiveSession], turns: [SessionTurn], checks: [TimeInterval])] = [
+            ("a session in flight read 30 s ago", [session(readAgo: 30)], [], [91]),
+            ("a session in flight read 1800 s ago, whose check has passed", [session(readAgo: 1800)], [], [-1679]),
+            ("an ended session", [session(endedAgo: 10, readAgo: 0)], [], []),
+            ("a running turn observed 45 s ago", [], [turn(.running, observedAgo: 45)], [76, 256, 1756]),
+            ("a turn waiting for approval", [], [turn(.waitingForApproval, observedAgo: 10)], []),
+            ("a completed turn", [], [turn(.completed, observedAgo: 10)], []),
+            ("an ended turn", [], [turn(.ended, observedAgo: 10)], []),
+            ("a waiting turn of a session in flight", [session(readAgo: 0)], [turn(.waitingForApproval, observedAgo: 10)], [121]),
+        ]
+        for item in cases {
+            XCTAssertEqual(UsageReport(generatedAt: now, snapshots: [], sessions: item.sessions, turns: item.turns).activityChecks,
+                           item.checks.map(now.addingTimeInterval), item.name)
+        }
+    }
+
+    func testTheAccountPaceFollowsATurnFor300SecondsAndASessionFor30Minutes() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000), ms = Int64(1_800_000_000_000)
+        let since = now.addingTimeInterval(-30)
+        func session(readAgo: TimeInterval) -> LiveSession {
+            LiveSession(id: "s", agentId: "claude-model:test", task: "Task", terminal: nil, startedAt: now.addingTimeInterval(-3600),
+                        pctOfWindow: nil, tokensIn: 1, tokensOut: 1, observedAt: now.addingTimeInterval(-readAgo))
+        }
+        func turn(_ state: SessionTurn.State, observedAgoMs: Int64) -> SessionTurn {
+            SessionTurn(provider: "claude", sessionID: "s", turnID: "t", state: state, startedAtMs: ms - 900_000, observedAtMs: ms - observedAgoMs)
+        }
+        let cases: [(name: String, sessions: [LiveSession], turns: [SessionTurn], interval: TimeInterval)] = [
+            ("a running turn observed 299.999 s ago", [], [turn(.running, observedAgoMs: 299_999)], UsageRefresh.runningAccountInterval),
+            ("a running turn observed 300 s ago", [], [turn(.running, observedAgoMs: 300_000)], UsageRefresh.accountInterval),
+            ("a turn waiting for approval", [], [turn(.waitingForApproval, observedAgoMs: 10_000)], UsageRefresh.accountInterval),
+            ("a session in flight read 1799.999 s ago", [session(readAgo: 1799.999)], [], UsageRefresh.liveAccountInterval),
+            ("a session in flight read 1800 s ago", [session(readAgo: 1800)], [], UsageRefresh.accountInterval),
+            ("a stale running turn of a session in flight", [session(readAgo: 0)], [turn(.running, observedAgoMs: 300_000)],
+             UsageRefresh.liveAccountInterval),
+            ("a waiting turn of a session in flight", [session(readAgo: 0)], [turn(.waitingForApproval, observedAgoMs: 10_000)],
+             UsageRefresh.liveAccountInterval),
+        ]
+        for item in cases {
+            let report = UsageReport(generatedAt: now, snapshots: [], sessions: item.sessions, turns: item.turns)
+            XCTAssertEqual(report.accountCheck(since: since, now: now, seesLocalWork: true), since.addingTimeInterval(item.interval), item.name)
+        }
+    }
+
     func testResetDeadlineSurvivesArrivalAndRetriesOnlyAfterAnAttempt() {
         let start = Date(timeIntervalSince1970: 1_800_000_000)
         let reset = start.addingTimeInterval(90)
