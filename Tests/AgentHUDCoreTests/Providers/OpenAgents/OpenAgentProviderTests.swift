@@ -550,9 +550,8 @@ final class OpenAgentProviderTests: XCTestCase {
             return .init(windows: [.init(id: c.pool.windowID("weekly"), label: "Weekly", remaining: 70)])
         }, history: QuotaHistoryStore(), clock: { now }, ledger: ledger)
         let report = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 168)
-        _ = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 168)
         let count = await calls.count
-        XCTAssertEqual(count, 1)
+        XCTAssertEqual(count, 1, "two credentials of one pool read it once")
         XCTAssertEqual(report.snapshots.count, 1)
         XCTAssertTrue(report.consumerIdsByQuota.values.allSatisfy(\.isEmpty))
         let recorded = try await ledger.buckets(since: .distantPast)

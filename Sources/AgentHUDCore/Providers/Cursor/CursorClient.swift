@@ -109,7 +109,6 @@ actor CursorClient {
             fetches += 1
             return ProviderSessions(notice: error.localizedDescription)
         }
-        if let cached, cached.account == auth.account, cached.since == start, now.timeIntervalSince(cached.at) < UsageRefresh.accountRequestSpacing { return cached.result }
         if cached?.account != auth.account { cached = nil }
         do {
             let events = try await fetchEvents(auth: auth, since: start, until: now)
@@ -118,7 +117,7 @@ actor CursorClient {
             fetches += 1
             return result
         } catch {
-            // Cache retry failures too: polling local sessions every five seconds must not hammer the dashboard.
+            // A failed read keeps the sessions the last one found, with a notice, until the next account step.
             let message = L10n.text("Cursor 账户用量读取失败，稍后自动重试", "Cursor account usage could not be read; retrying shortly")
             var previous = cached?.result ?? ProviderSessions()
             previous.notice = message

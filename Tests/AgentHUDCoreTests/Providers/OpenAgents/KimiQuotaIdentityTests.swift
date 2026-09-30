@@ -116,7 +116,7 @@ final class KimiQuotaIdentityTests: XCTestCase {
     }
 
     @MainActor
-    func testExpiryRetiresCachedQuotaAndSettingsBeforeQuotaCacheRefresh() async throws {
+    func testExpiryRetiresTheQuotaAndSettingsAtOnce() async throws {
         let input = Inputs(now: now, credentials: [credential("expiring", expiresAt: now.addingTimeInterval(62))])
         let server = Server()
         let retained = RetainedUsageProvider(provider: provider(input, server))
@@ -138,7 +138,7 @@ final class KimiQuotaIdentityTests: XCTestCase {
         XCTAssertTrue(store.report?.subscriptions.isEmpty == true)
         XCTAssertTrue(store.report?.services?.isEmpty == true)
         let requests = await server.requests
-        XCTAssertEqual(requests.filter { $0 == "usages" }.count, 1)
+        XCTAssertEqual(requests.filter { $0 == "usages" }.count, 2, "each account refresh reads the pool while its credential lasts")
     }
 
     func testTemporaryFailureRetainsActiveQuotaButUnauthorizedDoesNot() async throws {

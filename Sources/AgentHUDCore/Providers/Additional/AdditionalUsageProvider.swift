@@ -10,9 +10,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
     private let readCompletions: @Sendable (Date) throws -> [SessionCompletion]
     private let history: QuotaHistoryStore
     private let clock: @Sendable () -> Date
-    /// A change of this value (such as a consent toggle) refreshes quota without waiting for the interval.
-    private let quotaKey: @Sendable () async -> String
-    private var lastQuota: (at: Date, key: String, result: Result<ProviderQuota, UsageProviderError>)?
+    private var lastQuota: (at: Date, result: Result<ProviderQuota, UsageProviderError>)?
     /// The account the last reading that succeeded resolved, which a failed reading keeps: usage kept per account must
     /// not move to another key and back whenever a quota request fails.
     private var lastAccount: ProviderAccount?
@@ -27,7 +25,6 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
          history: QuotaHistoryStore,
          readCompletions: @escaping @Sendable (Date) throws -> [SessionCompletion] = { _ in [] },
          clock: @escaping @Sendable () -> Date = { Date() },
-         quotaKey: @escaping @Sendable () async -> String = { "" },
          refreshSessions: @escaping @Sendable (Int) async -> Void = { _ in },
          watchedDirectories: [URL]? = nil, fileChanges: @escaping @Sendable (Set<String>?) async -> Void = { _ in },
          ledger: UsageLedger = .inMemory()) {
@@ -35,7 +32,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
         noteChanges = fileChanges
         self.readCompletions = readCompletions
         self.refreshSessions = refreshSessions
-        self.history = history; self.clock = clock; self.quotaKey = quotaKey
+        self.history = history; self.clock = clock
         self.watchedDirectories = watchedDirectories
         self.ledger = ledger
         sessionLedger = SessionLedger(source: source.rawValue, ledger: ledger)
@@ -63,7 +60,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
         readCompletions: { since in
             guard let hook = CompletionHooks.Source(rawValue: source.rawValue) else { return [] }
             return try CompletionHooks.read(source: hook, since: since)
-        }, quotaKey: { source == .copilot ? String(await consented()) : "" }, refreshSessions: { hours in
+        }, refreshSessions: { hours in
             if source == .cursor {
                 _ = await cursor.sessions(since: Date().addingTimeInterval(-Double(max(168, hours)) * 3600))
             }
@@ -93,18 +90,16 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
 
     func refreshAccountUsage(historyHours: Int) async {
         await refreshSessions(historyHours)
-        let now = clock(), key = await quotaKey()
-        if lastQuota == nil || lastQuota!.key != key || now.timeIntervalSince(lastQuota!.at) >= UsageRefresh.accountRequestSpacing {
-            do {
-                let result = try await readQuota()
-                try Task.checkCancellation()
-                lastQuota = (now, key, .success(result))
-                if result.forgetAccounts { await history.removeAll() }
-                await history.append(result.scopedWindows(source).map { .init(agentId: $0.id, timestamp: now, remainingPct: $0.remaining) }, now: now)
-            } catch {
-                if Task.isCancelled { return }
-                lastQuota = (now, key, .failure(UsageProviderError(error.localizedDescription)))
-            }
+        let now = clock()
+        do {
+            let result = try await readQuota()
+            try Task.checkCancellation()
+            lastQuota = (now, .success(result))
+            if result.forgetAccounts { await history.removeAll() }
+            await history.append(result.scopedWindows(source).map { .init(agentId: $0.id, timestamp: now, remainingPct: $0.remaining) }, now: now)
+        } catch {
+            if Task.isCancelled { return }
+            lastQuota = (now, .failure(UsageProviderError(error.localizedDescription)))
         }
     }
 

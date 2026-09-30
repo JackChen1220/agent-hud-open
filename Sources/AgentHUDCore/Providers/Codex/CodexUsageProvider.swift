@@ -61,7 +61,6 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
 
     public func refreshAccountUsage(historyHours: Int) async {
         let now = clock()
-        guard lastRequestAt.map({ now.timeIntervalSince($0) >= UsageRefresh.accountRequestSpacing }) ?? true else { return }
         lastRequestAt = now
         await read(home: home) { try await self.readLimits() }
         await read(home: piHome, fetch: readPiLimits)

@@ -33,12 +33,10 @@ public actor DeepSeekUsageProvider: UsageProvider, LedgerRecording {
     public func refreshAccountUsage(historyHours: Int) async {
         guard DeepSeekLocator.isInstalled(directory: directory) else { return }
         let now = clock()
-        if lastBalance == nil || now.timeIntervalSince(lastBalance!.at) >= UsageRefresh.accountRequestSpacing {
-            do { lastBalance = (now, .success(try await readBalance())) }
-            catch {
-                if Task.isCancelled { return }
-                lastBalance = (now, .failure(UsageProviderError(error.localizedDescription)))
-            }
+        do { lastBalance = (now, .success(try await readBalance())) }
+        catch {
+            if Task.isCancelled { return }
+            lastBalance = (now, .failure(UsageProviderError(error.localizedDescription)))
         }
     }
 

@@ -978,7 +978,8 @@ final class ClaudeCodeProviderTests: XCTestCase {
             let count = await history.count
             XCTAssertEqual(count, 0)
         }
-        XCTAssertEqual(try String(contentsOf: directory.appendingPathComponent("calls"), encoding: .utf8), "called\n")
+        XCTAssertEqual(try String(contentsOf: directory.appendingPathComponent("calls"), encoding: .utf8), "called\ncalled\n",
+                       "each account refresh asks the engine; how often is the collector's to decide")
     }
 
     func testASessionKeepsRunningWhileItsSubagentsWork() async throws {

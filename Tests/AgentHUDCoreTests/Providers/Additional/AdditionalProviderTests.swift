@@ -196,7 +196,8 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         var values: [URLRequest] = []
         func record(_ value: URLRequest) { values.append(value) }
     }
-    func testCursorCachesInitialDashboardFailure() async throws {
+    /// Every account step asks the dashboard, since the collector decides how often; a failure keeps its notice.
+    func testCursorKeepsADashboardFailureNotice() async throws {
         let requests = Requests()
         let client = CursorClient(database: try authDB(), http: ProviderHTTP(send: { request in
             await requests.record(request)
@@ -205,7 +206,7 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         let first = await client.sessions(since: now.addingTimeInterval(-86400))
         let second = await client.sessions(since: now.addingTimeInterval(-86400))
         let count = await requests.values.count
-        XCTAssertEqual(count, 1)
+        XCTAssertEqual(count, 2)
         XCTAssertNotNil(first.notice)
         XCTAssertEqual(first.notice, second.notice)
     }

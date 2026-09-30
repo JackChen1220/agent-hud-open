@@ -9,7 +9,6 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
     public static let liveThreshold: TimeInterval = SessionPhase.Limits.quiet
 
     /// Engine queries spawn a process, so they run at most this often regardless of the poll interval.
-    public static let engineMinimumInterval = UsageRefresh.accountRequestSpacing
 
     private let engine: ClaudeEngineUsageClient?
     private let engineCache = EngineUsageCache()
@@ -62,16 +61,14 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
         let now = clock()
         do {
             let profileURL = accountProfileURL
-            let (result, fetchedAt, fresh) = try await engineCache.fetch(client: engine, now: now, minimumInterval: Self.engineMinimumInterval) {
+            let (result, fetchedAt) = try await engineCache.fetch(client: engine, now: now) {
                 profileURL.flatMap { try? Data(contentsOf: $0) }
             }
-            if fresh {
-                let account = account(for: result)
-                await history.append(result.usage.usage.rows.map { $0.scoped(to: account) }.map {
-                    QuotaSample(agentId: $0.id, timestamp: fetchedAt, remainingPct: $0.window.remainingPct)
-                }, now: now)
-            }
-        } catch { /* The cached result carries the account error into the next local report. */ }
+            let account = account(for: result)
+            await history.append(result.usage.usage.rows.map { $0.scoped(to: account) }.map {
+                QuotaSample(agentId: $0.id, timestamp: fetchedAt, remainingPct: $0.window.remainingPct)
+            }, now: now)
+        } catch { /* The kept result carries the account error into the next local report. */ }
     }
 
     public func fetchUsage(agents: [AgentDescriptor], historyHours: Int) async throws -> UsageReport {
@@ -216,7 +213,8 @@ public struct ClaudeCodeProvider: UsageProvider, LedgerRecording {
     }
 }
 
-/// Serialises engine queries and throttles them, since each one spawns a full engine process.
+/// Serialises engine queries, each of which spawns a full engine process, and keeps the last reading for the reports
+/// between them. How often the engine is asked is the collector's to decide (`UsageRefresh.accountRequestSpacing`).
 actor EngineUsageCache {
     /// One engine reading with what the account profile read around it says. The profile can run to megabytes, so
     /// it is decoded once for the reading rather than on every pass that shows it.
@@ -235,13 +233,9 @@ actor EngineUsageCache {
         return (try last.result.get(), last.at)
     }
 
-    /// `fresh` is false when the reading comes from the cache rather than a new engine query.
     /// The profile is read before and after the query; a login change in between discards the reading.
-    func fetch(client: ClaudeEngineUsageClient?, now: Date, minimumInterval: TimeInterval,
-               profile: @Sendable () -> Data? = { nil }) async throws -> (Reading, Date, fresh: Bool) {
-        if let last, now.timeIntervalSince(last.at) < minimumInterval {
-            return (try last.result.get(), last.at, false)
-        }
+    func fetch(client: ClaudeEngineUsageClient?, now: Date,
+               profile: @Sendable () -> Data? = { nil }) async throws -> (Reading, Date) {
         let result: Result<Reading, any Error>
         do {
             guard let client else { throw ClaudeDataError.engineNotFound }
@@ -260,9 +254,9 @@ actor EngineUsageCache {
             try Task.checkCancellation()
             result = .failure(error)
         }
-        // Failed attempts use the same interval, so completion polling cannot repeatedly spawn a broken engine.
+        // A failed attempt is kept too, so the reports until the next query carry its error.
         last = (now, result)
-        return (try result.get(), now, true)
+        return (try result.get(), now)
     }
 }
 

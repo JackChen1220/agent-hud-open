@@ -103,7 +103,7 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
         let prior = identities, identify = identify
         var resolved: [(String, OpenAgentCredential, Identity)] = []
         for credential in raw {
-            if let known = prior[credential.pool.id], (known.pool.evidence == .account || now.timeIntervalSince(known.at) < UsageRefresh.accountRequestSpacing) {
+            if let known = prior[credential.pool.id], known.pool.evidence == .account {
                 resolved.append((credential.pool.id, .init(service: credential.service, token: credential.token,
                     pool: known.pool, headers: credential.headers, clients: credential.clients, expiresAt: credential.expiresAt), known))
                 continue
@@ -132,11 +132,6 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
         let identityNotices = Dictionary(uniqueKeysWithValues: resolved.map { ($0.0, $0.2.notice) })
         var results: [QuotaResult] = []
         accounts: for account in accounts.sorted(by: { $0.pool.id < $1.pool.id }) {
-            if let value = old[account.pool.id], now.timeIntervalSince(value.at) < UsageRefresh.accountRequestSpacing {
-                results.append(.init(credential: account, quota: value.quota, notice: value.notice, at: value.at, isActive: value.isActive,
-                                     readAt: value.readAt, plan: value.plan))
-                continue
-            }
             var failures: [String] = [], allUnauthorized = true
             let identityNotice = identityNotices[account.pool.id] ?? nil
             for alias in aliases[account.pool.id] ?? [account] {

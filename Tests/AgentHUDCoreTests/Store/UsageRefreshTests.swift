@@ -328,20 +328,18 @@ final class UsageRefreshTests: XCTestCase, @unchecked Sendable {
         await request.value
     }
 
-    func testQuotaKeyChangeRefreshesBeforeTheInterval() async throws {
+    func testGivingAndWithdrawingConsentTakesEffectAtTheNextRead() async throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         final class State: @unchecked Sendable { var consented = false; var reads = 0 }
         let state = State(), history = QuotaHistoryStore()
         let provider = AdditionalUsageProvider(source: .copilot, readQuota: {
             state.reads += 1
             return state.consented ? ProviderQuota(windows: [.init(id: "copilot:chat", label: "Chat", remaining: 40)]) : ProviderQuota(forgetAccounts: true)
-        }, readSessions: { _ in .init() }, history: history, clock: { now }, quotaKey: { String(state.consented) })
+        }, readSessions: { _ in .init() }, history: history, clock: { now })
         await provider.refreshAccountUsage(historyHours: 24)
-        await provider.refreshAccountUsage(historyHours: 24)
-        XCTAssertEqual(state.reads, 1)
         state.consented = true
         await provider.refreshAccountUsage(historyHours: 24)
-        XCTAssertEqual(state.reads, 2)
+        XCTAssertEqual(state.reads, 2, "every account step reads; the collector decides when")
         let report = try await provider.fetchUsage(agents: [], historyHours: 24)
         XCTAssertEqual(report.snapshots.first?.remainingPct, 40)
         XCTAssertNil(report.forgottenAccountProviders)

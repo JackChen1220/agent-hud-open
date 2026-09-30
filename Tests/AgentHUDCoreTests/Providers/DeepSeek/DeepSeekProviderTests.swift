@@ -463,7 +463,7 @@ final class DeepSeekProviderTests: XCTestCase {
         let report = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 169)
         _ = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 169)
         let calls = await counter.calls
-        XCTAssertEqual(calls, 1)
+        XCTAssertEqual(calls, 2, "each account refresh reads the balance; how often is the collector's to decide")
         XCTAssertEqual(report.sessions.count, 1)
         XCTAssertEqual(report.sessions[0].tokensIn, 8086)
         let recorded = await transcripts.usage(since: .distantPast)
