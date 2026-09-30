@@ -296,6 +296,23 @@ public enum SnapshotRunner {
         }
         store.replace(report: UsageReport(generatedAt: resetNow, snapshots: quotaSnapshots, sessions: []))
         save("island-weekly-resets-dark", IslandScene(store: store, settings: settings, open: true, light: false), folder: folder, scheme: .dark)
+        // Full names too long for a row give way to their short names: Claude's weekly window in English, a Codex bucket's
+        // and a pool's with its plan.
+        let pool = BillingPool(provider: "Kimi", realm: "CN", product: .plan, scope: "snapshot", evidence: .account, entitlement: "kimi-code")
+        let longNames = Array(quotaAgents.prefix(3)) + [
+            AgentDescriptor(id: "codex:base_model_inference:primary", vendor: "Codex", model: L10n.text("Luna Reserve · 每周额度", "Luna Reserve · Weekly limit"),
+                            shortModel: "Reserve", source: L10n.sourceCodexAppServer, enabled: true, allModels: false),
+            AgentDescriptor(id: pool.windowID("limit:TIME_UNIT_MINUTE:300.0"), vendor: "Kimi", model: L10n.text("5 小时额度 · Allegretto", "5-hour quota · Allegretto"),
+                            shortModel: WindowNames.Period.fiveHours.shortName, source: "Kimi", enabled: true, billingPool: pool, account: ProviderAccount(pool: pool)),
+            AgentDescriptor(id: pool.windowID("monthly"), vendor: "Kimi", model: L10n.text("月总额度 · Allegretto", "Monthly total quota · Allegretto"),
+                            shortModel: WindowNames.Period.month.shortName, source: "Kimi", enabled: true, billingPool: pool, account: ProviderAccount(pool: pool)),
+        ]
+        settings.updateAgents { _ in longNames }
+        store.replace(report: UsageReport(generatedAt: resetNow, snapshots: longNames.map {
+            UsageSnapshot(agentId: $0.id, remainingPct: 64, resetAt: resetNow.addingTimeInterval(86400), windowDuration: 7 * 86400, updatedAt: resetNow)
+        }, sessions: []))
+        save("island-long-names-dark", IslandScene(store: store, settings: settings, open: true, light: false), folder: folder, scheme: .dark)
+        settings.updateAgents { _ in quotaAgents }
         let resetBalances: [(String, CodexResetCredits?)] = [
             ("available", DemoData.codexResetCredits(now: resetNow)),
             ("count-only", CodexResetCredits(availableCount: 3, credits: nil)),
