@@ -2,6 +2,10 @@
 
 Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the same number. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
+## 0.4.28 — 2026-09-30
+
+- Agent HUD Open is unchanged from 0.4.27. This version carries the release of the Agent HUD app built on it.
+
 ## 0.4.27 — 2026-09-30
 
 - Only one Agent HUD runs at a time. Agent HUD Open and any app built on it share one lock: a launch while another copy runs says where that copy is and quits before it reads or writes anything. Hook commands, snapshots and probes are not affected, and a demo run, which keeps its own settings, starts beside it.
