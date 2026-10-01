@@ -118,8 +118,9 @@ public struct CombinedUsageProvider: UsageProvider {
                 quotaNotices.merge(report.quotaNotices ?? report.sourceNotices, uniquingKeysWith: { _, new in new })
                 issues.merge(report.typedReadingIssues, uniquingKeysWith: { _, new in new })
             }
-            // A source that failed, or said what went wrong without filing it under a vendor, failed to read.
-            if let message = error ?? (report?.sourceNotices.isEmpty == true ? report?.notice : nil) {
+            // An unclassified notice is a failed source. Explicitly classified account failures keep their scope.
+            if let message = error ?? (report?.sourceNotices.isEmpty == true && report?.readingIssues == nil
+                && report?.quotaNotices == nil ? report?.notice : nil) {
                 notices[vendors[index].vendor] = message
                 quotaNotices[vendors[index].vendor] = message
                 issues[vendors[index].vendor] = .readFailed(message)

@@ -73,12 +73,13 @@ public struct UsageReport: Hashable, Codable, Sendable {
     /// Providers whose accounts must be forgotten now, for example after the user withdrew consent to read them.
     /// Unlike an empty inventory, which keeps earlier accounts as last readings, their readings, rows and settings retire at once.
     public let forgottenAccountProviders: Set<String>?
+    /// Notices by vendor, or by `ClientHome.sourceKey` for a login whose account this run could not yet identify.
     public let sourceNotices: [String: String]
-    /// The part of `sourceNotices` about readings, by vendor: a quota or balance read that failed or could not be verified.
+    /// The part of `sourceNotices` about readings, by vendor or client home: a quota or balance read that failed or could not be verified.
     /// Notices about local logs and hooks are only in `sourceNotices`. Nil when a report does not tell them apart, so that
     /// all of its source notices count. Written beside `readingIssues` for readers of the notice text.
     public let quotaNotices: [String: String]?
-    /// What each vendor's provider said about its readings: a quota or balance read that failed or could not be verified,
+    /// What each vendor's provider said about its readings, by vendor or client home: a quota or balance read that failed or could not be verified,
     /// which holds back that vendor's alerts, status levels and retained sessions. A billing pool's rows answer to their own
     /// account's issue instead. Nil in a report that does not type its issues, whose `quotaNotices` then count as failed
     /// reads.

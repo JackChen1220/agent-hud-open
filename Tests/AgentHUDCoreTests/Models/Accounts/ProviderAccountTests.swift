@@ -34,6 +34,17 @@ final class ProviderAccountTests: XCTestCase {
         XCTAssertEqual(anonymous.providerAccount(home: "work").evidence, .unresolved)
     }
 
+    func testOlderPiAccountReadingsRestoreTheirDisplayClient() throws {
+        let account = AccountObservation(account: accountA, home: "pi:alternate", client: "Pi", observedAt: now)
+        var saved = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(account)) as? [String: Any])
+        saved["client"] = nil
+        let restored = try JSONDecoder().decode(AccountObservation.self, from: JSONSerialization.data(withJSONObject: saved))
+        XCTAssertEqual(restored.client, "Pi")
+        XCTAssertEqual(restored.with(isCurrent: false).client, "Pi")
+        XCTAssertEqual(restored.account, accountA)
+        XCTAssertEqual(restored.observedAt, now)
+    }
+
     func testSwitchingAccountsKeepsTheLastReadingWithoutMixingCredits() async throws {
         let provider = RetainedUsageProvider(provider: Sequence([
             report(account: accountA, remaining: 0, at: now, credits: 2),

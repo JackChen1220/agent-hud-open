@@ -5,6 +5,33 @@ import XCTest
 
 final class AccountMenuTests: XCTestCase {
     @MainActor
+    func testPiCodexAccountAppearsOnceUnderItsSubscriptionProvider() throws {
+        let suite = "AccountMenuTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite); L10n.setLanguage(.system) }
+        let now = Date()
+        let account = try XCTUnwrap(ProviderAccount.identified(provider: "Codex", user: "shared@example.com", workspace: "workspace"))
+        let agents = ["5h", "Weekly"].map {
+            AgentDescriptor(id: account.windowID($0), vendor: "Codex", model: $0, source: "", enabled: true, account: account)
+        }
+        let settings = SettingsStore(defaults: defaults, defaultAgents: agents)
+        settings.update { $0.language = .en }
+        let store = UsageStore(provider: DemoUsageProvider(), settings: settings)
+        store.replace(report: UsageReport(generatedAt: now, snapshots: agents.map {
+            .init(agentId: $0.id, remainingPct: 60, updatedAt: now)
+        }, sessions: [], discoveredAgents: agents, accounts: ["Codex": [
+            .init(account: account, home: "pi:alternate", client: "Pi", label: "shared@example.com", observedAt: now),
+            .init(account: account, home: "", client: "Codex", label: "shared@example.com", observedAt: now, isCurrent: false)
+        ]]))
+        let controller = StatusItemController(store: store, settings: settings)
+        let menu = NSMenu()
+        controller.menuNeedsUpdate(menu)
+        XCTAssertEqual(Array(menu.items.prefix(4)).map(\.title), ["Codex", "shared@example.com", "5h", "Weekly"])
+        XCTAssertEqual(menu.items.filter { $0.title == "shared@example.com" }.count, 1)
+        XCTAssertEqual(menu.items.filter { $0.title == "Codex" }.count, 1)
+        XCTAssertFalse(menu.items.contains { $0.title == "Pi" })
+    }
+
+    @MainActor
     func testMenuGroupsAccountsAndDistinguishesPendingFromHistoricalReadings() throws {
         _ = NSApplication.shared
         let suite = "AccountMenuTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

@@ -18,7 +18,7 @@ public enum ReadingStatus: Hashable, Sendable {
     public var isNormal: Bool { self == .normal }
 }
 
-/// What a provider says about a reading, at the scope where it read: a vendor, an account or plan pool, or a balance.
+/// What a provider says about a reading, at the scope where it read: a vendor, client home, account or plan pool, or balance.
 public struct ReadingIssue: Hashable, Codable, Sendable {
     public enum Kind: String, Codable, Sendable {
         case readFailed, unverified
@@ -112,19 +112,20 @@ public struct ReadingAssessment: Hashable, Sendable {
 }
 
 public extension UsageReport {
-    /// A reading's status. A window and an account answer to the account's issue, else its vendor's; a billing pool and
+    /// A reading's status. A window and account answer to the account's issue, else its client home's, else its vendor's; a billing pool and
     /// its windows answer to the pool's account alone, since a vendor with several pools reads each on its own. A balance
     /// answers to its billing entry's issue. A notice about a client's local logs or hooks is no issue.
     func status(of subject: ReadingSubject) -> ReadingStatus {
         switch subject {
         case .window(let agent):
-            let account = agent.account.flatMap { observation(accountID: $0.id) }?.ownStatus ?? .normal
-            if agent.billingPool != nil || !account.isNormal { return account }
-            return vendorStatus(agent.vendor)
+            let account = agent.account.flatMap { observation(accountID: $0.id) }
+            if agent.billingPool != nil { return account?.ownStatus ?? .normal }
+            return account.map { status(of: .account($0)) } ?? vendorStatus(agent.vendor)
         case .account(let observation):
             let own = observation.ownStatus
             if observation.account.isBillingPool || !own.isNormal { return own }
-            return vendorStatus(observation.account.provider)
+            let client = vendorStatus(ClientHome.sourceKey(provider: observation.account.provider, home: observation.home))
+            return client.isNormal ? vendorStatus(observation.account.provider) : client
         case .balance(let billing):
             return billing.ownStatus
         }

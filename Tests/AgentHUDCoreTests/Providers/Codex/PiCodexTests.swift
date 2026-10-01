@@ -75,7 +75,10 @@ final class PiCodexTests: XCTestCase {
         await provider.refreshAccountUsage(historyHours: 24)
         clock.advance(61)
         await provider.refreshAccountUsage(historyHours: 24)
-        let report = try await provider.fetchUsage(agents: [], historyHours: 24)
+        let source = try await provider.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(source.notice, "Pi offline")
+        let combined = CombinedUsageProvider([.init("Codex", provider)])
+        let report = try await combined.fetchUsage(agents: [], historyHours: 24)
         let native = try XCTUnwrap(report.discoveredAgents.first { $0.account == a.providerAccount(home: "") })
         let pi = try XCTUnwrap(report.discoveredAgents.first { $0.account == b.providerAccount(home: "pi") })
         XCTAssertNil(report.quotaNotice(for: native))
@@ -84,9 +87,55 @@ final class PiCodexTests: XCTestCase {
                        "the failure is the Pi account's own")
         XCTAssertEqual(report.sourceNotices, [:], "no other account shows it")
         XCTAssertEqual(report.readingIssues, [:])
-        XCTAssertEqual(report.notice, "Pi offline")
         XCTAssertEqual(report.snapshot(for: pi.id)?.updatedAt, now, "failure never renews the old reading")
         XCTAssertEqual(report.accounts?["Codex"]?.count, 2)
+        let view = ReportView(report: report, agents: report.discoveredAgents, settings: Settings(), now: clock.now)
+        let sections = view.accountSections(view.rows)
+        XCTAssertNil(view.accountNotice(for: try XCTUnwrap(sections.first { $0.id == native.account?.id })))
+        XCTAssertEqual(view.accountNotice(for: try XCTUnwrap(sections.first { $0.id == pi.account?.id })), "Pi offline")
+    }
+
+    func testRestartKeepsExpiredPiNoticeOnItsCachedAccountAndClearsItOnRecovery() async throws {
+        let native = try PiCodexClient.parse(Data(Self.payload.utf8), expectedAccount: "workspace")
+        let pi = try PiCodexClient.parse(Data(Self.payload.replacingOccurrences(of: "A@Example.com", with: "b@example.com").utf8),
+                                       expectedAccount: "workspace")
+        let clock = TestClock(now)
+        let original = CodexUsageProvider(readLimits: { native }, transcripts: CodexTranscriptStore(roots: []),
+            history: QuotaHistoryStore(), clock: { clock.now }, readPiLimits: { pi }, piHome: "pi:alternate")
+        await original.refreshAccountUsage(historyHours: 24)
+        let saved = try JSONDecoder().decode(UsageReport.self, from: JSONEncoder().encode(
+            try await original.fetchUsage(agents: [], historyHours: 24).restartCopy))
+
+        clock.advance(61)
+        let steps = Steps([.failure(UsageProviderError("Pi login expired")), .success(pi)])
+        let restarted = CodexUsageProvider(readLimits: { native }, transcripts: CodexTranscriptStore(roots: []),
+            history: QuotaHistoryStore(), clock: { clock.now }, readPiLimits: { try await steps.next() }, piHome: "pi:alternate")
+        let combined = CombinedUsageProvider([.init("Codex", restarted)])
+        let fresh = try await combined.fetchAccountAndLocalUsage(agents: [], historyHours: 24)
+        let failed = fresh.retainingReadings(from: saved)
+        let nativeID = native.providerAccount(home: "").id, piID = pi.providerAccount(home: "pi:alternate").id
+        let view = ReportView(report: failed, agents: failed.discoveredAgents, settings: Settings(), now: clock.now)
+        let sections = view.accountSections(view.rows)
+        XCTAssertEqual(view.rowGroups.map(\.vendor), ["Codex"], "both clients use the same subscription provider")
+        XCTAssertEqual(sections.count, 2)
+        let nativeSection = try XCTUnwrap(sections.first { $0.id == nativeID })
+        let piSection = try XCTUnwrap(sections.first { $0.id == piID })
+        XCTAssertNil(view.accountNotice(for: nativeSection))
+        XCTAssertEqual(view.accountNotice(for: piSection), "Pi login expired")
+        XCTAssertEqual(view.assessment(of: try XCTUnwrap(nativeSection.account)).status, .normal)
+        XCTAssertEqual(view.assessment(of: try XCTUnwrap(piSection.account)).status, .readFailed(reason: "Pi login expired"))
+        XCTAssertEqual(failed.observation(accountID: piID)?.observedAt, now, "a failure keeps the original reading time")
+        XCTAssertFalse(try XCTUnwrap(failed.observation(accountID: piID)).isCurrent)
+        XCTAssertEqual(failed.resetCredits(for: nativeID)?.availableCount, 2)
+        XCTAssertTrue(nativeSection.rows.allSatisfy { $0.assessment.confirmsEvents })
+        XCTAssertTrue(piSection.rows.allSatisfy { !$0.assessment.showsLevel })
+
+        clock.advance(61)
+        let recovered = try await combined.fetchAccountAndLocalUsage(agents: [], historyHours: 24).retainingReadings(from: failed)
+        let recoveredView = ReportView(report: recovered, agents: recovered.discoveredAgents, settings: Settings(), now: clock.now)
+        XCTAssertTrue(recoveredView.accountSections(recoveredView.rows).allSatisfy { recoveredView.accountNotice(for: $0) == nil })
+        XCTAssertTrue(try XCTUnwrap(recovered.observation(accountID: piID)).isCurrent)
+        XCTAssertEqual(recovered.observation(accountID: piID)?.observedAt, clock.now)
     }
 
     func testSameAccountResetProducesOneEventPerWindowAndOneHistorySample() async throws {
@@ -109,17 +158,152 @@ final class PiCodexTests: XCTestCase {
         XCTAssertEqual(count, 6, "three windows sampled twice, irrespective of client count")
     }
 
-    /// A Pi login that fails before it was ever read is a notice under Codex, which holds nothing back: not the native
-    /// account's windows, and not the Pi client's own sessions.
-    func testAPiLoginThatWasNeverReadIsANoticeUnderCodex() async throws {
+    func testLatestLoginOwnsOneAccountAcrossFailuresPollingAndRestart() async throws {
+        let native = try PiCodexClient.parse(Data(Self.payload.utf8), expectedAccount: "workspace")
+        let pi = try PiCodexClient.parse(Data(Self.payload.replacingOccurrences(of: "used_percent\":20", with: "used_percent\":40").utf8),
+                                       expectedAccount: "workspace")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = directory.appendingPathComponent("identities.json")
+        let clock = TestClock(now), nativeLogin = TestClock(now.addingTimeInterval(-100)), piLogin = now.addingTimeInterval(-50)
+        let steps = Steps([.success(pi), .failure(UsageProviderError("Pi login expired")), .failure(UsageProviderError("Pi login expired"))])
+        let provider = CodexUsageProvider(readLimits: { native }, transcripts: CodexTranscriptStore(roots: []),
+            history: QuotaHistoryStore(), clock: { clock.now }, readPiLimits: { try await steps.next() }, piHome: "pi:alternate",
+            identityCacheURL: cache, readLoginAt: { $0 == "pi:alternate" ? piLogin : nativeLogin.now })
+        let combined = CombinedUsageProvider([.init("Codex", provider)])
+        let first = try await combined.fetchAccountAndLocalUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(first.accounts?["Codex"]?.count, 1)
+        XCTAssertEqual(first.accounts?["Codex"]?.first?.client, "Pi")
+        XCTAssertEqual(first.snapshots.count, 3)
+        XCTAssertEqual(first.snapshots.first?.remainingPct, 60, "the selected client's reading belongs to the account")
+        let firstView = ReportView(report: first, agents: first.discoveredAgents, settings: Settings(), now: clock.now)
+        XCTAssertEqual(firstView.rowGroups.map(\.vendor), ["Codex"])
+
+        clock.advance(61)
+        let failed = try await combined.fetchAccountAndLocalUsage(agents: [], historyHours: 24)
+        let failedView = ReportView(report: failed, agents: failed.discoveredAgents, settings: Settings(), now: clock.now)
+        XCTAssertEqual(failedView.rowGroups.map(\.vendor), ["Codex"])
+        XCTAssertEqual(failed.accounts?["Codex"]?.first?.client, "Pi", "a successful native poll cannot take reading ownership")
+        XCTAssertEqual(failedView.accountSections(failedView.rows).count, 1)
+        XCTAssertEqual(failedView.accountNotice(for: try XCTUnwrap(failedView.accountSections(failedView.rows).first)), "Pi login expired")
+        XCTAssertEqual(failed.snapshots.first?.updatedAt, now)
+
+        nativeLogin.advance(150)
+        clock.advance(61)
+        let switched = try await combined.fetchAccountAndLocalUsage(agents: [], historyHours: 24)
+        let switchedView = ReportView(report: switched, agents: switched.discoveredAgents, settings: Settings(), now: clock.now)
+        XCTAssertEqual(switchedView.rowGroups.map(\.vendor), ["Codex"], "a later sign-in keeps the subscription group")
+        XCTAssertEqual(switched.accounts?["Codex"]?.first?.client, "Codex", "a later sign-in changes the reading client")
+        XCTAssertNil(switchedView.accountNotice(for: try XCTUnwrap(switchedView.accountSections(switchedView.rows).first)))
+        XCTAssertEqual(switched.accounts?["Codex"]?.count, 1)
+
+        let restarted = CodexUsageProvider(readLimits: { native }, transcripts: CodexTranscriptStore(roots: []),
+            history: QuotaHistoryStore(), clock: { clock.now }, readPiLimits: { pi }, piHome: "pi:alternate", identityCacheURL: cache)
+        await restarted.refreshAccountUsage(historyHours: 24)
+        let restored = try await restarted.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(restored.accounts?["Codex"]?.first?.client, "Codex", "unknown sign-in times preserve the confirmed client")
+        XCTAssertEqual(restored.accounts?["Codex"]?.count, 1)
+    }
+
+    func testCachedPiOwnerSurvivesAnExpiredLoginOnTheFirstRead() async throws {
+        let limits = try PiCodexClient.parse(Data(Self.payload.utf8), expectedAccount: "workspace"), now = now
+        let cached = AccountObservation(account: limits.providerAccount(home: "pi:alternate"), home: "pi:alternate", client: "Pi",
+                                        observedAt: now.addingTimeInterval(-100))
+        let earlier = UsageReport(generatedAt: cached.observedAt,
+            snapshots: limits.rows(home: cached.home).map {
+                UsageSnapshot(agentId: $0.id, remainingPct: $0.window.remainingPct, updatedAt: cached.observedAt)
+            }, sessions: [], discoveredAgents: limits.rows(home: cached.home).map(\.descriptor), accounts: ["Codex": [cached]])
+        let provider = CodexUsageProvider(readLimits: { limits }, transcripts: CodexTranscriptStore(roots: []),
+            history: QuotaHistoryStore(), clock: { now }, readPiLimits: { throw UsageProviderError("Pi login expired") },
+            piHome: "pi:alternate", initialAccounts: [cached])
+        await provider.refreshAccountUsage(historyHours: 24)
+        let fresh = try await provider.fetchUsage(agents: [], historyHours: 24)
+        let report = fresh.retainingReadings(from: earlier)
+        let view = ReportView(report: report, agents: report.discoveredAgents, settings: Settings(), now: now)
+        XCTAssertEqual(view.rowGroups.map(\.vendor), ["Codex"])
+        XCTAssertEqual(report.accounts?["Codex"]?.count, 1)
+        XCTAssertEqual(view.accountNotice(for: try XCTUnwrap(view.accountSections(view.rows).first)), "Pi login expired")
+        XCTAssertNil(report.sourceNotices["Codex"], "the failure never becomes a notice for another client")
+        XCTAssertEqual(report.snapshots.first?.updatedAt, cached.observedAt, "another client's poll cannot renew the owner's reading")
+    }
+
+    func testChangingNativeHomeReplacesItsPersistedReadingOwner() async throws {
+        let limits = try PiCodexClient.parse(Data(Self.payload.utf8), expectedAccount: "workspace")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = directory.appendingPathComponent("identities.json"), clock = TestClock(now)
+        let original = CodexUsageProvider(readLimits: { limits }, transcripts: CodexTranscriptStore(roots: []),
+            history: QuotaHistoryStore(), home: "native-old", clock: { clock.now }, identityCacheURL: cache)
+        await original.refreshAccountUsage(historyHours: 24)
+        let originalReport = try await original.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(originalReport.accounts?["Codex"]?.first?.home, "native-old")
+
+        clock.advance(61)
+        let restarted = CodexUsageProvider(readLimits: { limits }, transcripts: CodexTranscriptStore(roots: []),
+            history: QuotaHistoryStore(), home: "native-new", clock: { clock.now }, identityCacheURL: cache)
+        await restarted.refreshAccountUsage(historyHours: 24)
+        let report = try await restarted.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(report.accounts?["Codex"]?.count, 1)
+        XCTAssertEqual(report.accounts?["Codex"]?.first?.home, "native-new")
+        XCTAssertEqual(report.accounts?["Codex"]?.first?.client, "Codex")
+        XCTAssertEqual(report.snapshots.count, 3)
+        XCTAssertTrue(report.snapshots.allSatisfy { $0.updatedAt == clock.now })
+    }
+
+    func testChangingPiHomeReplacesItsOwnerRestoredFromTheLastReport() async throws {
+        let native = try PiCodexClient.parse(Data(Self.payload.utf8), expectedAccount: "workspace")
+        let pi = try PiCodexClient.parse(Data(Self.payload.replacingOccurrences(of: "A@Example.com", with: "b@example.com").utf8),
+                                       expectedAccount: "workspace")
+        let cached = AccountObservation(account: pi.providerAccount(home: "pi:old"), home: "pi:old", client: "Pi",
+                                        observedAt: now.addingTimeInterval(-100))
+        let now = now
+        let restarted = CodexUsageProvider(readLimits: { native }, transcripts: CodexTranscriptStore(roots: []),
+            history: QuotaHistoryStore(), clock: { now }, readPiLimits: { pi }, piHome: "pi:new",
+            readLoginAt: { _ in now.addingTimeInterval(-1000) }, initialAccounts: [cached])
+        await restarted.refreshAccountUsage(historyHours: 24)
+        let report = try await restarted.fetchUsage(agents: [], historyHours: 24)
+        let observation = try XCTUnwrap(report.accounts?["Codex"]?.first { $0.account == cached.account })
+        XCTAssertEqual(report.accounts?["Codex"]?.count, 2)
+        XCTAssertEqual(observation.home, "pi:new")
+        XCTAssertEqual(observation.client, "Pi")
+        XCTAssertEqual(observation.observedAt, now)
+        XCTAssertEqual(report.snapshots.count, 6)
+        XCTAssertTrue(report.snapshots.allSatisfy { $0.updatedAt == now })
+    }
+
+    func testLoginTimeUsesAuthenticationTimeAndNeverTokenRefreshTime() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("auth.json")
+        func token(_ claims: [String: Double]) throws -> String {
+            "e30." + (try JSONSerialization.data(withJSONObject: claims)).base64EncodedString() + ".signature"
+        }
+        for issued in [now.timeIntervalSince1970, now.timeIntervalSince1970 + 3600] {
+            let data = try JSONSerialization.data(withJSONObject: ["tokens": ["id_token": token([
+                "auth_time": now.timeIntervalSince1970 - 100, "iat": issued])]])
+            try data.write(to: file)
+            XCTAssertEqual(CodexLoginTime.native(in: directory), now.addingTimeInterval(-100))
+            XCTAssertEqual(try Data(contentsOf: file), data)
+        }
+        let data = try JSONSerialization.data(withJSONObject: ["openai-codex": ["access": token(["iat": now.timeIntervalSince1970])]])
+        try data.write(to: file)
+        XCTAssertNil(CodexLoginTime.pi(in: directory), "a token's issue time is not a sign-in time")
+        XCTAssertEqual(try Data(contentsOf: file), data)
+    }
+
+    /// An unread Pi login's failure belongs to its client home, without holding back native quota or Pi transcripts.
+    func testAPiLoginThatWasNeverReadKeepsItsOwnNotice() async throws {
         let a = try PiCodexClient.parse(Data(Self.payload.utf8), expectedAccount: "workspace"), now = now
         let provider = CodexUsageProvider(readLimits: { a }, transcripts: CodexTranscriptStore(roots: []), history: QuotaHistoryStore(),
                                           clock: { now }, readPiLimits: { throw UsageProviderError("Pi offline") })
         await provider.refreshAccountUsage(historyHours: 24)
         let report = try await provider.fetchUsage(agents: [], historyHours: 24)
-        XCTAssertEqual(report.sourceNotices, ["Codex": "Pi offline"])
-        XCTAssertEqual(report.readingIssues, [:])
-        XCTAssertEqual(report.quotaNotices, [:])
+        XCTAssertEqual(report.sourceNotices, ["Codex@pi": "Pi offline"])
+        XCTAssertEqual(report.readingIssues, ["Codex@pi": .readFailed("Pi offline")])
+        XCTAssertEqual(report.quotaNotices, ["Codex@pi": "Pi offline"])
         let native = try XCTUnwrap(report.discoveredAgents.first)
         XCTAssertEqual(report.status(of: .window(native)), .normal)
         let pi = AgentDescriptor(id: "pi-model:kimi-k2", vendor: "Pi", model: "kimi-k2", source: "", enabled: true)

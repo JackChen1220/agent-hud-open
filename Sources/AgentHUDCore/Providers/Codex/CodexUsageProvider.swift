@@ -10,6 +10,7 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
     private let home: String
     private let readPiLimits: @Sendable () async throws -> CodexRateLimits?
     private let piHome: String
+    private let readLoginAt: @Sendable (String) -> Date?
     private var lastRequestAt: Date?
     private struct Reading {
         let limits: CodexRateLimits
@@ -21,18 +22,40 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
     /// the account's key, and a reading can lack either: `account/read` can answer too late for the email, and an engine
     /// can leave out `accountId`.
     private var emails: [String: String] = [:]
+    private struct ClientLogin: Codable, Equatable {
+        let home: String
+        let client: String
+        let loggedInAt: Date?
+        let confirmedAt: Date
+    }
+    private struct IdentityCache: Codable {
+        let emails: [String: String]
+        let clients: [String: ClientLogin]
+    }
+    private var clients: [String: ClientLogin] = [:]
     private let identityCacheURL: URL?
 
     public init(readLimits: @escaping @Sendable () async throws -> CodexRateLimits,
                 transcripts: CodexTranscriptStore, history: QuotaHistoryStore, home: String = "",
                 clock: @escaping @Sendable () -> Date = { Date() },
                 readPiLimits: @escaping @Sendable () async throws -> CodexRateLimits? = { nil }, piHome: String = "pi",
-                identityCacheURL: URL? = nil) {
+                identityCacheURL: URL? = nil, readLoginAt: @escaping @Sendable (String) -> Date? = { _ in nil },
+                initialAccounts: [AccountObservation] = []) {
         self.readLimits = readLimits; self.transcripts = transcripts; self.history = history; self.home = home; self.clock = clock
         self.readPiLimits = readPiLimits; self.piHome = piHome; self.identityCacheURL = identityCacheURL
-        if let data = identityCacheURL.flatMap({ try? Data(contentsOf: $0) }),
-           let saved = try? JSONDecoder().decode([String: String].self, from: data) {
-            emails = saved
+        self.readLoginAt = readLoginAt
+        if let data = identityCacheURL.flatMap({ try? Data(contentsOf: $0) }) {
+            if let saved = try? JSONDecoder().decode(IdentityCache.self, from: data) {
+                emails = saved.emails; clients = saved.clients
+            } else if let saved = try? JSONDecoder().decode([String: String].self, from: data) {
+                emails = saved
+            }
+        }
+        // Earlier reports already chose a client. Keep that choice when its client has no reliable sign-in time.
+        for account in initialAccounts.sorted(by: { ($0.isCurrent ? 1 : 0, $0.observedAt) > ($1.isCurrent ? 1 : 0, $1.observedAt) })
+            where clients[account.account.id] == nil {
+            clients[account.account.id] = ClientLogin(home: account.home, client: account.client,
+                loggedInAt: nil, confirmedAt: account.observedAt)
         }
     }
 
@@ -40,6 +63,10 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
     public static func standard(ledger: UsageLedger, persistent: Bool = true) -> CodexUsageProvider {
         let directory = CodexLocator.dataDirectory
         let pi = PiCodexClient(directory: PiCodexClient.directory)
+        let nativeHome = ClientHome.key(directory, defaultDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true))
+        let piHome = "pi:" + ClientHome.key(pi.directory, defaultDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".pi/agent"))
+        let cached = persistent ? (try? Data(contentsOf: AppSupport.directory.appendingPathComponent("last-usage-report.json"))) : nil
+        let initial = cached.flatMap { try? JSONDecoder().decode(UsageReport.self, from: $0) }?.accounts?["Codex"] ?? []
         return CodexUsageProvider(readLimits: {
             guard let executable = CodexLocator.find() else {
                 throw UsageProviderError(L10n.text("安装并登录后即可读取额度", "Install and sign in to read quota"))
@@ -48,10 +75,12 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
         }, transcripts: .standard(directory: directory, ledger: ledger),
            history: QuotaHistoryStore(ledger: ledger, scope: "codex",
                                       importing: persistent ? AppSupport.directory.appendingPathComponent("codex-quota-history.json") : nil),
-           home: ClientHome.key(directory, defaultDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true)),
+           home: nativeHome,
            readPiLimits: { try await pi.fetch() },
-           piHome: "pi:" + ClientHome.key(pi.directory, defaultDirectory: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".pi/agent")),
-           identityCacheURL: persistent ? AppSupport.directory.appendingPathComponent("codex-identities.json") : nil)
+           piHome: piHome,
+           identityCacheURL: persistent ? AppSupport.directory.appendingPathComponent("codex-identities.json") : nil,
+           readLoginAt: { $0 == piHome ? CodexLoginTime.pi(in: pi.directory) : CodexLoginTime.native(in: directory) },
+           initialAccounts: initial)
     }
 
     public nonisolated var watchedDirectories: [URL]? { transcripts.roots }
@@ -74,8 +103,14 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
 
     private func read(home: String, fetch: @Sendable () async throws -> CodexRateLimits?) async {
         do {
-            if let limits = try await fetch() { readings[home] = Reading(limits: identified(limits, home: home), at: clock()) }
-            else { readings[home] = nil }
+            if let limits = try await fetch() {
+                let limits = identified(limits, home: home)
+                readings[home] = Reading(limits: limits, at: clock())
+                let account = limits.providerAccount(home: home).id
+                forgetOtherClients(home: home, keeping: account)
+                rememberClient(account: account, home: home)
+            }
+            else { readings[home] = nil; forgetOtherClients(home: home, keeping: nil) }
             failures[home] = nil
         } catch {
             guard !Task.isCancelled else { return }
@@ -96,7 +131,7 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
             let key = home + "/" + RecordCoding.hash([workspace])
             if emails[key] != email {
                 emails[key] = email
-                saveEmails()
+                saveIdentities()
             }
         } else if !workspace.isEmpty {
             if limits.account == nil, let known = emails[home + "/" + RecordCoding.hash([workspace])] {
@@ -112,11 +147,34 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
         return filled
     }
 
-    private func saveEmails() {
+    private func rememberClient(account: String, home: String) {
+        let login = readLoginAt(home)
+        // A cached owner outside the configured homes cannot read again after the user changes a client directory.
+        if let previous = clients[account], previous.home == self.home || previous.home == piHome {
+            if previous.home == home, previous.loggedInAt == nil, let login {
+                clients[account] = ClientLogin(home: home, client: previous.client, loggedInAt: login, confirmedAt: previous.confirmedAt)
+            } else {
+                guard let login, login > (previous.loggedInAt ?? previous.confirmedAt) else { return }
+                clients[account] = ClientLogin(home: home, client: home == piHome ? "Pi" : "Codex", loggedInAt: login, confirmedAt: clock())
+            }
+        } else {
+            clients[account] = ClientLogin(home: home, client: home == piHome ? "Pi" : "Codex", loggedInAt: login, confirmedAt: clock())
+        }
+        saveIdentities()
+    }
+
+    private func forgetOtherClients(home: String, keeping account: String?) {
+        let remaining = clients.filter { $0.value.home != home || $0.key == account }
+        guard remaining.count != clients.count else { return }
+        clients = remaining
+        saveIdentities()
+    }
+
+    private func saveIdentities() {
         guard let identityCacheURL else { return }
         do {
             try FileManager.default.createDirectory(at: identityCacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try JSONEncoder().encode(emails).write(to: identityCacheURL, options: .atomic)
+            try JSONEncoder().encode(IdentityCache(emails: emails, clients: clients)).write(to: identityCacheURL, options: .atomic)
         } catch { NSLog("[AgentHUD] Codex identity cache write failed: %@", error.localizedDescription) }
     }
 
@@ -125,9 +183,10 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
         for source in [home, piHome] {
             guard let reading = readings[source] else { continue }
             let key = reading.limits.providerAccount(home: source).id
-            // Prefer a successful native read, then a successful Pi read over a failed native read.
-            if let old = accounts[key], failures[old.0] == nil || failures[source] != nil { continue }
-            accounts[key] = (source, reading)
+            guard accounts[key] == nil else { continue }
+            let owner = clients[key]?.home ?? source
+            guard let owned = readings[owner], owned.limits.providerAccount(home: owner).id == key else { continue }
+            accounts[key] = (owner, owned)
         }
         return accounts.values.sorted { $0.1.limits.providerAccount(home: $0.0).id < $1.1.limits.providerAccount(home: $1.0).id }
     }
@@ -187,13 +246,16 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
                                cacheReadTokens: t.cachedInputTokens, observedAt: now, workingDirectory: t.cwd,
                                subagentTranscripts: descendants(of: t.id!), lastActivityAt: t.lastEventAt)
         }
-        // An account's failed read is its own, on its observation. A home that failed before it was ever read is a notice
-        // under Codex, and a pass that read no account at all is Codex's failed read.
-        let unread = failures.filter { readings[$0.key] == nil }.map(\.value).sorted()
-        let messages = (selected.compactMap { failures[$0.0] } + unread).sorted()
+        // An unread login's failure belongs to its client home, including accounts retained from an earlier run.
+        let selectedHomes = Set(selected.map(\.0))
+        let unread = failures.filter { readings[$0.key] == nil && !selectedHomes.contains($0.key) }
+        let clientFailures = Dictionary(uniqueKeysWithValues: unread.map {
+            (ClientHome.sourceKey(provider: "Codex", home: $0.key), $0.value)
+        })
+        let messages = (selected.compactMap { failures[$0.0] } + Array(unread.values)).sorted()
         let notice = messages.isEmpty ? nil : messages.joined(separator: " · ")
-        let failed = selected.isEmpty ? notice.map { ["Codex": $0] } ?? [:] : [:]
-        let sourceNotices = selected.isEmpty || unread.isEmpty ? failed : ["Codex": unread.joined(separator: " · ")]
+        let failed = selected.isEmpty ? failures[home].map { ["Codex": $0] } ?? [:] : [:]
+        let sourceNotices = failed.merging(clientFailures, uniquingKeysWith: { _, new in new })
         let consumerIds = Set(consumers.map(\.id) + sessions.map(\.agentId))
         // Pi's distinct account must not claim Codex transcript consumers. Pi owns its own token events.
         let nativeAccount = native?.limits.providerAccount(home: home).id
@@ -205,6 +267,7 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
         }
         let observations = selected.map { source, reading in
             AccountObservation(account: reading.limits.providerAccount(home: source), home: source,
+                client: clients[reading.limits.providerAccount(home: source).id]?.client,
                 label: reading.limits.account?.email, plan: reading.limits.plan, observedAt: reading.at,
                 quotaNotice: failures[source], readingIssue: failures[source].map(ReadingIssue.readFailed),
                 resetCredits: reading.limits.rateLimitResetCredits,
@@ -214,7 +277,7 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
                            notice: notice, discoveredAgents: windows.map { $0.row.descriptor }, consumers: consumers,
                            indexing: indexed.indexing, insightsByAgent: byAgent,
                            subscriptions: native?.limits.plan.map { ["Codex": $0] } ?? [:],
-                           sourceNotices: sourceNotices, quotaNotices: failed, readingIssues: failed.mapValues(ReadingIssue.readFailed),
+                           sourceNotices: sourceNotices, quotaNotices: sourceNotices, readingIssues: sourceNotices.mapValues(ReadingIssue.readFailed),
                            consumerIdsByQuota: consumerIdsByQuota, codexResetCredits: selected.count == 1 ? selected.first?.1.limits.rateLimitResetCredits : nil,
                            codexResetCreditsObservedAt: selected.count == 1 && selected.first?.1.limits.rateLimitResetCredits != nil ? selected.first?.1.at : nil,
                            completions: indexed.sessions.flatMap { $0.transcript.completions ?? [] },

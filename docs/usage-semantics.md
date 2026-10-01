@@ -69,7 +69,7 @@ The five kinds (`TokenKind`, selected as `TokenDimensions`) are additive and nev
 
 ### Accounts
 
-- Readings, quota history, alert baselines and display settings are keyed by the account's window rows, so two accounts of one client never share a history or a burn rate.
+- Readings, quota history, alert baselines and display settings are keyed by the account's window rows, so two accounts of one client never share a history or a burn rate. A ChatGPT account appears once under Codex, including accounts signed in through Pi. Its latest known sign-in chooses the client that reads it; without a reliable sign-in time it keeps that confirmed client through refreshes, failed reads and restarts, while its home is still configured.
 - The account of a provider's latest successful reading is current; only current accounts join the glow, the menu-bar figure, hints and alerts. A failed refresh keeps the current account, and a login without plan limits makes no account current.
 - An account's header says it is the current account only while its readings are sound. When its own read or its client's failed or could not be verified, it says when the account was last read, and the island above the account and the menu's tooltip give the reason, then the client's other notices; a billing pool's header speaks for its pool alone.
 - Other accounts keep their last reading and its observation time, greyed under the account's name, until they have not been seen for 30 days; their readings, rows and display settings then retire.
