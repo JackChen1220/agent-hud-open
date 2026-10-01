@@ -92,8 +92,9 @@ public struct AgentDescriptor: Hashable, Codable, Sendable, Identifiable {
     /// The row's own name, a quota window's full name or a model's, as every surface writes it: a persisted window key in
     /// words (`L10n.modelLabel(_:)`), else the model as written.
     public var name: String { L10n.modelLabel(model) }
-    /// The short form of `name` for tight places such as the menu's rows, a Watch row or a small widget: the provider's
-    /// short name for a window, else `L10n.shortModelLabel(_:)`. Never cut: a window without a short name gives its full name.
+    /// The short form of `name` for tight places, such as a panel row whose name column is too narrow for `name`, a menu row
+    /// that names its vendor, a Watch row or a small widget: the provider's short name for a window, else
+    /// `L10n.shortModelLabel(_:)`. Never cut: a window without a short name gives its full name.
     public var shortName: String { shortModel ?? L10n.shortModelLabel(model) }
     /// The vendor's name and the row's.
     public var displayName: String { "\(vendorName) · \(name)" }
