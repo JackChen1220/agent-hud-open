@@ -2,6 +2,13 @@
 
 Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the three-part numeric version `X.Y.Z`. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
+## 0.4.31 — 2026-10-03
+
+- Turn notifications say New reply and use a blue speech bubble, distinguishing them from quota recovery and warnings.
+- The distributed Mac application's update check is in Settings → Updates; the menu contains Settings and Quit.
+- iPhone and Apple Watch sync still requires Agent HUD for iPhone 1.4 or later.
+- Host API: unchanged.
+
 ## 0.4.30 — 2026-10-02
 
 - The distributed Agent HUD Mac application requires Agent HUD for iPhone 1.4 or later for iPhone and Apple Watch sync. Update the iPhone app before updating the Mac; iPhone 1.3 cannot read this release's data.
