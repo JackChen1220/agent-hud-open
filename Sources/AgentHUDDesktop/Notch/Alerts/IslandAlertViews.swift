@@ -26,8 +26,9 @@ struct IslandAlertCompactView: View {
                     }.frame(width: IslandController.alertWingWidth, alignment: .leading)
                     Color.clear.frame(width: cameraWidth)
                     HStack(spacing: 7) {
-                        CompletionSymbol(eventID: event.id)
-                        Text(L10n.text("已完成", "Completed")).font(.ui(12, .medium))
+                        TurnEndedSymbol()
+                        Text(L10n.text("本轮结束", "Turn ended"))
+                            .font(.ui(12, .medium)).foregroundStyle(Color(alert.accent))
                     }.frame(width: IslandController.alertWingWidth, alignment: .trailing)
                 }
                 .foregroundStyle(.white)
@@ -36,7 +37,7 @@ struct IslandAlertCompactView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("island-alert-sessionCompleted")
-            .accessibilityLabel("\(event.vendor) · \(L10n.text("本轮已完成", "Turn completed")) · \(event.task)")
+            .accessibilityLabel("\(event.vendor) · \(L10n.text("本轮结束", "Turn ended")) · \(event.task)")
         }
     }
 }
@@ -63,9 +64,9 @@ struct IslandAlertDetailView: View {
                         Text(event.model).font(.ui(10)).foregroundStyle(.white.opacity(0.45))
                     }
                     Spacer()
-                    CompletionSymbol(eventID: event.id)
-                    Text(L10n.text("本轮已完成", "Turn completed"))
-                        .font(.ui(11)).foregroundStyle(Color(IslandAlert.calmAccent))
+                    TurnEndedSymbol()
+                    Text(L10n.text("本轮结束", "Turn ended"))
+                        .font(.ui(11)).foregroundStyle(Color(alert.accent))
                 }
                 Text(event.task).font(.ui(15, .medium)).lineLimit(4).fixedSize(horizontal: false, vertical: true)
                 HStack {
@@ -77,9 +78,9 @@ struct IslandAlertDetailView: View {
                 }.font(.tabular(11)).foregroundStyle(.white.opacity(0.5))
                 Button(action: onOpen) {
                     Text(L10n.text("查看会话记录", "View sessions"))
-                        .font(.ui(12, .semibold)).foregroundStyle(.black)
+                        .font(.ui(12, .semibold)).foregroundStyle(.white.opacity(0.92))
                         .frame(maxWidth: .infinity).frame(height: 32)
-                        .background(Color(IslandAlert.calmAccent), in: RoundedRectangle(cornerRadius: 7))
+                        .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
                 }.buttonStyle(.plain)
             }.foregroundStyle(.white)
         }
@@ -100,10 +101,10 @@ struct IslandAlertInlineView: View {
         case .completion(let event):
             Button(action: onOpen) {
                 HStack(spacing: 10) {
-                    CompletionSymbol(eventID: event.id)
+                    TurnEndedSymbol()
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(L10n.text("\(event.vendor) 本轮已完成", "\(event.vendor) turn completed"))
-                            .font(.ui(12, .medium))
+                        Text(L10n.text("\(event.vendor) 本轮结束", "\(event.vendor) turn ended"))
+                            .font(.ui(12, .medium)).foregroundStyle(Color(alert.accent))
                         Text(event.task).font(.ui(10)).foregroundStyle(.white.opacity(0.45)).lineLimit(1)
                     }
                     Spacer()
@@ -114,22 +115,10 @@ struct IslandAlertInlineView: View {
     }
 }
 
-private struct CompletionSymbol: View {
-    let eventID: String
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var animationTrigger = 0
-
+private struct TurnEndedSymbol: View {
     var body: some View {
-        Image(systemName: "checkmark.circle.fill")
-            .font(.system(size: 16, weight: .semibold)).foregroundStyle(Color(IslandAlert.calmAccent))
-            .symbolEffect(.bounce.byLayer, options: .nonRepeating, value: animationTrigger)
-            .symbolEffectsRemoved(reduceMotion)
-            .task(id: eventID) {
-                guard !reduceMotion else { return }
-                // Let the island unfold before drawing attention to the completion mark.
-                do { try await Task.sleep(for: .seconds(IslandAnimation.duration)) } catch { return }
-                guard !reduceMotion else { return }
-                animationTrigger += 1
-            }
+        Image(systemName: "text.bubble")
+            .symbolRenderingMode(.palette)
+            .font(.system(size: 16, weight: .semibold)).foregroundStyle(Color(IslandAlert.turnAccent))
     }
 }
