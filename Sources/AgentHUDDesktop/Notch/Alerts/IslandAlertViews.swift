@@ -27,7 +27,7 @@ struct IslandAlertCompactView: View {
                     Color.clear.frame(width: cameraWidth)
                     HStack(spacing: 7) {
                         TurnEndedSymbol()
-                        Text(L10n.text("本轮结束", "Turn ended"))
+                        Text(L10n.text("有新回复", "New reply"))
                             .font(.ui(12, .medium)).foregroundStyle(Color(alert.accent))
                     }.frame(width: IslandController.alertWingWidth, alignment: .trailing)
                 }
@@ -37,7 +37,7 @@ struct IslandAlertCompactView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("island-alert-sessionCompleted")
-            .accessibilityLabel("\(event.vendor) · \(L10n.text("本轮结束", "Turn ended")) · \(event.task)")
+            .accessibilityLabel("\(event.vendor) · \(L10n.text("有新回复", "New reply")) · \(event.task)")
         }
     }
 }
@@ -65,7 +65,7 @@ struct IslandAlertDetailView: View {
                     }
                     Spacer()
                     TurnEndedSymbol()
-                    Text(L10n.text("本轮结束", "Turn ended"))
+                    Text(L10n.text("有新回复", "New reply"))
                         .font(.ui(11)).foregroundStyle(Color(alert.accent))
                 }
                 Text(event.task).font(.ui(15, .medium)).lineLimit(4).fixedSize(horizontal: false, vertical: true)
@@ -103,7 +103,7 @@ struct IslandAlertInlineView: View {
                 HStack(spacing: 10) {
                     TurnEndedSymbol()
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(L10n.text("\(event.vendor) 本轮结束", "\(event.vendor) turn ended"))
+                        Text(L10n.text("\(event.vendor) · 有新回复", "\(event.vendor) · New reply"))
                             .font(.ui(12, .medium)).foregroundStyle(Color(alert.accent))
                         Text(event.task).font(.ui(10)).foregroundStyle(.white.opacity(0.45)).lineLimit(1)
                     }
