@@ -5,6 +5,29 @@ import XCTest
 
 final class AccountMenuTests: XCTestCase {
     @MainActor
+    func testHostMenuItemsAreRebuiltWithTheirEnabledStateBetweenSettingsAndQuit() throws {
+        let suite = "AccountMenuTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite); L10n.setLanguage(.system) }
+        let settings = SettingsStore(defaults: defaults, defaultAgents: [])
+        settings.update { $0.language = .en }
+        let store = UsageStore(provider: DemoUsageProvider(), settings: settings)
+        var available = false
+        let controller = StatusItemController(store: store, settings: settings, additionalMenuItems: {
+            let item = NSMenuItem(title: "Check for Updates…", action: nil, keyEquivalent: "")
+            item.isEnabled = available
+            return [item]
+        })
+        let menu = NSMenu()
+        controller.menuNeedsUpdate(menu)
+        XCTAssertEqual(menu.items.suffix(3).map(\.title), ["Settings…", "Check for Updates…", "Quit"])
+        XCTAssertFalse(menu.items[menu.items.count - 2].isEnabled)
+        available = true
+        controller.menuNeedsUpdate(menu)
+        XCTAssertTrue(menu.items[menu.items.count - 2].isEnabled)
+        XCTAssertEqual(menu.items.filter { $0.title == "Check for Updates…" }.count, 1)
+    }
+
+    @MainActor
     func testPiCodexAccountAppearsOnceUnderItsSubscriptionProvider() throws {
         let suite = "AccountMenuTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite); L10n.setLanguage(.system) }

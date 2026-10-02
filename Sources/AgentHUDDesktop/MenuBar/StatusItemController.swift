@@ -15,14 +15,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private let store: UsageStore
     private let settings: SettingsStore
+    private let additionalMenuItems: () -> [NSMenuItem]
     var actions = MenuActions()
 
     private static let menuWidth: CGFloat = 250
     private static let agentMenuFont = NSFontManager.shared.convert(.menuFont(ofSize: 13), toHaveTrait: .boldFontMask)
 
-    init(store: UsageStore, settings: SettingsStore) {
+    init(store: UsageStore, settings: SettingsStore, additionalMenuItems: @escaping () -> [NSMenuItem] = { [] }) {
         self.store = store
         self.settings = settings
+        self.additionalMenuItems = additionalMenuItems
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
         menu.delegate = self
@@ -122,6 +124,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         ))
         menu.addItem(.separator())
         menu.addItem(action(L10n.text("设置…", "Settings…"), key: ",", modifiers: [.command], selector: #selector(openSettings)))
+        for item in additionalMenuItems() { menu.addItem(item) }
         menu.addItem(action(L10n.text("退出", "Quit"), key: "q", modifiers: [.command], selector: #selector(quit)))
     }
 

@@ -8,6 +8,7 @@ public final class DesktopApplication {
     public let store: UsageStore
     private let options: DesktopLaunchOptions
     private let additionalSettingsPages: [DesktopSettingsPage]
+    private let additionalMenuItems: () -> [NSMenuItem]
     private let onIslandEvents: ((IslandEventTracker.Update, UsageReport, Date) -> Void)?
     private var islandEvents = IslandEventTracker()
     /// The requests already on the island, so a change to the waiting list says which ones arrived and which left.
@@ -26,11 +27,13 @@ public final class DesktopApplication {
     /// found nothing, with the report and time the check used.
     public init(options: DesktopLaunchOptions, settings: SettingsStore, store: UsageStore,
                 additionalSettingsPages: [DesktopSettingsPage] = [],
+                additionalMenuItems: @escaping () -> [NSMenuItem] = { [] },
                 onIslandEvents: ((IslandEventTracker.Update, UsageReport, Date) -> Void)? = nil) {
         self.options = options
         self.settings = settings
         self.store = store
         self.additionalSettingsPages = additionalSettingsPages
+        self.additionalMenuItems = additionalMenuItems
         self.onIslandEvents = onIslandEvents
         onboardingWindow = OnboardingWindowController(settings: settings, store: store,
             sources: options.demo ? { DemoData.sources } : { SourceDetector.detect() })
@@ -47,7 +50,7 @@ public final class DesktopApplication {
         notch.onOpenStats = { [weak self] in self?.showStats() }
         notch.onOpenSettings = { [weak self] in self?.showSettings() }
         self.notch = notch
-        let statusItem = StatusItemController(store: store, settings: settings)
+        let statusItem = StatusItemController(store: store, settings: settings, additionalMenuItems: additionalMenuItems)
         statusItem.actions = MenuActions(
             toggleGlow: { [weak self] in self?.toggleGlow() },
             openSettings: { [weak self] in self?.showSettings() },

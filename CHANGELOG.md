@@ -2,6 +2,14 @@
 
 Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the three-part numeric version `X.Y.Z`. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
+## 0.4.30 — 2026-10-02
+
+- The distributed Agent HUD Mac application requires Agent HUD for iPhone 1.4 or later for iPhone and Apple Watch sync. Update the iPhone app before updating the Mac; iPhone 1.3 cannot read this release's data.
+- The distributed Mac application checks for stable releases and offers to download, verify and install updates. Automatic downloading and installation can be enabled in Settings; desktop betas are excluded.
+- Includes the desktop improvements listed under 0.4.30-beta.1 below.
+- Host API:
+  - `DesktopApplication.additionalMenuItems` lets an embedding application add its own menu items after the desktop settings entry. The standalone open-source application has no updater dependency.
+
 ## 0.4.30-beta.1 — 2026-10-02
 
 - This is a Mac desktop beta distribution: the distributed Agent HUD Mac beta disables Agent HUD Remote; keep Agent HUD 0.4.29 on your Mac to sync with the iPhone app version 1.3.
