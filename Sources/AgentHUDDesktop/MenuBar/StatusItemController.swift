@@ -181,7 +181,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let shortcut = modifierSymbols.filter { item.keyEquivalentModifierMask.contains($0.0) }
             .map(\.1).joined() + item.keyEquivalent.uppercased()
         item.view = MenuRowView(title: item.title, value: shortcut, image: item.image,
-                                font: .menuFont(ofSize: 13), minimumWidth: Self.menuWidth)
+                                font: .menuFont(ofSize: 13), minimumWidth: Self.menuWidth,
+                                attributedTitle: item.attributedTitle)
     }
 
     // MARK: Selectors
@@ -203,8 +204,8 @@ private final class MenuRowView: NSView {
     private static let selectionInset: CGFloat = 5
     private static let selectionRadius: CGFloat = 7
 
-    init(title: String, value: String = "", image: NSImage?, font: NSFont, titleColor: NSColor = .labelColor, valueColor: NSColor = .secondaryLabelColor, minimumWidth: CGFloat) {
-        self.title = NSAttributedString(string: title, attributes: [.font: font, .foregroundColor: titleColor])
+    init(title: String, value: String = "", image: NSImage?, font: NSFont, titleColor: NSColor = .labelColor, valueColor: NSColor = .secondaryLabelColor, minimumWidth: CGFloat, attributedTitle: NSAttributedString? = nil) {
+        self.title = attributedTitle ?? NSAttributedString(string: title, attributes: [.font: font, .foregroundColor: titleColor])
         self.value = NSAttributedString(string: value, attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: font.pointSize, weight: .regular),
             .foregroundColor: valueColor,

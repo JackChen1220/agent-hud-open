@@ -2,6 +2,11 @@
 
 Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the three-part numeric version `X.Y.Z`. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
+## 0.4.34-beta.4 — 2026-10-03
+
+- The distributed Mac application's New Version menu entry uses blue text with the regular menu font.
+- Host API: additional menu items retain their attributed title in the shared menu row, including its foreground color and font. The selected row still uses the system selection text color.
+
 ## 0.4.34-beta.3 — 2026-10-03
 
 - The distributed Mac application announces available updates with a download button beside Stats in the HUD and a New Version entry below Settings in its existing menu. Background checks do not open an update window; either entry opens it when selected.
