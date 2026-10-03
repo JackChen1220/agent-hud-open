@@ -268,6 +268,10 @@ final class StatsWindowController: HostedWindowController {
         fitHeightToContent()
     }
 
+    func windowDidDeminiaturize(_ notification: Notification) {
+        fitHeightToContent()
+    }
+
     /// Keep the top edge stable and let the scroll view handle content taller than the screen.
     private func fitHeightToContent() {
         guard idealContentHeight > 0, let window,
