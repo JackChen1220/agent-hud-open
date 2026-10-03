@@ -71,18 +71,20 @@ final class ScreenHUD {
     // MARK: Hover
 
     func pointer(inside: Bool) {
-        guard pointerInside != inside else { return }
-        pointerInside = inside
-        alerts.hold(inside)
-        // Whether Option is down can change without the pointer moving, so while it is over the HUD the
-        // modifier is watched. A global keyboard monitor would ask for accessibility; this does not.
-        modifierWatch?.invalidate()
-        modifierWatch = nil
-        if inside, settings.settings.requiresOptionToOpen {
-            modifierWatch = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-                Task { @MainActor in self?.reevaluateHover() }
+        if pointerInside != inside {
+            pointerInside = inside
+            alerts.hold(inside)
+            // Whether Option is down can change without the pointer moving, so while it is over the HUD the
+            // modifier is watched. A global keyboard monitor would ask for accessibility; this does not.
+            modifierWatch?.invalidate()
+            modifierWatch = nil
+            if inside, settings.settings.requiresOptionToOpen {
+                modifierWatch = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+                    Task { @MainActor in self?.reevaluateHover() }
+                }
             }
         }
+        // Moving within the HUD can reach the top while an ordinary hover is still waiting to open.
         reevaluateHover()
     }
 
@@ -110,6 +112,13 @@ final class ScreenHUD {
             && point.y >= region.minY && point.y <= region.maxY
     }
 
+    /// AppKit's pointer may stop one point short of maxY at a physical display boundary.
+    /// Only the HUD's own top edge qualifies; side and bottom queues keep their ordinary hover delay.
+    static func pointerTouchesTop(_ point: CGPoint, geometry: NotchGeometry) -> Bool {
+        geometry.edge == .top && point.y >= geometry.screenFrame.maxY - 1
+            && point.y <= geometry.screenFrame.maxY && containsPointer(point, in: geometry.rect)
+    }
+
     private var hoverRegion: CGRect {
         ScreenHUD.hoverRegion(open: machine.isOpen, panel: targetWindowFrame ?? island.panel.frame,
                               alert: alertFrame, marks: geometry.rect)
@@ -126,6 +135,18 @@ final class ScreenHUD {
         let opens = ScreenHUD.opensOnHover(counted: hoverOpens, open: machine.isOpen, pointerInside: pointerInside,
                                            typing: typing, requiresOption: settings.settings.requiresOptionToOpen,
                                            optionDown: NSEvent.modifierFlags.contains(.option))
+        let canFinishOpening = switch machine.state {
+        case .opening: true
+        // A handoff to Settings or Stats deliberately stays collapsed until the pointer leaves.
+        case .collapsed: !hoverOpens
+        default: false
+        }
+        if opens, canFinishOpening, settings.settings.openImmediatelyAtTop,
+           Self.pointerTouchesTop(mouseLocation(), geometry: geometry) {
+            hoverOpens = true
+            transition(machine.reduce(.forceOpen, config: config))
+            return
+        }
         guard opens != hoverOpens else { return }
         hoverOpens = opens
         let now = Date()
