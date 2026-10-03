@@ -1,0 +1,47 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>Agent HUD</title>
+    <item>
+      <title>0.4.34</title>
+      <pubDate>Sat, 03 Oct 2026 22:59:29 +0800</pubDate>
+      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.34-beta.4</link>
+      <sparkle:channel>beta</sparkle:channel>
+      <sparkle:minimumAutoupdateVersion>463</sparkle:minimumAutoupdateVersion>
+      <sparkle:version>463</sparkle:version>
+      <sparkle:shortVersionString>0.4.34-beta.4</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <description sparkle:format="markdown"># Agent HUD 0.4.34-beta.4
+
+## Compatibility
+
+**Requires Agent HUD for iPhone 1.4 or later** for iPhone and Apple Watch sync. Update the iPhone app before updating the Mac. Older iPhone versions cannot read this release's data.
+
+[Get the iPhone app](https://apps.apple.com/app/id6812113619).
+
+If the required iPhone version is not yet on the App Store, cross-device features require the corresponding TestFlight version.
+
+Requires an Apple Silicon Mac running macOS 14 or later.
+
+## Changes
+
+- The New Version menu entry uses blue text while keeping the regular menu font.
+</description>
+      <enclosure url="https://github.com/jazzenchen/agent-hud-open/releases/download/v0.4.34-beta.4/Agent-HUD-0.4.34-beta.4-arm64.dmg" length="11502041" type="application/octet-stream" sparkle:edSignature="jJmltpoPJVqN2YfiEqqfcB30TaRjIN7Xn92vhv1A6CnirLW3oh+u9qmnDqkxshGxrplaoCZcSlRXaTRPWPtCDA==" />
+      <agenthudMacOnly>false</agenthudMacOnly>
+      <agenthudMinimumIOSVersion>1.4</agenthudMinimumIOSVersion>
+    </item>
+    <item>
+      <title>0.4.29</title>
+      <pubDate>Wed, 30 Sep 2026 17:58:10 +0000</pubDate>
+      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.29</link>
+      <sparkle:version>450</sparkle:version>
+      <sparkle:shortVersionString>0.4.29</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <sparkle:informationalUpdate />
+      <description>Agent HUD 0.4.29 supports the App Store iPhone app 1.3. This Mac release predates in-app updates; download it from the release page.</description>
+    </item>
+  </channel>
+</rss>

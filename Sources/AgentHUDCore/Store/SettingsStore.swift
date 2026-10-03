@@ -80,7 +80,7 @@ public final class SettingsStore {
         updateAgents { $0.movingGroup(id: id, to: targetID) }
     }
 
-    /// Adds rows a provider discovered (in the order given) and refreshes model names of known rows.
+    /// Adds rows a provider discovered (in the order given) and refreshes the names and flags of known rows.
     /// New rows for a vendor go right after that vendor's last existing row; vendors new to the list go to the top in
     /// the order the providers gave them, switched off when the vendor catalog starts them hidden. The user's manual
     /// order is preserved.
@@ -145,11 +145,13 @@ public final class SettingsStore {
             for found in discovered {
                 if let index = list.firstIndex(where: { $0.id == found.id }) {
                     let existing = list[index]
-                    if existing.model != found.model || existing.source != found.source || existing.connected != found.connected
-                        || existing.billingPool != found.billingPool || existing.account != found.account {
+                    if existing.model != found.model || existing.shortModel != found.shortModel || existing.source != found.source
+                        || existing.connected != found.connected || existing.billingPool != found.billingPool
+                        || existing.account != found.account || existing.allModels != found.allModels {
                         list[index] = AgentDescriptor(
-                            id: existing.id, vendor: existing.vendor, model: found.model, source: found.source,
-                            enabled: existing.enabled, connected: found.connected, billingPool: found.billingPool, account: found.account
+                            id: existing.id, vendor: existing.vendor, model: found.model, shortModel: found.shortModel, source: found.source,
+                            enabled: existing.enabled, connected: found.connected, billingPool: found.billingPool, account: found.account,
+                            allModels: found.allModels
                         )
                     }
                     continue

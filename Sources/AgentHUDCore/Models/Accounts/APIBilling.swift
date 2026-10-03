@@ -5,10 +5,13 @@ public struct AccountBalance: Hashable, Codable, Sendable, Identifiable {
     public let total: Decimal
     public let granted: Decimal
     public let toppedUp: Decimal
+    /// When the balance runs out at the pace it fell over the day before its reading (`BalanceTrend`); nil without an
+    /// estimate.
+    public let runsOutAt: Date?
     public var id: String { currency }
 
-    public init(currency: String, total: Decimal, granted: Decimal, toppedUp: Decimal) {
-        self.currency = currency; self.total = total; self.granted = granted; self.toppedUp = toppedUp
+    public init(currency: String, total: Decimal, granted: Decimal, toppedUp: Decimal, runsOutAt: Date? = nil) {
+        self.currency = currency; self.total = total; self.granted = granted; self.toppedUp = toppedUp; self.runsOutAt = runsOutAt
     }
 }
 

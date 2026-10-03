@@ -23,17 +23,24 @@ public struct CodexRateLimits: Decodable, Sendable {
 
     public struct Row: Sendable {
         public let id: String
+        /// The window's full name in the words of Codex's own client.
         public let label: String
+        /// The window's short name (`WindowNames`), its full name where it has none.
+        public let shortLabel: String
         public let window: Window
         public let weekly: Window?
         public var account: ProviderAccount? = nil
+        /// Only the `codex` bucket limits every model; another bucket limits its own model.
+        public var allModels = true
 
         public var descriptor: AgentDescriptor {
-            AgentDescriptor(id: id, vendor: "Codex", model: label, source: L10n.sourceCodexAppServer, enabled: true, account: account)
+            AgentDescriptor(id: id, vendor: "Codex", model: label, shortModel: shortLabel, source: L10n.sourceCodexAppServer,
+                            enabled: true, account: account, allModels: allModels)
         }
 
         func scoped(to account: ProviderAccount) -> Row {
-            Row(id: account.windowID(id), label: label, window: window, weekly: weekly, account: account)
+            Row(id: account.windowID(id), label: label, shortLabel: shortLabel, window: window, weekly: weekly, account: account,
+                allModels: allModels)
         }
     }
 
@@ -96,24 +103,48 @@ public struct CodexRateLimits: Decodable, Sendable {
         return rows.map { $0.scoped(to: account) }
     }
 
+    /// Every bucket's windows, named as Codex's own client names them: "5h limit", "Weekly limit", a window without a
+    /// length "Usage limit" or "Secondary usage limit", and a bucket other than `codex` with its name before them. Short
+    /// names give the `codex` bucket's windows their period alone and another bucket's its word, with the period when
+    /// the bucket has two windows (Spark 5h, Spark 7d, Reserve).
     public var rows: [Row] {
-        buckets.flatMap { id, bucket in
+        let named = buckets.flatMap { id, bucket in
             let weekly = [bucket.primary, bucket.secondary].compactMap { $0 }.first { $0.windowDurationMins == 10080 }
-            return [("primary", bucket.primary), ("secondary", bucket.secondary)].compactMap { slot, window -> Row? in
-                guard let window else { return nil }
-                let period: String
-                switch window.windowDurationMins {
-                case 10080: period = L10n.text("本周", "Weekly")
-                case .some(let minutes) where minutes > 0 && minutes % 60 == 0:
-                    period = "\(minutes / 60)h"
-                case .some(let minutes) where minutes > 0: period = "\(minutes)m"
-                default: period = L10n.text(slot == "primary" ? "主额度" : "次额度", slot.capitalized)
-                }
-                let name = id == "codex" ? nil : VendorCatalog.window(bucket.limitName ?? id, vendor: "Codex")
+            let windows = [("primary", bucket.primary), ("secondary", bucket.secondary)].compactMap { slot, window in window.map { (slot, $0) } }
+            let service = bucket.limitName ?? id
+            let name = id == "codex" ? nil : VendorCatalog.window(service, vendor: "Codex")
+            let word = id == "codex" ? nil : VendorCatalog.windowWord(service, vendor: "Codex")
+            return windows.map { slot, window -> Row in
+                let period = WindowNames.Period(seconds: window.duration), secondary = slot == "secondary"
+                let limit = Self.limitName(period, secondary: secondary)
+                let alone = period?.shortName ?? (secondary ? L10n.text("次要额度", "Secondary") : L10n.text("额度", "Usage"))
+                let short = word.map { windows.count > 1 ? "\($0) \(period?.afterWord ?? alone)" : $0 } ?? alone
                 // The shared primary window keeps the old placeholder's id as its window key, preserving preferences.
                 let rowId = id == "codex" && slot == "primary" ? "codex" : "codex:\(id):\(slot)"
-                return Row(id: rowId, label: name.map { "\($0) · \(period)" } ?? period, window: window, weekly: weekly)
+                return Row(id: rowId, label: name.map { "\($0) · \(limit)" } ?? limit, shortLabel: short, window: window, weekly: weekly,
+                           allModels: id == "codex")
             }
+        }
+        // Windows whose short names would read alike keep their full names.
+        let shortLabels = WindowNames.distinct(named.map { Optional($0.shortLabel) })
+        return zip(named, shortLabels).map { row, short in
+            Row(id: row.id, label: row.label, shortLabel: short ?? row.label, window: row.window, weekly: row.weekly, allModels: row.allModels)
+        }
+    }
+
+    /// A window's name in the words of Codex's own client, which names 5 hours, a day, a week, a month and a year within
+    /// 5 %, in Chinese in the Mac's words.
+    static func limitName(_ period: WindowNames.Period?, secondary: Bool) -> String {
+        switch period {
+        case .fiveHours: L10n.text("5 小时额度", "5h limit")
+        case .day: L10n.text("每日额度", "Daily limit")
+        case .week: L10n.text("每周额度", "Weekly limit")
+        case .month: L10n.text("每月额度", "Monthly limit")
+        case .year: L10n.text("每年额度", "Annual limit")
+        case .days(let count): L10n.text("\(count) 天额度", "\(count)d limit")
+        case .hours(let count): L10n.text("\(count) 小时额度", "\(count)h limit")
+        case .minutes(let count): L10n.text("\(count) 分钟额度", "\(count)m limit")
+        case nil: secondary ? L10n.text("次要用量额度", "Secondary usage limit") : L10n.text("用量额度", "Usage limit")
         }
     }
 }

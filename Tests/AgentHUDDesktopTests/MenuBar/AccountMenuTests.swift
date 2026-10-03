@@ -5,6 +5,82 @@ import XCTest
 
 final class AccountMenuTests: XCTestCase {
     @MainActor
+    func testHostActionsUseMenuRowsWithoutReplacingCustomViewsOrTargets() throws {
+        let suite = "AccountMenuTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults, defaultAgents: [])
+        let store = UsageStore(provider: DemoUsageProvider(), settings: settings)
+        let target = NSResponder()
+        let update = NSMenuItem(title: "New Version…", action: #selector(NSResponder.selectAll(_:)), keyEquivalent: "u")
+        update.target = target
+        update.isEnabled = false
+        let custom = NSMenuItem(title: "Custom", action: nil, keyEquivalent: "")
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
+        custom.view = view
+        let separator = NSMenuItem.separator()
+        let controller = StatusItemController(store: store, settings: settings, additionalMenuItems: { [update, separator, custom] })
+        let menu = NSMenu()
+        controller.menuNeedsUpdate(menu)
+        XCTAssertNotNil(update.view)
+        XCTAssertTrue(update.target === target)
+        XCTAssertEqual(update.action, #selector(NSResponder.selectAll(_:)))
+        XCTAssertEqual(update.keyEquivalent, "u")
+        XCTAssertFalse(update.isEnabled)
+        XCTAssertTrue(custom.view === view)
+        XCTAssertNil(separator.view)
+    }
+
+    @MainActor
+    func testHostMenuItemsAreRebuiltWithTheirEnabledStateBetweenSettingsAndQuit() throws {
+        let suite = "AccountMenuTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite); L10n.setLanguage(.system) }
+        let settings = SettingsStore(defaults: defaults, defaultAgents: [])
+        settings.update { $0.language = .en }
+        let store = UsageStore(provider: DemoUsageProvider(), settings: settings)
+        var available = false
+        let controller = StatusItemController(store: store, settings: settings, additionalMenuItems: {
+            let item = NSMenuItem(title: "Check for Updates…", action: nil, keyEquivalent: "")
+            item.isEnabled = available
+            return [item]
+        })
+        let menu = NSMenu()
+        controller.menuNeedsUpdate(menu)
+        XCTAssertEqual(menu.items.suffix(3).map(\.title), ["Settings…", "Check for Updates…", "Quit"])
+        XCTAssertFalse(menu.items[menu.items.count - 2].isEnabled)
+        available = true
+        controller.menuNeedsUpdate(menu)
+        XCTAssertTrue(menu.items[menu.items.count - 2].isEnabled)
+        XCTAssertEqual(menu.items.filter { $0.title == "Check for Updates…" }.count, 1)
+    }
+
+    @MainActor
+    func testPiCodexAccountAppearsOnceUnderItsSubscriptionProvider() throws {
+        let suite = "AccountMenuTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite); L10n.setLanguage(.system) }
+        let now = Date()
+        let account = try XCTUnwrap(ProviderAccount.identified(provider: "Codex", user: "shared@example.com", workspace: "workspace"))
+        let agents = ["5h", "Weekly"].map {
+            AgentDescriptor(id: account.windowID($0), vendor: "Codex", model: $0, source: "", enabled: true, account: account)
+        }
+        let settings = SettingsStore(defaults: defaults, defaultAgents: agents)
+        settings.update { $0.language = .en }
+        let store = UsageStore(provider: DemoUsageProvider(), settings: settings)
+        store.replace(report: UsageReport(generatedAt: now, snapshots: agents.map {
+            .init(agentId: $0.id, remainingPct: 60, updatedAt: now)
+        }, sessions: [], discoveredAgents: agents, accounts: ["Codex": [
+            .init(account: account, home: "pi:alternate", client: "Pi", label: "shared@example.com", observedAt: now),
+            .init(account: account, home: "", client: "Codex", label: "shared@example.com", observedAt: now, isCurrent: false)
+        ]]))
+        let controller = StatusItemController(store: store, settings: settings)
+        let menu = NSMenu()
+        controller.menuNeedsUpdate(menu)
+        XCTAssertEqual(Array(menu.items.prefix(4)).map(\.title), ["Codex", "shared@example.com", "5h", "Weekly"])
+        XCTAssertEqual(menu.items.filter { $0.title == "shared@example.com" }.count, 1)
+        XCTAssertEqual(menu.items.filter { $0.title == "Codex" }.count, 1)
+        XCTAssertFalse(menu.items.contains { $0.title == "Pi" })
+    }
+
+    @MainActor
     func testMenuGroupsAccountsAndDistinguishesPendingFromHistoricalReadings() throws {
         _ = NSApplication.shared
         let suite = "AccountMenuTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

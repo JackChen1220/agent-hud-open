@@ -190,6 +190,15 @@ public struct LedgerWriter {
         try storage.connection.run("DELETE FROM quota_sample WHERE scope = ?", [.text(scope)])
     }
 
+    /// Keeps a billing account's balances as read at `timestamp`, one reading per currency.
+    public func appendBalances(_ balances: [AccountBalance], billing: String, at timestamp: Date) throws {
+        for balance in balances {
+            try storage.connection.run("""
+                INSERT OR REPLACE INTO balance_sample (billing, currency, observed_ms, amount_pico) VALUES (?, ?, ?, ?)
+                """, [.text(billing), .text(balance.currency), .integer(RecordCoding.milliseconds(timestamp)), .integer(Self.pico(balance.total))])
+        }
+    }
+
     // MARK: Internals
 
     private struct ContributionID { let id: Int64; let source: String; let account: String; let counted: Bool }

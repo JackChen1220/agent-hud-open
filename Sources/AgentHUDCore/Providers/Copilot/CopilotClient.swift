@@ -40,34 +40,64 @@ struct CopilotClient: Sendable {
             let known = ["premium_interactions", "chat", "completions"]
             return known.filter { object[$0] != nil } + object.keys.filter { !known.contains($0) }.sorted()
         }
+        // Usage-based billing meters the premium snapshot in AI credits, and a Free plan's chat snapshot too, as VS Code
+        // names them; a plan still on premium requests keeps its names.
+        let usageBased = response["token_based_billing"].boolValue == true
+        let free = response["access_type_sku"].stringValue == "free_limited_copilot"
         var quota = ProviderQuota(plan: response["copilot_plan"].stringValue.flatMap { $0.isEmpty ? nil : $0 })
-        let snapshots = response["quota_snapshots"].objectValue ?? [:], reset = date(response["quota_reset_date"].stringValue)
+        var snapshots = response["quota_snapshots"].objectValue ?? [:]
+        // Newer backends name the premium snapshot premium_models; it is the same window, read where premium_interactions is not.
+        if let premium = snapshots.removeValue(forKey: "premium_models"), snapshots["premium_interactions"] == nil {
+            snapshots["premium_interactions"] = premium
+        }
+        let reset = date(response["quota_reset_date_utc"].stringValue) ?? date(response["quota_reset_date"].stringValue)
         for key in keys(snapshots) {
-            let item = snapshots[key]!, entitlement = number(item["entitlement"]), remaining = number(item["remaining"])
+            let item = snapshots[key]!, entitlement = number(item["entitlement"])
+            let remaining = number(item["remaining"]) ?? number(item["quota_remaining"])
             // Unlimited windows and zero-entitlement placeholders are not metered.
             guard item["unlimited"].boolValue != true, !(entitlement == 0 && remaining == 0),
                   let percent = number(item["percent_remaining"]) ?? entitlement.flatMap({ total in
                       total > 0 ? remaining.map { $0 / total * 100 } : nil }) else { continue }
-            quota.windows.append(.init(id: "copilot:\(key)", label: label(key), remaining: min(100, max(0, percent)), reset: reset))
+            // A snapshot's own reset, in seconds, governs it before the account's.
+            let own = number(item["quota_reset_at"]).flatMap { $0 > 0 && $0 <= 253402300799 ? Date(timeIntervalSince1970: $0) : nil }
+            let credits = (usageBased || item["token_based_billing"].boolValue == true) && (key == "premium_interactions" || key == "chat" && free)
+            let name = names(key, credits: credits)
+            quota.windows.append(.init(id: "copilot:\(key)", label: name.full, remaining: min(100, max(0, percent)),
+                                       reset: own ?? reset, shortLabel: name.short, allModels: planWide(key, credits: credits)))
         }
         // Free accounts report remaining and monthly counts instead of snapshots.
         if quota.windows.isEmpty, let limited = response["limited_user_quotas"].objectValue {
             let reset = date(response["limited_user_reset_date"].stringValue)
             for key in keys(limited) {
                 guard let remaining = number(limited[key]!), let total = number(response["monthly_quotas"][key]), total > 0 else { continue }
-                quota.windows.append(.init(id: "copilot:\(key)", label: label(key), remaining: min(100, max(0, remaining / total * 100)), reset: reset))
+                let credits = usageBased && free && key == "chat"
+                let name = names(key, credits: credits)
+                quota.windows.append(.init(id: "copilot:\(key)", label: name.full, remaining: min(100, max(0, remaining / total * 100)),
+                                           reset: reset, shortLabel: name.short, allModels: planWide(key, credits: credits)))
             }
         }
         return quota
     }
 
-    static func label(_ key: String) -> String {
+    /// A window's names in GitHub's words and VS Code's: GitHub keeps "AI credits" in English in its Chinese docs, and
+    /// VS Code's Chinese calls the row 额度. A key GitHub has not named reads as its words, in English in both languages,
+    /// and is known in tight places by the whole of it up to eight characters, else its first word.
+    static func names(_ key: String, credits: Bool = false) -> (full: String, short: String) {
+        if credits { return ("AI credits", L10n.text("额度", "Credits")) }
         switch key {
-        case "premium_interactions": L10n.text("高级请求", "Premium requests")
-        case "chat": L10n.text("对话", "Chat")
-        case "completions": L10n.text("代码补全", "Completions")
-        default: key.replacingOccurrences(of: "_", with: " ").capitalized
+        case "premium_interactions": return (L10n.text("高级请求", "Premium requests"), L10n.text("高级请求", "Premium"))
+        case "chat": return (L10n.text("聊天消息", "Chat messages"), L10n.text("聊天消息", "Chat"))
+        case "completions": return (L10n.text("代码补全", "Code completions"), L10n.text("代码补全", "Completions"))
+        default:
+            let name = key.replacingOccurrences(of: "_", with: " ").capitalized
+            return (name, WindowNames.leading(name))
         }
+    }
+
+    /// Chat messages and code completions each limit one feature; premium requests or AI credits, which a Free plan's
+    /// chat counts too under usage-based billing, are the plan's.
+    static func planWide(_ key: String, credits: Bool) -> Bool {
+        credits || (key != "chat" && key != "completions")
     }
 
     static func date(_ text: String?) -> Date? {

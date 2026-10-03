@@ -15,14 +15,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private let store: UsageStore
     private let settings: SettingsStore
+    private let additionalMenuItems: () -> [NSMenuItem]
     var actions = MenuActions()
 
     private static let menuWidth: CGFloat = 250
     private static let agentMenuFont = NSFontManager.shared.convert(.menuFont(ofSize: 13), toHaveTrait: .boldFontMask)
 
-    init(store: UsageStore, settings: SettingsStore) {
+    init(store: UsageStore, settings: SettingsStore, additionalMenuItems: @escaping () -> [NSMenuItem] = { [] }) {
         self.store = store
         self.settings = settings
+        self.additionalMenuItems = additionalMenuItems
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
         menu.delegate = self
@@ -122,6 +124,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         ))
         menu.addItem(.separator())
         menu.addItem(action(L10n.text("设置…", "Settings…"), key: ",", modifiers: [.command], selector: #selector(openSettings)))
+        for item in additionalMenuItems() {
+            if item.view == nil, !item.isSeparatorItem { setActionView(item) }
+            menu.addItem(item)
+        }
         menu.addItem(action(L10n.text("退出", "Quit"), key: "q", modifiers: [.command], selector: #selector(quit)))
     }
 
@@ -164,14 +170,19 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let item = NSMenuItem(title: title, action: selector, keyEquivalent: key)
         item.keyEquivalentModifierMask = modifiers
         item.target = self
+        setActionView(item)
+        return item
+    }
+
+    private func setActionView(_ item: NSMenuItem) {
         let modifierSymbols: [(NSEvent.ModifierFlags, String)] = [
             (.control, "⌃"), (.option, "⌥"), (.shift, "⇧"), (.command, "⌘"),
         ]
         let shortcut = modifierSymbols.filter { item.keyEquivalentModifierMask.contains($0.0) }
             .map(\.1).joined() + item.keyEquivalent.uppercased()
-        item.view = MenuRowView(title: title, value: shortcut, image: nil,
-                                font: .menuFont(ofSize: 13), minimumWidth: Self.menuWidth)
-        return item
+        item.view = MenuRowView(title: item.title, value: shortcut, image: item.image,
+                                font: .menuFont(ofSize: 13), minimumWidth: Self.menuWidth,
+                                attributedTitle: item.attributedTitle)
     }
 
     // MARK: Selectors
@@ -193,8 +204,8 @@ private final class MenuRowView: NSView {
     private static let selectionInset: CGFloat = 5
     private static let selectionRadius: CGFloat = 7
 
-    init(title: String, value: String = "", image: NSImage?, font: NSFont, titleColor: NSColor = .labelColor, valueColor: NSColor = .secondaryLabelColor, minimumWidth: CGFloat) {
-        self.title = NSAttributedString(string: title, attributes: [.font: font, .foregroundColor: titleColor])
+    init(title: String, value: String = "", image: NSImage?, font: NSFont, titleColor: NSColor = .labelColor, valueColor: NSColor = .secondaryLabelColor, minimumWidth: CGFloat, attributedTitle: NSAttributedString? = nil) {
+        self.title = attributedTitle ?? NSAttributedString(string: title, attributes: [.font: font, .foregroundColor: titleColor])
         self.value = NSAttributedString(string: value, attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: font.pointSize, weight: .regular),
             .foregroundColor: valueColor,

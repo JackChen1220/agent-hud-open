@@ -133,7 +133,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
             ? (quota.isSignedIn ? account.id : (failed ? lastAccount?.id : nil) ?? "provider:" + source.vendor.lowercased()) : nil
         await record(local, account: usageAccount, since: since, now: now)
         let consumers = Set(local.sessions.flatMap(\.events).map(\.model)).sorted().map {
-            AgentDescriptor(id: "\(source.rawValue)-model:\($0)", vendor: source.vendor, model: $0,
+            AgentDescriptor(id: "\(source.rawValue)-model:\($0)", vendor: source.vendor, model: ModelCatalog.consumerName(of: "\(source.rawValue)-model:\($0)"),
                             source: L10n.sourceAdditionalUsage, enabled: true)
         }
         let sessions = local.sessions.compactMap { item -> LiveSession? in
@@ -162,7 +162,8 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
         // Every notice is shown; only a quota reading that failed holds back the vendor's alerts, levels and retained sessions.
         let notice = [quotaNotice, quota.displayNotice, local.notice, hookNotice].compactMap { $0 }.joined(separator: " · ")
         let descriptors = windows.map {
-            AgentDescriptor(id: $0.id, vendor: source.vendor, model: $0.label, source: L10n.sourceAdditionalUsage, enabled: true, account: account)
+            AgentDescriptor(id: $0.id, vendor: source.vendor, model: $0.label, shortModel: $0.shortLabel ?? $0.label,
+                            source: L10n.sourceAdditionalUsage, enabled: true, account: account, allModels: $0.allModels)
         }
         let consumerIDs = Set(consumers.map(\.id))
         let quotaIDs = Set(windows.map(\.id) + agents.filter { $0.vendor == source.vendor }.map(\.id))

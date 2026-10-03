@@ -100,6 +100,19 @@ final class AgentDescriptorTests: XCTestCase {
         XCTAssertEqual(DemoData.agents.moving(id: "codex", to: 99), DemoData.agents)
     }
 
+    func testAllModelsIsSavedOnlyWhereFalse() throws {
+        let scoped = AgentDescriptor(id: "claude-weekly-fable", vendor: "Claude", model: L10n.windowWeeklyPrefix + "Fable", source: "",
+                                     enabled: true, allModels: false)
+        let every = AgentDescriptor(id: "claude-weekly", vendor: "Claude", model: L10n.windowWeekly, source: "", enabled: true)
+        func keys(_ agent: AgentDescriptor) throws -> Set<String> {
+            Set((try JSONSerialization.jsonObject(with: JSONEncoder().encode(agent)) as! [String: Any]).keys)
+        }
+        XCTAssertTrue(try keys(scoped).contains("allModels"))
+        XCTAssertFalse(try keys(every).contains("allModels"))
+        XCTAssertEqual(try JSONDecoder().decode([AgentDescriptor].self, from: JSONEncoder().encode([scoped, every])), [scoped, every])
+        XCTAssertFalse(scoped.with(enabled: false).allModels)
+    }
+
     func testWithKeepsOtherFields() {
         let a = DemoData.agents[0].with(enabled: false)
         XCTAssertFalse(a.enabled)
@@ -113,7 +126,11 @@ final class AgentDescriptorTests: XCTestCase {
         defer { L10n.setLanguage(.system) }
         let session = AgentDescriptor(id: "claude-session", vendor: "Claude", model: L10n.windowSession, source: "", enabled: true)
         XCTAssertEqual([session.name, session.shortName, session.displayName, session.compactName],
-                       ["Session · 5h", "Session", "Claude · Session · 5h", "Claude · Session"])
+                       ["Current session", "5h", "Claude · Current session", "Claude · 5h"])
+        let spark = AgentDescriptor(id: "codex:spark:primary", vendor: "Codex", model: "GPT-5.3-Codex-Spark · 5h limit", shortModel: "Spark 5h",
+                                    source: "", enabled: true)
+        XCTAssertEqual([spark.name, spark.shortName, spark.compactName], ["GPT-5.3-Codex-Spark · 5h limit", "Spark 5h", "Codex · Spark 5h"],
+                       "a window's short name is its provider's")
         let model = DemoData.agents[0]
         XCTAssertEqual([model.name, model.shortName, model.compactName], ["Opus 4.5", "Opus", "Claude · Opus"])
     }
@@ -302,6 +319,25 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.agents.map(\.id), ["codex", "claude-sonnet", "claude-opus", "chatgpt", "antigravity", "deepseek"])
         XCTAssertEqual(reloaded.agents[1], models[1].with(enabled: false))
         XCTAssertEqual(reloaded.enabledAgents.map(\.id), ["codex", "claude-opus", "chatgpt"])
+    }
+
+    func testMergeDiscoveredRefreshesARowsNamesAndWhetherItCoversEveryModel() throws {
+        let defaults = makeDefaults()
+        // Saved before the flag existed, with its switch off.
+        defaults.set(Data(#"[{"id":"claude-weekly-fable","vendor":"Claude","model":"window.weekly.Fable","source":"","enabled":false,"connected":true}]"#.utf8),
+                     forKey: SettingsStore.Keys.agents)
+        let store = SettingsStore(defaults: defaults)
+        XCTAssertEqual(store.agents.map(\.allModels), [true], "a row saved without the flag reads as covering every model")
+        store.mergeDiscovered([AgentDescriptor(id: "claude-weekly-fable", vendor: "Claude", model: "window.weekly.Fable", source: "",
+                                               enabled: true, allModels: false)])
+        XCTAssertEqual(store.agents.map(\.allModels), [false])
+        XCTAssertEqual(store.agents.map(\.enabled), [false], "the switch survives")
+        XCTAssertEqual(SettingsStore(defaults: defaults).agents.map(\.allModels), [false], "the flag is saved")
+        // A window saved under an earlier name takes its provider's names.
+        store.mergeDiscovered([AgentDescriptor(id: "codex", vendor: "Codex", model: "Weekly", source: "", enabled: true)])
+        store.mergeDiscovered([AgentDescriptor(id: "codex", vendor: "Codex", model: "Weekly limit", shortModel: "Weekly", source: "", enabled: true)])
+        let codex = try XCTUnwrap(SettingsStore(defaults: defaults).agents.first { $0.id == "codex" })
+        XCTAssertEqual([codex.name, codex.shortName], ["Weekly limit", "Weekly"])
     }
 
     func testMergeDiscoveredInsertsByVendorAndUpdatesNames() {

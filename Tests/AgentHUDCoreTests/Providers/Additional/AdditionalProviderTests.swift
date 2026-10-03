@@ -50,6 +50,15 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(quota.windows[0].duration, 604800)
     }
 
+    /// The bucket names of Antigravity's usage panel, as its models page shows them; the fixture is derived from that page,
+    /// not captured from an account.
+    func testAntigravityReadsItsOwnBucketNamesAsTheirPeriods() throws {
+        let quota = try AntigravityClient.summary(json(#"{"groups":[{"displayName":"Gemini Models","buckets":[{"bucketId":"gemini-5h","displayName":"Five Hour Limit","remainingFraction":0.5},{"bucketId":"gemini-7d","displayName":"Weekly Limit","remainingFraction":0.75}]},{"displayName":"Claude and GPT models","buckets":[{"bucketId":"third-party-5h","displayName":"FIVE HOUR LIMIT","remainingFraction":1},{"bucketId":"third_party_five_hour","remainingFraction":1}]}]}"#))
+        XCTAssertEqual(quota.windows.map(\.label), ["Gemini Models · Five Hour Limit", "Gemini Models · Weekly Limit",
+                                                    "Claude and GPT models · FIVE HOUR LIMIT", "Claude and GPT models · third_party_five_hour"])
+        XCTAssertEqual(quota.windows.map(\.duration), [18000, 604800, 18000, 18000])
+    }
+
     func testAntigravityOnlyDiscoversItsOwnServersAndQuotedFlags() {
         let rows = AntigravityClient.candidates("""
         11 /Applications/Antigravity.app/Contents/Resources/language_server --csrf_token 'fixture csrf' --extension_server_port=42111
@@ -220,12 +229,14 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         let provider = AdditionalUsageProvider(source: .cursor, readQuota: {
             state.reads += 1
             guard state.reads == 1 else { throw ProviderHTTPError(status: 503) }
-            return ProviderQuota(windows: [.init(id: "cursor", label: "Plan usage", remaining: 60)], account: account)
+            return ProviderQuota(windows: [.init(id: "cursor", label: "Included usage", remaining: 60, shortLabel: "Included"),
+                                           .init(id: "cursor:team", label: "Pooled usage", remaining: 60)], account: account)
         }, readSessions: { _ in ProviderSessions(sessions: [conversation]) }, history: QuotaHistoryStore(), clock: { state.now }, ledger: ledger)
         func accounts() async throws -> Set<String> {
             Set(try await ledger.buckets(since: .distantPast, source: AdditionalSource.cursor.rawValue).compactMap(\.account))
         }
-        _ = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 168)
+        let report = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 168)
+        XCTAssertEqual(report.discoveredAgents.map(\.shortName), ["Included", "Pooled usage"], "a window without a short name shows its full name")
         var recorded = try await accounts()
         XCTAssertEqual(recorded, [account.id])
         state.now = start.addingTimeInterval(UsageRefresh.accountRequestSpacing + 1)

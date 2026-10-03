@@ -25,10 +25,18 @@ final class KimiQuotaIdentityTests: XCTestCase {
     }
 
     func testDifferentKeysWithSameOfficialIdentityFetchOnlyTwoWindowsOnce() async throws {
+        L10n.setLanguage(.en)
+        defer { L10n.setLanguage(.system) }
         let input = Inputs(now: now, credentials: [credential("first-key"), credential("second-key", client: "Pi")])
         let server = Server()
         let report = try await provider(input, server).fetchAccountAndLocalUsage(agents: [], historyHours: 24)
         XCTAssertEqual(report.snapshots.count, 2)
+        // A window is named by its period and plan, and its pool names the account.
+        XCTAssertEqual(report.discoveredAgents.map(\.name), ["Weekly quota · Allegretto", "5-hour quota · Allegretto"])
+        XCTAssertEqual(report.discoveredAgents.map(\.shortName), ["Weekly", "5h"])
+        let pool = try XCTUnwrap(report.discoveredAgents.first?.billingPool)
+        XCTAssertEqual(report.accounts?["Kimi"]?.map(\.displayName), [pool.label])
+        XCTAssertTrue(pool.label.hasPrefix("CN · PLAN · Account "), pool.label)
         XCTAssertEqual(Set(report.snapshots.compactMap(\.windowDuration)), [604800, 18000])
         XCTAssertEqual(report.activeQuotaPoolIDs?["Kimi"]?.count, 1)
         XCTAssertTrue(report.discoveredAgents.allSatisfy { $0.source == "Kimi, Pi" && $0.billingPool?.evidence == .account })

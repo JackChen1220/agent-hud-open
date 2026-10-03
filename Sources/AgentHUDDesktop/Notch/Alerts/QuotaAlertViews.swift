@@ -193,7 +193,7 @@ private struct QuotaAlertCopy {
         return L10n.text("已用额度达到危险阈值，请留意后续任务。", "Usage has reached the critical threshold.")
     }
     var otherLimits: String {
-        let names = alert.otherExhaustedWindows.map(L10n.modelLabel).joined(separator: "、")
+        let names = alert.otherExhaustedWindows.map(\.name).joined(separator: "、")
         return L10n.text("\(names)额度仍已耗尽", "Still exhausted: \(names)")
     }
     var accessibilityLabel: String {

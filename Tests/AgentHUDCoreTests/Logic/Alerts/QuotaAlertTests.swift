@@ -149,7 +149,7 @@ final class QuotaAlertTests: XCTestCase {
         _ = tracker.update(report: report(samples(0, 2)), agents: agents, now: start)
         let events = tracker.update(report: report(samples(120, 100)), agents: agents, now: start.addingTimeInterval(120))
         XCTAssertEqual(events.alerts.count, 1)
-        XCTAssertEqual(events.alerts.first?.otherExhaustedWindows, ["weekly"])
+        XCTAssertEqual(events.alerts.first?.otherExhaustedWindows, [weekly])
     }
 
     func testRepeatedAndFutureReadingsAreIgnored() {

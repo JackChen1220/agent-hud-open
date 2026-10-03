@@ -331,7 +331,7 @@ final class CodexProviderTests: XCTestCase {
     }
 
     func testClientsTheCatalogDoesNotNameAreShownAsWritten() {
-        for (origin, source, expected) in [("codex_work_desktop", "vscode", "codex_work_desktop"), ("vibearound", "vscode", "vibearound"),
+        for (origin, source, expected) in [("codex_mcp_server", "mcp", "codex_mcp_server"), ("vibearound", "vscode", "vibearound"),
                                            ("codex_vscode", "vscode", "IDE"), ("Codex Desktop", "vscode", "Desktop")] {
             var t = CodexTranscript()
             ingest(&t, type: "session_meta", payload: ["id":"session", "cwd":"/project", "source":source, "originator":origin])
@@ -340,15 +340,47 @@ final class CodexProviderTests: XCTestCase {
         var legacy = CodexTranscript()
         ingest(&legacy, type: "session_meta", payload: ["id":"session", "cwd":"/project", "source":"vscode"])
         XCTAssertEqual(legacy.client, "IDE", "rollouts without an originator keep the extension's name")
-        XCTAssertTrue(VendorCatalog.unnamed["Codex client"]?.contains("codex_work_desktop") == true)
+        XCTAssertTrue(VendorCatalog.unnamed["Codex client"]?.contains("codex_mcp_server") == true)
+    }
+
+    /// Every name Codex gives one of its clients files the session under that client: the desktop app signed in to a work
+    /// workspace writes codex_work_desktop, and Codex's own code knows the desktop app as codex_desktop and its CLI as
+    /// codex_cli_rs and codex-cli.
+    func testEachOriginatorOfOneClientFilesItsSessionsUnderThatClient() {
+        let cases: [(origin: String, client: String, name: String)] = [
+            ("Codex Desktop", "Desktop", "Codex Desktop"), ("codex_work_desktop", "Desktop", "Codex Desktop"),
+            ("codex_desktop", "Desktop", "Codex Desktop"), ("codex_vscode", "IDE", "Codex IDE extension"), ("codex-tui", "CLI", "Codex CLI"),
+            ("codex_cli_rs", "CLI", "Codex CLI"), ("codex-cli", "CLI", "Codex CLI"), ("codex_exec", "CLI · exec", "Codex CLI"),
+        ]
+        for (origin, client, name) in cases {
+            var t = CodexTranscript()
+            ingest(&t, type: "session_meta", payload: ["id":"session", "cwd":"/project", "source":"vscode", "originator":origin])
+            XCTAssertEqual(t.client, client, origin)
+            let source = SessionSource(vendor: "Codex", client: t.client)
+            XCTAssertEqual(source.name, name, origin)
+        }
+        XCTAssertEqual(SessionSource(vendor: "Codex", client: "Desktop"), SessionSource(vendor: "Codex", client: VendorCatalog.client("codex_work_desktop", vendor: "Codex")),
+                       "one entry in the sessions filter")
     }
 
     func testWindowNamesComeFromTheCatalogOrTheService() throws {
+        L10n.setLanguage(.en)
+        defer { L10n.setLanguage(.system) }
         let limits = try decode(#"{"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":3,"windowDurationMins":300}},"base_model_inference":{"limitName":"gpt-reserve","primary":{"usedPercent":0,"windowDurationMins":10080}},"codex_next":{"limitName":"Next Model","primary":{"usedPercent":5,"windowDurationMins":10080}}}}"#)
         let labels = Dictionary(uniqueKeysWithValues: limits.rows.map { ($0.id, $0.label) })
-        XCTAssertEqual(labels["codex"], "5h")
-        XCTAssertEqual(labels["codex:base_model_inference:primary"], "Luna Reserve · Weekly", "the name OpenAI's own client shows")
-        XCTAssertEqual(labels["codex:codex_next:primary"], "Next Model · Weekly", "a window the catalog does not name keeps the service's name")
+        XCTAssertEqual(labels["codex"], "5h limit")
+        XCTAssertEqual(labels["codex:base_model_inference:primary"], "Luna Reserve · Weekly limit", "the name OpenAI's own client shows")
+        XCTAssertEqual(labels["codex:codex_next:primary"], "Next Model · Weekly limit", "a window the catalog does not name keeps the service's name")
+        let short = Dictionary(uniqueKeysWithValues: limits.rows.map { ($0.id, $0.descriptor.shortName) })
+        XCTAssertEqual(short["codex:base_model_inference:primary"], "Reserve", "the catalog's word")
+        XCTAssertEqual(short["codex:codex_next:primary"], "Model", "the last word of a name the catalog does not know")
+    }
+
+    func testOnlyTheCodexBucketCoversEveryModel() throws {
+        let limits = try decode(#"{"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":3,"windowDurationMins":300},"secondary":{"usedPercent":9,"windowDurationMins":10080}},"base_model_inference":{"limitName":"gpt-reserve","primary":{"usedPercent":0,"windowDurationMins":10080}}}}"#)
+        XCTAssertEqual(limits.rows.map(\.id), ["codex", "codex:codex:secondary", "codex:base_model_inference:primary"])
+        XCTAssertEqual(limits.rows.map(\.descriptor.allModels), [true, true, false])
+        XCTAssertEqual(limits.rows(home: "").map(\.descriptor.allModels), [true, true, false], "an account's rows keep the flag")
     }
 
     func testLocatorWorksWithoutDesktopOrWithoutCLI() throws {

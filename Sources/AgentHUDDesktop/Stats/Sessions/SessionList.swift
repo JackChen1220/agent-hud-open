@@ -2,11 +2,17 @@ import AppKit
 import SwiftUI
 import AgentHUDCore
 
+/// How the Sessions page lists its sessions: every session of the last seven days under its day, or only those in flight
+/// or active in the last day, without days.
+enum SessionArrangement: Hashable {
+    case day, active
+}
+
 /// The Sessions page: every session of the last seven days under the day it was last active on, a running one under
-/// today, newest first, below the totals of the sessions that started today. Today and any day with a session still
+/// today, newest first, below the totals of the sessions filed under today. Today and any day with a session still
 /// running are open; the other days fold to their totals until clicked. Sessions last active before the named days share
-/// one Earlier group. Active only drops the days: it lists the sessions active in the last day, newest activity first.
-/// Each session reads as it does in the phone's list.
+/// one Earlier group. The Active arrangement drops the days: it lists the sessions active in the last day, newest
+/// activity first, below the same totals. Each session reads as it does in the phone's list.
 struct SessionList: View {
     let store: UsageStore
     let theme: Theme
@@ -18,10 +24,10 @@ struct SessionList: View {
     var body: some View {
         let sessions = store.listedSessions(source: source, activeOnly: activeOnly)
         let calendar = Calendar.current, today = calendar.startOfDay(for: store.now)
-        let started = sessions.filter { $0.startedAt >= today }
+        let filedToday = Self.filedToday(sessions, store: store, today: today, calendar: calendar)
         VStack(alignment: .leading, spacing: 0) {
-            if !started.isEmpty {
-                SessionsTodayCard(sessions: started, store: store, theme: theme).padding(.bottom, 18)
+            if !filedToday.isEmpty {
+                SessionsTodayCard(sessions: filedToday, store: store, theme: theme).padding(.bottom, 18)
             }
             if activeOnly {
                 if !sessions.isEmpty {
@@ -61,6 +67,12 @@ struct SessionList: View {
         let days = store.sessionsByDay(sessions, calendar: calendar)
         let earlier = days.filter { $0.day < first }.flatMap(\.sessions)
         return days.filter { $0.day >= first } + (earlier.isEmpty ? [] : [(day: Date.distantPast, sessions: earlier)])
+    }
+
+    /// The sessions the card above the list sums in either arrangement: today's group, the sessions last active today or
+    /// in flight, whenever they began.
+    static func filedToday(_ sessions: [LiveSession], store: UsageStore, today: Date, calendar: Calendar) -> [LiveSession] {
+        groups(sessions, store: store, today: today, calendar: calendar).first { $0.day == today }?.sessions ?? []
     }
 
     /// How many of a day's sessions are running, and whether the day starts open: today does, and so does any day with a
@@ -140,7 +152,8 @@ struct SessionList: View {
     }
 }
 
-/// Today's sessions in one card: how many, what they cost, and every token they and their sub-agents spent by kind.
+/// The sessions filed under today in one card: how many, what they cost, and every token they and their sub-agents spent
+/// by kind, a session begun on an earlier day with its whole totals.
 struct SessionsTodayCard: View {
     let sessions: [LiveSession]
     let store: UsageStore
@@ -383,8 +396,8 @@ struct TurnSparkline: View {
 }
 
 extension UsageStore {
-    /// The list's sessions, from one source or all: the last seven days', or with `activeOnly` those running or active
-    /// in the last day. Newest activity first.
+    /// The list's sessions, from one source or all: the last seven days', or with `activeOnly`, the Active arrangement,
+    /// those running or active in the last day. Newest activity first.
     func listedSessions(source: SessionSource?, activeOnly: Bool) -> [LiveSession] {
         let sessions = statsSessions.filter { source == nil || sessionSource($0) == source }
         guard activeOnly else { return sessions }

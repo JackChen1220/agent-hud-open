@@ -11,11 +11,12 @@ public struct QuotaAlert: Identifiable, Hashable, Sendable {
     public let agent: AgentDescriptor
     public let snapshot: UsageSnapshot
     public let timeToExhaust: TimeInterval?
-    public let otherExhaustedWindows: [String]
+    /// The account's other windows still exhausted when this one reset, named through their descriptors.
+    public let otherExhaustedWindows: [AgentDescriptor]
     public let isPreview: Bool
 
     public init(kind: Kind, agent: AgentDescriptor, snapshot: UsageSnapshot,
-                timeToExhaust: TimeInterval? = nil, otherExhaustedWindows: [String] = [], isPreview: Bool = false) {
+                timeToExhaust: TimeInterval? = nil, otherExhaustedWindows: [AgentDescriptor] = [], isPreview: Bool = false) {
         id = UUID()
         self.kind = kind
         self.agent = agent
@@ -98,7 +99,7 @@ public struct QuotaAlertTracker: Sendable {
                     report.assess(.window($0), now: now).showsLevel && report.snapshot(for: $0.id).map {
                         $0.remainingPct <= AlertPolicy.exhaustedRemaining && ($0.resetAt ?? .distantPast) > now
                     } == true
-                }.map(\.model)
+                }
                 result.alerts.append(QuotaAlert(kind: .reset, agent: agent, snapshot: snapshot, otherExhaustedWindows: otherExhausted))
             } else if exhausted && !old.exhausted {
                 // Running out is its own event even after the earlier at-risk warning.

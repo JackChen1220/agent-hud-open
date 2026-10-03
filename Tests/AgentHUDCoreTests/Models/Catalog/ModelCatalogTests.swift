@@ -130,6 +130,84 @@ final class ModelCatalogTests: XCTestCase {
         XCTAssertEqual(regions.region(for: "cursor-model:auto"), .international)
     }
 
+    /// A bucket of the Tokens page, priced one kind at a time for a host that publishes the amounts.
+    func testABucketIsPricedKindByKindOnItsClientsPlatform() throws {
+        let formatter = ISO8601DateFormatter()
+        let friday = formatter.date(from: "2026-09-25T02:00:00Z")!, saturday = formatter.date(from: "2026-09-26T02:00:00Z")!
+        let deepSeek = APIBilling(vendor: "DeepSeek", balances: [.init(currency: "CNY", total: 8, granted: 0, toppedUp: 8)],
+                                  isAvailable: true, updatedAt: nil, costs: [], notice: nil)
+        let regions = PriceRegions(services: [
+            AgentService(client: "Claude", provider: "GLM", product: .plan, region: .china),
+            AgentService(client: "OpenCode", provider: "GLM", product: .api, region: .international),
+        ], billing: [deepSeek])
+        // In 3M with 1M cache writes, out 1.5M with 0.5M reasoning, 1M cache reads: every kind but input once.
+        func bucket(_ agentId: String, at start: Date = saturday, cacheRead: Int = 1_000_000) -> UsageBucket {
+            UsageBucket(start: start, agentId: agentId, tokensIn: 3_000_000, tokensOut: 1_500_000, cacheReadTokens: cacheRead,
+                        cacheWriteTokens: 1_000_000, reasoningTokens: 500_000)
+        }
+        let amounts: (String...) -> [TokenKind: Decimal] = { values in
+            Dictionary(uniqueKeysWithValues: zip([TokenKind.input, .cacheWrite, .reasoning, .output, .cacheRead], values.map { Decimal(string: $0)! }))
+        }
+        let cases: [(String, UsageBucket, ModelCatalog.KindCosts?)] = [
+            // BigModel's list in yuan, at its base rates though the sum passes its 32K tier; reasoning at the output rate.
+            ("a client on the China platform", bucket("claude-model:glm-5.1"),
+             .init(currency: "CNY", amounts: amounts("12", "6", "12", "24", "1.3"))),
+            ("a client abroad", bucket(consumer(.opencode, "glm-5.1", via: "zai")),
+             .init(currency: "USD", amounts: amounts("2.8", "1.4", "2.2", "4.4", "0.26"))),
+            ("DeepSeek off-peak, in its account's yuan", bucket("claude-model:deepseek-v4-pro"),
+             .init(currency: "CNY", amounts: amounts("9", "4.5", "6.75", "13.5", "0.15"))),
+            ("DeepSeek in Beijing working hours", bucket("claude-model:deepseek-v4-pro", at: friday),
+             .init(currency: "CNY", amounts: amounts("18", "9", "13.5", "27", "0.3"))),
+            ("a kind without tokens is left out", bucket("claude-model:glm-5.1", cacheRead: 0),
+             .init(currency: "CNY", amounts: amounts("12", "6", "12", "24"))),
+            ("a model without a list price", bucket("cursor-model:auto"), nil),
+            ("a model its platform does not sell", bucket(consumer(.opencode, "glm-5-turbo", via: "zai")), nil),
+        ]
+        for (name, bucket, expected) in cases {
+            let cost = ModelCatalog.cost(of: bucket, regions: regions)
+            XCTAssertEqual(cost, expected, name)
+            // The kinds add up to the bucket's price as the Tokens page counts it.
+            XCTAssertEqual(cost?.total, ModelCatalog.cost(agentId: bucket.agentId, summed: bucket.kinds, region: regions.region(for: bucket.agentId),
+                                                          at: bucket.start)?.amount, name)
+        }
+    }
+
+    /// Every consumer is named from its id alone, by the one function the providers and a host's missing ids share.
+    func testConsumersAreNamedFromTheirIdsAlone() {
+        let cases: [(id: String, name: String)] = [
+            // Kimi Code logs its plan model under its route; the plan model is Kimi's product.
+            ("kimi-model:kimi-code/kimi-for-coding#kimi-code", "Kimi For Coding"),
+            ("kimi-model:kimi-for-coding#kimi-code", "Kimi For Coding"),
+            ("kimi-model:kimi-code/real-model#kimi-code", "real-model"),
+            ("kimi-model:kimi-code/kimi-for-coding-highspeed#kimi-code", "kimi-for-coding-highspeed"),
+            ("kimi-model:#kimi-code", "Unknown · kimi-code"),
+            (consumer(.opencode, "kimi-for-coding", via: "kimi-for-coding"), "Kimi For Coding"),
+            (consumer(.pi, "kimi-for-coding", via: "kimi-coding"), "Kimi For Coding"),
+            // A route that is not the product's own service, or does not show in the name, stays beside it.
+            (consumer(.opencode, "kimi-for-coding", via: "openrouter"), "Kimi For Coding · openrouter"),
+            (consumer(.opencode, "k3", via: "kimi-for-coding"), "k3 · kimi-for-coding"),
+            (consumer(.pi, "kimi-k3", via: "kimi-coding"), "kimi-k3 · kimi-coding"),
+            (consumer(.opencode, "kimi-k2", via: "moonshotai"), "kimi-k2 · moonshotai"),
+            (consumer(.opencode, "glm-5.1", via: "zhipuai-coding-plan"), "glm-5.1 · zhipuai-coding-plan"),
+            (consumer(.pi, "claude-fable-5[1m]", via: "anthropic"), "claude-fable-5[1m] · anthropic"),
+            ("opencode-model:openai/gpt-5.5#route", "openai/gpt-5.5 · route"),
+            ("opencode-model:anthropic/claude-opus-4.6#anthropic", "claude-opus-4.6"),
+            ("pi-model:gpt-5.6-luna#", "gpt-5.6-luna"),
+            ("pi-model:new-a", "new-a"),
+            // Other clients' consumers read as their providers name them.
+            ("claude-model:claude-opus-4-5-20251101", "Opus 4.5"),
+            ("claude-model:claude-fable-5-1[1m]", "Fable 5.1"),
+            ("claude-model:kimi-for-coding", "Kimi For Coding"),
+            ("claude-model:glm-5.1", "glm-5.1"),
+            ("codex-model:gpt-6.1-sol", "gpt-6.1-sol"),
+            ("deepseek-model:deepseek-v4-pro", "deepseek-v4-pro"),
+            ("cursor-model:auto", "auto"),
+            ("claude-session", "claude-session"),
+        ]
+        for (id, name) in cases { XCTAssertEqual(ModelCatalog.consumerName(of: id), name, id) }
+        XCTAssertEqual(DiscoveredModel(modelId: "claude-opus-4-5-20251101", lastSeen: .distantPast).descriptor.name, "Opus 4.5")
+    }
+
     func testContextWindowsComeFromTheLogThenTheCatalogThenWhatTheModelHeld() {
         XCTAssertEqual(ModelCatalog.contextWindow(agentId: "codex-model:gpt-6-astra", reported: 258_400, largestSeen: nil), 258_400)
         XCTAssertEqual(ModelCatalog.contextWindow(agentId: "claude-model:claude-haiku-4-5", reported: nil, largestSeen: 150_000), 200_000)

@@ -61,8 +61,12 @@ enum IslandAlert: Identifiable {
         isPersistent ? EdgeInsets(top: 32, leading: 18, bottom: 14, trailing: 18) : nil
     }
 
-    /// Completed turns, resets and added usage resets share the calm accent; a window running out uses the warm one.
-    var accent: RGBA { isWarning ? Self.warningAccent : Self.calmAccent }
+    /// A turn ending is news in blue; restored quota stays green and a warning stays warm.
+    var accent: RGBA {
+        if case .completion = self { return Self.turnAccent }
+        return isWarning ? Self.warningAccent : Self.calmAccent
+    }
+    static let turnAccent = RGBA(hex: 0x82aaff)
     static let calmAccent = RGBA(hex: 0x6cd8ac)
     static let warningAccent = RGBA(hex: 0xe9a16d)
 }

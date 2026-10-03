@@ -1,5 +1,6 @@
 import AppKit
 import AgentHUDCore
+import SwiftUI
 
 /// Owns the local desktop presentation and observes the supplied usage store.
 @MainActor
@@ -8,6 +9,8 @@ public final class DesktopApplication {
     public let store: UsageStore
     private let options: DesktopLaunchOptions
     private let additionalSettingsPages: [DesktopSettingsPage]
+    private let additionalMenuItems: () -> [NSMenuItem]
+    private let additionalHUDControls: @MainActor (@escaping @MainActor () -> Void) -> AnyView
     private let onIslandEvents: ((IslandEventTracker.Update, UsageReport, Date) -> Void)?
     private var islandEvents = IslandEventTracker()
     /// The requests already on the island, so a change to the waiting list says which ones arrived and which left.
@@ -26,11 +29,15 @@ public final class DesktopApplication {
     /// found nothing, with the report and time the check used.
     public init(options: DesktopLaunchOptions, settings: SettingsStore, store: UsageStore,
                 additionalSettingsPages: [DesktopSettingsPage] = [],
+                additionalMenuItems: @escaping () -> [NSMenuItem] = { [] },
+                additionalHUDControls: @escaping @MainActor (@escaping @MainActor () -> Void) -> AnyView = { _ in AnyView(EmptyView()) },
                 onIslandEvents: ((IslandEventTracker.Update, UsageReport, Date) -> Void)? = nil) {
         self.options = options
         self.settings = settings
         self.store = store
         self.additionalSettingsPages = additionalSettingsPages
+        self.additionalMenuItems = additionalMenuItems
+        self.additionalHUDControls = additionalHUDControls
         self.onIslandEvents = onIslandEvents
         onboardingWindow = OnboardingWindowController(settings: settings, store: store,
             sources: options.demo ? { DemoData.sources } : { SourceDetector.detect() })
@@ -43,11 +50,11 @@ public final class DesktopApplication {
 
     public func start() {
         applyAppearance()
-        let notch = IslandController(store: store, settings: settings)
+        let notch = IslandController(store: store, settings: settings, additionalHUDControls: additionalHUDControls)
         notch.onOpenStats = { [weak self] in self?.showStats() }
         notch.onOpenSettings = { [weak self] in self?.showSettings() }
         self.notch = notch
-        let statusItem = StatusItemController(store: store, settings: settings)
+        let statusItem = StatusItemController(store: store, settings: settings, additionalMenuItems: additionalMenuItems)
         statusItem.actions = MenuActions(
             toggleGlow: { [weak self] in self?.toggleGlow() },
             openSettings: { [weak self] in self?.showSettings() },

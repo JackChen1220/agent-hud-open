@@ -222,7 +222,9 @@ public struct ReportView: Sendable {
     public func accountNotice(for section: AccountSection) -> String? {
         guard let account = section.account else { return nil }
         let reason = assessment(of: account).status.reason
-        let client = account.account.isBillingPool ? nil : report?.sourceNotices[account.account.provider]
+        let client = account.account.isBillingPool ? nil :
+            report?.sourceNotices[ClientHome.sourceKey(provider: account.account.provider, home: account.home)]
+                ?? report?.sourceNotices[account.account.provider]
         var parts: [String] = []
         if let reason, !(client?.contains(reason) ?? false) { parts.append(reason) }
         if let client { parts.append(client) }

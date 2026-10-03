@@ -81,17 +81,25 @@ actor CursorClient {
         }
         var result = ProviderQuota(plan: json["membershipType"].stringValue)
         let main = plan["enabled"].boolValue == false ? nil : plan["totalPercentUsed"].numberValue ?? ratio(plan)
-        let rows: [(String, String, Double?)] = [
-            ("cursor", L10n.text("套餐总额度", "Plan usage"), main),
-            ("cursor:models", L10n.text("Cursor 模型", "Cursor models"), plan["autoPercentUsed"].numberValue),
-            ("cursor:third-party", L10n.text("第三方模型", "Third-party models"), plan["apiPercentUsed"].numberValue),
-            ("cursor:personal", L10n.text("个人预算", "Personal budget"), ratio(json["individualUsage"]["overall"])),
-            ("cursor:team", L10n.text("团队共享额度", "Team pool"), ratio(json["teamUsage"]["pooled"])),
-            ("cursor:extra", L10n.text("额外用量预算", "Extra usage budget"), ratio(json["individualUsage"]["onDemand"]))
+        // Cursor's own names for its usage pools and limits. Its first pool is its own models, which Cursor calls
+        // first-party, so the short name says so, where "Cursor Models" would read as the whole vendor; the other pool,
+        // third-party models, follows. The two pools each limit some of the plan's models; the rest are plan-wide.
+        let rows: [(String, String, String, Double?)] = [
+            ("cursor", L10n.text("包含用量", "Included usage"), L10n.text("包含用量", "Included"), main),
+            ("cursor:models", L10n.text("Cursor 模型", "Cursor Models"), L10n.text("第一方模型", "First-party"),
+             plan["autoPercentUsed"].numberValue),
+            ("cursor:third-party", L10n.text("其他模型", "Other Models"), L10n.text("第三方模型", "Third-party"),
+             plan["apiPercentUsed"].numberValue),
+            ("cursor:personal", L10n.text("个人支出限额", "Individual spending limit"), L10n.text("支出限额", "Spend limit"),
+             ratio(json["individualUsage"]["overall"])),
+            ("cursor:team", L10n.text("共享用量", "Pooled usage"), L10n.text("共享用量", "Pooled"), ratio(json["teamUsage"]["pooled"])),
+            ("cursor:extra", L10n.text("按需用量", "On-demand usage"), L10n.text("按需用量", "On-demand"),
+             ratio(json["individualUsage"]["onDemand"]))
         ]
-        for (id, label, used) in rows {
+        for (id, label, short, used) in rows {
             guard let used, used.isFinite, used >= 0 else { continue }
-            result.windows.append(.init(id: id, label: label, remaining: QuotaMath.remaining(usedPercent: used), reset: end, duration: duration))
+            result.windows.append(.init(id: id, label: label, remaining: QuotaMath.remaining(usedPercent: used), reset: end, duration: duration,
+                                        shortLabel: short, allModels: id != "cursor:models" && id != "cursor:third-party"))
         }
         if result.windows.isEmpty {
             result.displayNotice = L10n.text("Cursor 已连接，当前计划未提供额度比例", "Cursor is connected; this plan reports no quota percentage")

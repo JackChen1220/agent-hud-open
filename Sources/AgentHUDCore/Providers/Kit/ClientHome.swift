@@ -3,6 +3,9 @@ import Foundation
 
 /// The client home dimension: one client can run from several data directories with different sign-ins.
 public enum ClientHome {
+    /// A notice or reading issue of one client's login, before that login can identify an account.
+    public static func sourceKey(provider: String, home: String) -> String { provider + "@" + home }
+
     /// Empty for the client's default directory, otherwise a hash of the resolved path.
     public static func key(_ directory: URL, defaultDirectory: URL) -> String {
         let path = directory.standardizedFileURL.resolvingSymlinksInPath().path

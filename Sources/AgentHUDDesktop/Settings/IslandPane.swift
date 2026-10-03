@@ -59,7 +59,7 @@ struct IslandPane: View {
             .font(.ui(11)).foregroundStyle(Theme.island.secondary)
             HStack(spacing: 10) {
                 Circle().fill(Theme.island.status(.ok)).frame(width: 7, height: 7)
-                Text(L10n.modelLabel(L10n.windowSession)).font(.ui(12, .semibold)).fixedSize()
+                Text(IslandSampleData.session.name).font(.ui(12, .semibold)).fixedSize()
                 ProgressTrack(fraction: 0.28, fill: Theme.island.status(.ok), track: Theme.island.track)
                     .frame(height: 4)
                 Text("28%").font(.tabular(12, .semibold)).foregroundStyle(Theme.island.status(.ok))
@@ -133,6 +133,9 @@ private struct IslandPartSample<Content: View>: View {
 
 /// Deliberately small, stable fixtures; settings samples never grow with the user's account history.
 private enum IslandSampleData {
+    /// Claude's session window, as its provider builds it.
+    static let session = AgentDescriptor(id: ClaudeUsage.sessionRowId, vendor: "Claude", model: L10n.windowSession,
+                                         source: L10n.sourceClaudeCode, enabled: true)
     static let consumers = [
         AgentDescriptor(id: "sample-claude", vendor: "Claude", model: "Opus", source: "", enabled: true),
         AgentDescriptor(id: "sample-codex", vendor: "Codex", model: "GPT", source: "", enabled: true),

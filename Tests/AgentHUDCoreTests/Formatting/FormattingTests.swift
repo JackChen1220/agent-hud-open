@@ -138,8 +138,10 @@ final class ResetLabelTests: XCTestCase {
         )
         XCTAssertEqual(usage.rows.map(\.id), ["claude-session", "claude-weekly", "claude-weekly-fable"])
         XCTAssertEqual(usage.rows.map(\.label), ["window.session", "window.weekly", "window.weekly.Fable"], "labels are persisted as language-neutral keys")
-        XCTAssertEqual(usage.rows.map { L10n.modelLabel($0.label) }, ["当前会话 · 5h", "本周 · 全部模型", "本周 · Fable"])
+        XCTAssertEqual(usage.rows.map { L10n.modelLabel($0.label) }, ["当前会话", "每周限制 · 所有模型", "每周限制 · Fable"])
+        XCTAssertEqual(usage.rows.map(\.descriptor.shortName), ["5h", "每周", "Fable"])
         XCTAssertEqual(usage.rows.map { Int($0.window.remainingPct) }, [77, 29, 55])
         XCTAssertEqual(usage.rows.first?.descriptor.vendor, "Claude")
+        XCTAssertEqual(usage.rows.map(\.descriptor.allModels), [true, true, false], "a family's weekly window limits that family alone")
     }
 }

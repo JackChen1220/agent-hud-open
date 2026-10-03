@@ -253,7 +253,8 @@ public enum SnapshotRunner {
         save("island-no-models-dark", IslandScene(store: store, settings: settings, open: true, light: false), folder: folder, scheme: .dark)
 
         settings.updateAgents { _ in DemoData.agents + [
-            AgentDescriptor(id: "codex-spark-preview", vendor: "Codex", model: "GPT-5.3-Codex-Spark · Weekly · all models", source: L10n.sourceCodexAppServer, enabled: false),
+            AgentDescriptor(id: "codex-spark-preview", vendor: "Codex", model: "GPT-5.3-Codex-Spark · Weekly limit", shortModel: "Spark 7d",
+                            source: L10n.sourceCodexAppServer, enabled: false),
         ] }
         save("settings-sources-bottom-dark", SettingsView(settings: settings, store: store, initialTab: .sources).frame(width: SettingsWindowLayout.size.width, height: SettingsWindowLayout.size.height), folder: folder, scheme: .dark, scrollToBottom: true)
         settings.update { $0.glowRange = 20; $0.glowBlur = 20 }
@@ -268,7 +269,8 @@ public enum SnapshotRunner {
             AgentDescriptor(id: "claude-session", vendor: "Claude", model: L10n.windowSession, source: L10n.sourceClaudeSessions, enabled: true),
             AgentDescriptor(id: "claude-weekly", vendor: "Claude", model: L10n.windowWeekly, source: L10n.sourceClaudeSessions, enabled: true),
             AgentDescriptor(id: "claude-weekly-fable", vendor: "Claude", model: L10n.windowWeeklyPrefix + "Fable", source: L10n.sourceClaudeSessions, enabled: true),
-            AgentDescriptor(id: "codex", vendor: "Codex", model: L10n.windowWeekly, source: L10n.sourceCodexAppServer, enabled: true),
+            AgentDescriptor(id: "codex", vendor: "Codex", model: L10n.text("每周额度", "Weekly limit"), shortModel: WindowNames.Period.week.shortName,
+                            source: L10n.sourceCodexAppServer, enabled: true),
         ]
         settings.updateAgents { _ in quotaAgents }
         settings.update {
@@ -294,6 +296,23 @@ public enum SnapshotRunner {
         }
         store.replace(report: UsageReport(generatedAt: resetNow, snapshots: quotaSnapshots, sessions: []))
         save("island-weekly-resets-dark", IslandScene(store: store, settings: settings, open: true, light: false), folder: folder, scheme: .dark)
+        // Full names too long for a row give way to their short names: Claude's weekly window in English, a Codex bucket's
+        // and a pool's with its plan.
+        let pool = BillingPool(provider: "Kimi", realm: "CN", product: .plan, scope: "snapshot", evidence: .account, entitlement: "kimi-code")
+        let longNames = Array(quotaAgents.prefix(3)) + [
+            AgentDescriptor(id: "codex:base_model_inference:primary", vendor: "Codex", model: L10n.text("Luna Reserve · 每周额度", "Luna Reserve · Weekly limit"),
+                            shortModel: "Reserve", source: L10n.sourceCodexAppServer, enabled: true, allModels: false),
+            AgentDescriptor(id: pool.windowID("limit:TIME_UNIT_MINUTE:300.0"), vendor: "Kimi", model: L10n.text("5 小时额度 · Allegretto", "5-hour quota · Allegretto"),
+                            shortModel: WindowNames.Period.fiveHours.shortName, source: "Kimi", enabled: true, billingPool: pool, account: ProviderAccount(pool: pool)),
+            AgentDescriptor(id: pool.windowID("monthly"), vendor: "Kimi", model: L10n.text("月总额度 · Allegretto", "Monthly total quota · Allegretto"),
+                            shortModel: WindowNames.Period.month.shortName, source: "Kimi", enabled: true, billingPool: pool, account: ProviderAccount(pool: pool)),
+        ]
+        settings.updateAgents { _ in longNames }
+        store.replace(report: UsageReport(generatedAt: resetNow, snapshots: longNames.map {
+            UsageSnapshot(agentId: $0.id, remainingPct: 64, resetAt: resetNow.addingTimeInterval(86400), windowDuration: 7 * 86400, updatedAt: resetNow)
+        }, sessions: []))
+        save("island-long-names-dark", IslandScene(store: store, settings: settings, open: true, light: false), folder: folder, scheme: .dark)
+        settings.updateAgents { _ in quotaAgents }
         let resetBalances: [(String, CodexResetCredits?)] = [
             ("available", DemoData.codexResetCredits(now: resetNow)),
             ("count-only", CodexResetCredits(availableCount: 3, credits: nil)),
@@ -350,8 +369,10 @@ public enum SnapshotRunner {
         let previousAccount = ProviderAccount.identified(provider: "Codex", user: "me@example.com", workspace: "personal")!
         let piAccount = ProviderAccount.identified(provider: "Codex", user: "pi@example.com", workspace: "personal-pi")!
         let accountRows = [currentAccount, piAccount, previousAccount].flatMap { account in
-            [("codex", L10n.windowWeekly), ("codex:spark:primary", "GPT-5.3-Codex-Spark · 5h")].map { key, label in
-                AgentDescriptor(id: account.windowID(key), vendor: "Codex", model: label, source: L10n.sourceCodexAppServer, enabled: true, account: account)
+            [("codex", L10n.text("每周额度", "Weekly limit"), WindowNames.Period.week.shortName),
+             ("codex:spark:primary", L10n.text("GPT-5.3-Codex-Spark · 5 小时额度", "GPT-5.3-Codex-Spark · 5h limit"), "Spark 5h")].map { key, label, short in
+                AgentDescriptor(id: account.windowID(key), vendor: "Codex", model: label, shortModel: short, source: L10n.sourceCodexAppServer,
+                                enabled: true, account: account)
             }
         }
         let accountReadings: [(ProviderAccount, String, Double, Date)] = [

@@ -73,6 +73,15 @@ public enum ModelCatalog {
         }
     }
 
+    /// What each kind of some tokens would cost at list price, all in the currency of the list that priced them.
+    public struct KindCosts: Hashable, Sendable {
+        public let currency: String
+        /// The kinds that had tokens; a kind without tokens is absent.
+        public let amounts: [TokenKind: Decimal]
+
+        public var total: Decimal { amounts.values.reduce(0, +) }
+    }
+
     /// The catalog name of a consumer id: the model its client called, after the client's `<source>-model:` prefix and
     /// before a `#` that names the provider the call went through, without a dated snapshot suffix or Claude Code's 1M
     /// marker. Whichever client made the call, the same model has the same list price, so Claude Code pointed at
@@ -84,6 +93,39 @@ public enum ModelCatalog {
         if name.hasSuffix("[1m]") { name.removeLast(4) }
         if let date = name.range(of: #"-[0-9]{8}$|-[0-9]{4}-[0-9]{2}-[0-9]{2}$"#, options: .regularExpression) { name.removeSubrange(date) }
         return name.isEmpty ? nil : name
+    }
+
+    /// Models their vendor sells as a product under a name of its own, by the id clients log, with the routes that are
+    /// that product's own services.
+    static let products: [String: (name: String, services: Set<String>)] = [
+        // Kimi Code's plan model, which Kimi's docs and OpenCode's list of providers call Kimi For Coding.
+        "kimi-for-coding": ("Kimi For Coding", ["kimi-code", "kimi-coding", "kimi-for-coding", "kimi-code-plan-cn", "kimi-code-plan-global"]),
+    ]
+
+    /// A consumer's name as every surface writes it, from its id alone: the model its client logged, after the client's
+    /// `<source>-model:` prefix, then " · " and the route after `#` that the calls went through, unless the name already
+    /// shows the route. A route that prefixes the model (`kimi-code/kimi-for-coding` through `kimi-code`) is left out of
+    /// both, a model its vendor sells under a name of its own reads as that name, without the route where the route is
+    /// one of the product's own services (Kimi For Coding), and a Claude Code model reads as its family and version
+    /// (Opus 4.5). An id without a model is its own name.
+    public static func consumerName(of agentId: String) -> String {
+        guard let marker = agentId.range(of: "-model:") else { return agentId }
+        let rest = agentId[marker.upperBound...]
+        var name = String(rest.prefix { $0 != "#" })
+        let route = rest.firstIndex(of: "#").map { String(rest[rest.index(after: $0)...]) } ?? ""
+        var showsRoute = route.isEmpty
+        if !route.isEmpty, name.lowercased().hasPrefix(route.lowercased() + "/") {
+            name.removeFirst(route.count + 1)
+            showsRoute = true
+        }
+        if name.isEmpty { name = "Unknown" }
+        if let product = products[name.lowercased()] {
+            name = product.name
+            showsRoute = showsRoute || product.services.contains(route.lowercased())
+        } else if agentId[..<marker.lowerBound] == "claude", let model = ClaudeModelInfo.parse(name) {
+            name = model.displayName
+        }
+        return showsRoute ? name : name + " · " + route
     }
 
     /// The model a consumer called, where its list price applies: a consumer that names the provider it went through is
@@ -129,6 +171,26 @@ public enum ModelCatalog {
         }
         cost.unpriced.sort()
         return priced ? cost : nil
+    }
+
+    /// What a usage bucket's tokens would cost at list price, kind by kind, on the platform `regions` finds its client on:
+    /// the China list in yuan for a client on the China platform, the international list in US dollars otherwise, and
+    /// DeepSeek's peak rates for a bucket that starts in its peak hours. A bucket sums calls, so it is priced at the base
+    /// rates, as the Tokens page prices its buckets. nil when the model has no list price on that platform.
+    public static func cost(of bucket: UsageBucket, regions: PriceRegions) -> KindCosts? {
+        guard let model = model(for: bucket.agentId), let list = model.price(in: regions.region(for: bucket.agentId)) else { return nil }
+        let rates = list.price.rates, kinds = bucket.kinds, factor = factor(model, at: bucket.start)
+        var amounts: [TokenKind: Decimal] = [:]
+        for kind in TokenKind.allCases where kinds[kind] > 0 {
+            let rate: Decimal = switch kind {
+            case .input: rates.input
+            case .cacheWrite: rates.cacheWrite
+            case .cacheRead: rates.cacheRead
+            case .output, .reasoning: rates.output
+            }
+            amounts[kind] = Decimal(kinds[kind]) * rate * factor / 1_000_000
+        }
+        return KindCosts(currency: list.region.currency, amounts: amounts)
     }
 
     private static func amount(_ kinds: TokenKinds, at rates: Rates) -> Decimal {

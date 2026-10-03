@@ -9,8 +9,8 @@ struct StatsView: View {
     var onIdealHeightChange: ((CGFloat) -> Void)?
     @Environment(\.colorScheme) private var scheme
     @State private var sessionSource: SessionSource?
-    /// The Sessions page lists only the sessions active in the last day, without days.
-    @State private var activeOnly = false
+    /// How the Sessions page lists its sessions: under their days, or those active in the last day without days.
+    @State private var arrangement = SessionArrangement.day
 
     var body: some View {
         let theme = Theme.forScheme(scheme)
@@ -23,7 +23,7 @@ struct StatsView: View {
                 ScrollViewReader { proxy in
                     ScrollView { content(theme) }
                         .onChange(of: store.selectedQuotaId, initial: true) { _, id in
-                            guard let id, let vendor = quotaVendor(id) else { return }
+                            guard let id, let vendor = store.tokenCardVendors(for: id).first else { return }
                             withAnimation { proxy.scrollTo(AgentCards.anchor(vendor), anchor: .center) }
                             // The tile is pointed out for a moment; it keeps showing the window afterwards.
                             Task {
@@ -52,10 +52,6 @@ struct StatsView: View {
 
     private static let top = "stats-top"
 
-    private func quotaVendor(_ id: String) -> String? {
-        store.rowGroups.first { $0.rows.contains { $0.id == id } }?.vendor
-    }
-
     private func content(_ theme: Theme) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Color.clear.frame(height: 0).id(Self.top)
@@ -71,7 +67,7 @@ struct StatsView: View {
                 if let session = store.focusedSession {
                     SessionDetailView(session: session, store: store, theme: theme)
                 } else {
-                    SessionList(store: store, theme: theme, source: sessionSource, activeOnly: activeOnly)
+                    SessionList(store: store, theme: theme, source: sessionSource, activeOnly: arrangement == .active)
                 }
             }
         }
@@ -139,12 +135,17 @@ struct StatsView: View {
                 .help(L10n.text("回到会话列表", "Back to the session list"))
                 Spacer(minLength: 12)
             case .sessions:
-                Toggle(L10n.text("只看活跃", "Active only"), isOn: $activeOnly.animation(.easeOut(duration: 0.15)))
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .font(.ui(12))
-                    .help(L10n.text("只列近 24 小时有活动的会话，不按日期分组", "Only the sessions active in the last 24 hours, without days"))
-                    .accessibilityIdentifier("sessions-active-only")
+                Picker(L10n.text("排列", "Arrange"), selection: $arrangement.animation(.easeOut(duration: 0.15))) {
+                    Text(L10n.text("按日", "Day")).tag(SessionArrangement.day)
+                    Text(L10n.text("活跃", "Active")).tag(SessionArrangement.active)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.small)
+                .fixedSize()
+                .help(L10n.text("按日期列出近 7 天的会话，或只列近 24 小时有活动的会话、不分日期",
+                                "The last seven days' sessions under their days, or only those active in the last 24 hours, without days"))
+                .accessibilityIdentifier("sessions-arrangement")
                 Spacer(minLength: 12)
                 sessionCount(theme)
                 SelectionMenu(
@@ -168,6 +169,7 @@ struct StatsView: View {
     }
 
     private func sessionCount(_ theme: Theme) -> some View {
+        let activeOnly = arrangement == .active
         let counts = Self.sessionCounts(store, source: sessionSource, activeOnly: activeOnly)
         let listed = counts.listed, running = counts.running
         return HStack(spacing: 6) {

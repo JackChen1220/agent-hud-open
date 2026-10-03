@@ -92,12 +92,41 @@ final class OpenAgentProviderTests: XCTestCase {
         XCTAssertThrowsError(try OpenAgentQuotaClient.parse(json(#"{"usage":{"limit":"0","used":"1"}}"#), credential: credential(), now: now))
     }
 
-    func testGoFractionsArePercentAndMonthlyHasNoFabricatedPeriod() throws {
-        let root = try json(#"{"usage":{"rolling":{"percent":0.5,"resetInSec":60},"weekly":{"percent":1},"monthly":{"percent":20}}}"#)
+    /// Kimi's current report. The fixtures are derived from Kimi Code's own reader of `/coding/v1/usages`
+    /// (`parseManagedUsagePayload`, MoonshotAI/kimi-code 21406fb4) and its membership docs, not captured from an account.
+    func testKimiReadsTheCurrentReportUnderTheEarlierWindowIds() throws {
+        L10n.setLanguage(.en)
+        defer { L10n.setLanguage(.system) }
+        let earlier = try OpenAgentQuotaClient.parse(json(#"{"usage":{"limit":"2000","used":"400"},"limits":[{"window":{"duration":300,"timeUnit":"TIME_UNIT_MINUTE"},"detail":{"limit":"200","used":"50"}}]}"#), credential: credential(), now: now)
+        // A current plan drops the week and adds the month's total, of which the code share is a part.
+        let current = try OpenAgentQuotaClient.parse(json(#"{"usages":{"limit_5h":{"used_ratio":0.25,"reset_time":"2026-09-08T05:00:00Z"},"limit_month_total":{"used_ratio":"0.4","reset_time":"2026-10-01T00:00:00Z"},"limit_month_code":{"used_ratio":0.1}},"boosterWallet":null,"membership":{"level":"Plus"}}"#), credential: credential(), now: now)
+        XCTAssertEqual(current.windows.map(\.id), [earlier.windows[1].id, credential().pool.windowID("monthly")], "the 5 hours keep their window")
+        XCTAssertEqual(current.windows.map(\.remaining), [75, 60])
+        XCTAssertEqual(current.windows.map(\.duration), [18000, nil])
+        XCTAssertEqual(current.windows.first?.reset, DateParsing.internet("2026-09-08T05:00:00Z"))
+        XCTAssertEqual(current.windows.map(\.label), ["5-hour quota · Plus", "Monthly total quota · Plus"])
+        XCTAssertEqual(earlier.windows.map(\.label), ["Weekly quota", "5-hour quota"], "an account that names no plan")
+        XCTAssertEqual(current.windows.map(\.shortLabel), ["5h", "Monthly"])
+        // An older plan in the current report keeps its week, under the week's window.
+        let older = try OpenAgentQuotaClient.parse(json(#"{"usages":{"limit_5h":{"used_ratio":0.25},"limit_7d":{"used_ratio":0.2}},"usage":{"limit":"2000","used":"1000"}}"#), credential: credential(), now: now)
+        XCTAssertEqual(Set(older.windows.map(\.id)), Set(earlier.windows.map(\.id)))
+        XCTAssertEqual(older.windows.map(\.remaining), [75, 80], "the current report is read alone where it gives a window")
+        let fallback = try OpenAgentQuotaClient.parse(json(#"{"usages":{},"usage":{"limit":"2000","used":"400"}}"#), credential: credential(), now: now)
+        XCTAssertEqual(fallback.windows.map(\.id), [earlier.windows[0].id])
+    }
+
+    func testGoOfficialUsageReadsResetTimestampsWithoutChangingPercentagesOrPeriods() throws {
+        let root = try json(#"""
+        {"usage":{
+          "rolling":{"status":"ok","percent":0.5,"resetsAt":"2026-09-07T16:54:20.000Z"},
+          "weekly":{"status":"ok","percent":1,"resetsAt":"2026-09-14T16:53:20.000Z"},
+          "monthly":{"status":"ok","percent":20,"resetsAt":"2026-10-07T16:53:20.000Z"}
+        }}
+        """#)
         let result = try OpenAgentQuotaClient.parse(root, credential: credential(.go), now: now)
         XCTAssertEqual(result.windows.map(\.remaining), [99.5, 99, 80])
-        XCTAssertEqual(result.windows[0].reset, now.addingTimeInterval(60))
-        XCTAssertNil(result.windows[2].duration)
+        XCTAssertEqual(result.windows.map(\.reset), [60, 604800, 2592000].map { now.addingTimeInterval($0) })
+        XCTAssertEqual(result.windows.map(\.duration), [18000, 604800, nil])
     }
 
     func testGLMRegionsAndMCPStaySeparateAndInvalidResetIsOmitted() throws {
@@ -110,6 +139,21 @@ final class OpenAgentProviderTests: XCTestCase {
         XCTAssertNil(cn.windows[1].duration)
         XCTAssertNotEqual(cn.windows[0].id, global.windows[0].id)
         XCTAssertThrowsError(try OpenAgentQuotaClient.parse(json(#"{"success":false,"code":200,"data":{"limits":[]}}"#), credential: credential(.glmChina), now: now))
+    }
+
+    /// GLM credit plans. The fixture is derived from Zhipu's Coding Plan docs (credits over 5 hours and a week, MCP
+    /// calls drawn from them) and the quota endpoint's fields, not captured from an account.
+    func testGLMCreditPlansAreNamedInZhipusWordsAndTokenLimitsKeepTheirs() throws {
+        L10n.setLanguage(.en)
+        defer { L10n.setLanguage(.system) }
+        let credits = try OpenAgentQuotaClient.parse(json(#"{"success":true,"code":200,"data":{"planName":"Pro","limits":[{"type":"CREDIT_LIMIT","unit":3,"number":5,"usage":12000,"currentValue":3000,"remaining":9000,"percentage":25,"nextResetTime":1788810000000},{"type":"CREDIT_LIMIT","unit":6,"number":1,"usage":60000,"currentValue":6000,"remaining":54000,"percentage":10}]}}"#), credential: credential(.glmGlobal), now: now)
+        XCTAssertEqual(credits.windows.map(\.label), ["5-hour credits · Pro", "Weekly credits · Pro"])
+        XCTAssertEqual(credits.windows.map(\.remaining), [75, 90])
+        XCTAssertEqual(credits.windows.map(\.duration), [18000, 604800])
+        XCTAssertEqual(credits.windows.map(\.id), ["CREDIT_LIMIT:3:5", "CREDIT_LIMIT:6:1"].map(credential(.glmGlobal).pool.windowID))
+        XCTAssertEqual(credits.plan, "Pro")
+        let tokens = try OpenAgentQuotaClient.parse(json(#"{"success":true,"code":200,"data":{"planName":"Pro","limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":25},{"type":"TIME_LIMIT","unit":5,"number":1,"percentage":5}]}}"#), credential: credential(.glmGlobal), now: now)
+        XCTAssertEqual(tokens.windows.map(\.label), ["5-hour limit · Pro", "MCP usage (1 month) · Pro"])
     }
 
     func piLines(session: String = "original", entry: String = "message-a", provider: String = "openai-codex", model: String = "model-x") -> String {
@@ -154,6 +198,24 @@ final class OpenAgentProviderTests: XCTestCase {
         let kimi = try XCTUnwrap(OpenAgentParser.kimi(Data(#"{"type":"usage.record","model":"kimi-code/kimi-for-coding","usageScope":"turn","time":1788800001000,"usage":{"inputOther":10,"output":5}}"#.utf8),
                                                       path: "/.kimi-code/sessions/work/session/agents/main/wire.jsonl").first)
         XCTAssertNil(ModelCatalog.model(for: kimi.events[0].agentId), "Kimi Code's plan id follows whichever model Moonshot ships")
+    }
+
+    /// Consumers are named by the catalog, from their ids: a route the model already shows is left out, and Kimi Code's
+    /// plan model reads as Kimi's product.
+    func testConsumersAreNamedByTheCatalog() async throws {
+        let wire = #"{"type":"usage.record","model":"kimi-code/kimi-for-coding","usageScope":"turn","time":1788800001000,"usage":{"inputOther":10,"output":5}}"#
+        let kimi = try XCTUnwrap(OpenAgentParser.kimi(Data(wire.utf8), path: "/.kimi-code/sessions/work/session/agents/main/wire.jsonl").first)
+        let plan = try XCTUnwrap(OpenAgentParser.pi(Data(piLines(provider: "kimi-coding", model: "kimi-for-coding").utf8), path: "/a.jsonl").first)
+        let other = try XCTUnwrap(OpenAgentParser.pi(Data(piLines(session: "other", provider: "openai-codex", model: "gpt-5.6-luna").utf8), path: "/b.jsonl").first)
+        let now = self.now
+        let provider = OpenAgentUsageProvider(credentials: { [] }, sessions: { _ in .init(sessions: [kimi, plan, other]) },
+                                              fetchQuota: { _, _ in ProviderQuota() }, history: QuotaHistoryStore(), clock: { now })
+        let report = try await provider.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(Dictionary(uniqueKeysWithValues: report.consumers.map { ($0.id, $0.name) }), [
+            "kimi-model:kimi-code/kimi-for-coding#kimi-code": "Kimi For Coding",
+            "pi-model:kimi-for-coding#kimi-coding": "Kimi For Coding",
+            "pi-model:gpt-5.6-luna#openai-codex": "gpt-5.6-luna · openai-codex",
+        ])
     }
 
     func testASessionRecordedUnderTheHashedIdIsPricedWhole() async throws {

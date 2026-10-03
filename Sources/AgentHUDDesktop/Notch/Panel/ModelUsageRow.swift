@@ -45,10 +45,14 @@ struct ModelUsageRow: View {
                 .fill(markerColor)
                 .frame(width: IslandRowLayout.markerWidth, height: IslandRowLayout.markerWidth)
                 .shadow(color: row.level == nil || value == nil ? .clear : markerColor, radius: 4)
-            nameText
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(width: IslandRowLayout.nameWidth, alignment: .leading)
+            // A name is never cut: one too long for the column gives way to the window's short name.
+            ViewThatFits(in: .horizontal) {
+                nameText(row.agent.name)
+                nameText(row.agent.shortName)
+            }
+            .lineLimit(1)
+            .frame(width: IslandRowLayout.nameWidth, alignment: .leading)
+            .accessibilityLabel(showVendor ? row.agent.displayName : row.agent.name)
             ProgressTrack(fraction: (row.usedPct ?? 0) / 100,
                           projectedFraction: metric == .burnRate ? projectedUsedPct / 100 : nil,
                           fill: isLoading || row.level == nil ? theme.secondary : color,
@@ -103,8 +107,7 @@ struct ModelUsageRow: View {
         return runsOut ? 100 : projectedAtReset ?? row.usedPct ?? 0
     }
 
-    private var nameText: Text {
-        let label = row.agent.name
+    private func nameText(_ label: String) -> Text {
         if showVendor {
             return Text(row.agent.vendorName).fontWeight(.semibold) + Text(" · \(label)").foregroundColor(theme.secondary)
         }
