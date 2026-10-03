@@ -69,6 +69,10 @@ public struct HoverMachine: Hashable, Sendable {
 
         case (.closing(let deadline), .timerFired(let now)) where now >= deadline:
             return Transition(machine: HoverMachine(state: .collapsed), deadline: nil)
+        case (.opening(let deadline), .timerFired), (.closing(let deadline), .timerFired):
+            // The caller replaces its timer after every transition. Keep the deadline if a timer fires
+            // early, otherwise the hover would be left waiting with no timer to finish it.
+            return Transition(machine: self, deadline: deadline)
 
         case (_, .forceOpen):
             return Transition(machine: HoverMachine(state: .open), deadline: nil)
