@@ -35,6 +35,12 @@ struct IslandPane: View {
                     isOn: settings.binding(\.requiresOptionToOpen)
                 )
                 SettingsDivider(theme: theme)
+                SettingsToggleRow(
+                    label: L10n.text("鼠标触顶立即展开", "Open immediately at the top edge"),
+                    subtitle: L10n.text("鼠标移到 HUD 正上方的屏幕顶边时，跳过展开延迟。", "Skip the hover delay when the pointer reaches the screen's top edge directly above the HUD."),
+                    isOn: settings.binding(\.openImmediatelyAtTop)
+                )
+                SettingsDivider(theme: theme)
                 SliderRow(label: L10n.text("展开延迟", "Hover delay"), value: settings.doubleBinding(\.hoverDelayMs), range: 0...1500, step: 50, format: { "\(Int($0)) ms" }, theme: theme)
                 SettingsDivider(theme: theme)
                 SliderRow(label: L10n.text("收起延迟", "Collapse delay"), value: settings.doubleBinding(\.collapseDelayMs), range: 0...1500, step: 50, format: { "\(Int($0)) ms" }, theme: theme)

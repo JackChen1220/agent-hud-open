@@ -21,6 +21,7 @@ final class ScreenHUD {
     let key: String
     private let store: UsageStore
     private let settings: SettingsStore
+    private let mouseLocation: @MainActor () -> CGPoint
     private let additionalHUDControls: @MainActor (@escaping @MainActor () -> Void) -> AnyView
     private(set) var geometry: NotchGeometry
     /// Set by the coordinator, which watches the system appearance once for every screen.
@@ -49,10 +50,12 @@ final class ScreenHUD {
     var onClaimRequest: ((String) -> Void)?
 
     init(key: String, screen: NSScreen?, store: UsageStore, settings: SettingsStore,
+         mouseLocation: @escaping @MainActor () -> CGPoint = { NSEvent.mouseLocation },
          additionalHUDControls: @escaping @MainActor (@escaping @MainActor () -> Void) -> AnyView = { _ in AnyView(EmptyView()) }) {
         self.key = key
         self.store = store
         self.settings = settings
+        self.mouseLocation = mouseLocation
         self.additionalHUDControls = additionalHUDControls
         // The stored placement decides notch or queue before the first frame, so the HUD never flashes
         // the wrong shape on launch.
@@ -62,9 +65,7 @@ final class ScreenHUD {
         self.geometry = geometry
         glow = GlowWindowController(geometry: geometry)
         island = IslandWindowController(frame: geometry.islandFrame, rootView: IslandRootView.placeholder)
-        island.onPointerChange = { [weak self] inside in
-            self?.pointer(inside: inside)
-        }
+        island.onPointerChange = { [weak self] _ in self?.samplePointer() }
         alerts.onExpire = { [weak self] in self?.dismissAlert() }
 
         apply(animated: false)
@@ -74,18 +75,20 @@ final class ScreenHUD {
     // MARK: Hover
 
     func pointer(inside: Bool) {
-        guard pointerInside != inside else { return }
-        pointerInside = inside
-        alerts.hold(inside)
-        // Whether Option is down can change without the pointer moving, so while it is over the HUD the
-        // modifier is watched. A global keyboard monitor would ask for accessibility; this does not.
-        modifierWatch?.invalidate()
-        modifierWatch = nil
-        if inside, settings.settings.requiresOptionToOpen {
-            modifierWatch = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-                Task { @MainActor in self?.reevaluateHover() }
+        if pointerInside != inside {
+            pointerInside = inside
+            alerts.hold(inside)
+            // Whether Option is down can change without the pointer moving, so while it is over the HUD the
+            // modifier is watched. A global keyboard monitor would ask for accessibility; this does not.
+            modifierWatch?.invalidate()
+            modifierWatch = nil
+            if inside, settings.settings.requiresOptionToOpen {
+                modifierWatch = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+                    Task { @MainActor in self?.reevaluateHover() }
+                }
             }
         }
+        // Moving within the HUD can reach the top while an ordinary hover is still waiting to open.
         reevaluateHover()
     }
 
@@ -103,7 +106,21 @@ final class ScreenHUD {
     /// animation. An event is the only thing on screen at that moment, so everything it draws is part of it — a
     /// reminder you cannot point at is a reminder you cannot answer.
     func samplePointer() {
-        pointer(inside: hoverRegion.contains(NSEvent.mouseLocation))
+        pointer(inside: Self.containsPointer(mouseLocation(), in: hoverRegion))
+    }
+
+    /// CGRect.contains excludes its top and right edges. A pointer pinned to a display edge is still
+    /// over the HUD, including at the physical notch, so hover includes the target's boundary.
+    static func containsPointer(_ point: CGPoint, in region: CGRect) -> Bool {
+        !region.isEmpty && point.x >= region.minX && point.x <= region.maxX
+            && point.y >= region.minY && point.y <= region.maxY
+    }
+
+    /// AppKit's pointer may stop one point short of maxY at a physical display boundary.
+    /// Only the HUD's own top edge qualifies; side and bottom queues keep their ordinary hover delay.
+    static func pointerTouchesTop(_ point: CGPoint, geometry: NotchGeometry) -> Bool {
+        geometry.edge == .top && point.y >= geometry.screenFrame.maxY - 1
+            && point.y <= geometry.screenFrame.maxY && containsPointer(point, in: geometry.rect)
     }
 
     private var hoverRegion: CGRect {
@@ -122,6 +139,18 @@ final class ScreenHUD {
         let opens = ScreenHUD.opensOnHover(counted: hoverOpens, open: machine.isOpen, pointerInside: pointerInside,
                                            typing: typing, requiresOption: settings.settings.requiresOptionToOpen,
                                            optionDown: NSEvent.modifierFlags.contains(.option))
+        let canFinishOpening = switch machine.state {
+        case .opening: true
+        // A handoff to Settings or Stats deliberately stays collapsed until the pointer leaves.
+        case .collapsed: !hoverOpens
+        default: false
+        }
+        if opens, canFinishOpening, settings.settings.openImmediatelyAtTop,
+           Self.pointerTouchesTop(mouseLocation(), geometry: geometry) {
+            hoverOpens = true
+            transition(machine.reduce(.forceOpen, config: config))
+            return
+        }
         guard opens != hoverOpens else { return }
         hoverOpens = opens
         let now = Date()
@@ -498,12 +527,12 @@ final class ScreenHUD {
         root.logoQueueInset = max(0, windowFrame.maxY - geometry.rect.maxY)
         root.logoQueueHeight = geometry.rect.height
         updateClickThrough(geometry.mode == .logos && !expanded)
-        // One source of truth for the pointer while in logo mode: the panel's own tracking disagrees with the
-        // coordinator's monitor about the parts of the window the silhouette does not cover, and the two
-        // would fight over the state.
+        // A tracking area can report an exit when the window or its hosting view resizes, even though the
+        // pointer has not left the visible HUD. Both native events and the coordinator use screen geometry.
+        // Collapsed logo queues pass clicks through, so their coordinator alone supplies the events.
         island.onPointerChange = geometry.mode == .logos
             ? nil
-            : { [weak self] inside in self?.pointer(inside: inside) }
+            : { [weak self] _ in self?.samplePointer() }
         root.presentationSize = presentation
         root.onContentHeight = { [weak self] height in self?.updatePanelHeight(height) }
         island.setRootView(root)

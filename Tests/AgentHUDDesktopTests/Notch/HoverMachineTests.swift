@@ -25,6 +25,15 @@ final class HoverMachineTests: XCTestCase {
         let opening = HoverMachine().reduce(.pointerEntered(at: t0), config: config).machine
         let t = opening.reduce(.timerFired(at: t0.addingTimeInterval(0.1)), config: config)
         XCTAssertEqual(t.machine, opening)
+        XCTAssertEqual(t.deadline, t0.addingTimeInterval(0.4), "An early callback must rearm the pending open")
+    }
+
+    func testEarlyCollapseTimerKeepsItsDeadline() {
+        let closing = HoverMachine(state: .open).reduce(.pointerExited(at: t0), config: config).machine
+        let early = closing.reduce(.timerFired(at: t0.addingTimeInterval(0.1)), config: config)
+        XCTAssertEqual(early.machine, closing)
+        XCTAssertEqual(early.deadline, t0.addingTimeInterval(0.2))
+        XCTAssertEqual(early.machine.reduce(.timerFired(at: t0.addingTimeInterval(0.2)), config: config).machine.state, .collapsed)
     }
 
     func testExitWhileOpeningCancels() {

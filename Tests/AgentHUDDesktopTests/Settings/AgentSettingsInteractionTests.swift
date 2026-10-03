@@ -53,7 +53,7 @@ final class AgentSettingsInteractionTests: XCTestCase {
                                                                   sourceStatuses: sources).frame(width: 760, height: 800)))
         hosting.sizingOptions = []
         hosting.frame = NSRect(x: 0, y: 0, width: 760, height: 800)
-        let window = OffscreenWindow(contentRect: NSRect(x: -20000, y: -20000, width: 760, height: 800))
+        let window = AgentSettingsTestWindow(contentRect: NSRect(x: -20000, y: -20000, width: 760, height: 800))
         window.contentView = hosting
         window.acceptsMouseMovedEvents = true
         window.orderFrontRegardless()
@@ -127,4 +127,21 @@ final class AgentSettingsInteractionTests: XCTestCase {
         await settle(until: { abs(documentHeight() - collapsedHeight) <= 2 })
         XCTAssertEqual(documentHeight(), collapsedHeight, accuracy: 2, "The group collapses again")
     }
+}
+
+/// The interaction test also runs against Release builds, which omit the snapshot runner's window helper.
+@MainActor
+private final class AgentSettingsTestWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+
+    init(contentRect: CGRect) {
+        super.init(contentRect: contentRect, styleMask: [.borderless], backing: .buffered, defer: false)
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        isReleasedWhenClosed = false
+        animationBehavior = .none
+    }
+
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }

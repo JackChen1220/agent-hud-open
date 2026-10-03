@@ -7,7 +7,7 @@ extension EnvironmentValues {
 }
 
 /// Uses the desktop glow renderer for settings previews, onboarding and snapshots.
-/// Breathing is computed from wall-clock time so it always reflects the current settings; grid effects play
+/// Soft breathing animates layer opacity using the current settings; grid effects play
 /// through the same layer animator as the notch.
 struct GlowPreview: View {
     @Environment(\.displayScale) private var displayScale
@@ -45,7 +45,7 @@ struct GlowPreview: View {
             && (appearance.breathing || previewsMotion)
         // Soft bitmaps carry a blur margin on every side.
         let padding = pattern.usesGrid ? 0 : ceil(max(0, glow.blur) * 3)
-        // Render outside the timeline so breathing only changes the bitmap's opacity.
+        // Cache the resting bitmap so breathing only changes its layer's opacity.
         let still: GlowImage? = {
             guard !appearance.hidden, !animates else { return nil }
             if framed, let frozenTime {
@@ -56,36 +56,32 @@ struct GlowPreview: View {
                                      outwardOnly: settings.outwardOnly, stops: appearance.stops, scale: displayScale,
                                      pattern: pattern)
         }()
-        // The timeline only exists to pulse a soft glow's opacity. It must stop whenever nothing is pulsing —
-        // including when the frame-by-frame path has it, and when the window is not being looked at, or it
-        // drives a full-rate redraw of a still image.
-        let pulses = !animates && appearance.breathing && frozenTime == nil && activeState != .inactive
-        TimelineView(.animation(paused: !pulses)) { context in
-            ZStack(alignment: .top) {
-                if animates {
-                    GlowEffectView(key: key, breathSeconds: settings.breathSeconds, breathAmplitude: settings.breathAmplitude)
-                        .frame(width: glow.width + padding * 2, height: glow.height + padding * 2)
-                        .frame(width: glow.width, height: glow.height)
-                        .opacity(appearance.peakOpacity)
-                        .offset(y: glow.topOffset)
-                } else if let still {
-                    Image(decorative: still.image, scale: displayScale)
-                        .resizable()
-                        .frame(width: still.size.width, height: still.size.height)
-                        .frame(width: glow.width, height: glow.height)
-                        .opacity(frozenTime != nil ? appearance.peakOpacity : Self.opacity(appearance, at: context.date))
-                        .offset(y: glow.topOffset)
-                }
-                if drawsIsland {
-                    BottomRoundedRectangle(radius: islandRadius)
-                        .fill(Color.black)
-                        .overlay {
-                            if lightBorder {
-                                BottomRoundedRectangle(radius: islandRadius).stroke(Color.white.opacity(0.18), lineWidth: 1)
-                            }
+        // A soft pulse changes only layer opacity. Keeping its clock out of SwiftUI avoids rebuilding and
+        // laying out the preview on every display refresh.
+        let pulses = !animates && !appearance.hidden && !reduceMotion && appearance.breathing
+            && frozenTime == nil && activeState != .inactive
+        ZStack(alignment: .top) {
+            if animates {
+                GlowEffectView(key: key, breathSeconds: settings.breathSeconds, breathAmplitude: settings.breathAmplitude)
+                    .frame(width: glow.width + padding * 2, height: glow.height + padding * 2)
+                    .frame(width: glow.width, height: glow.height)
+                    .opacity(appearance.peakOpacity)
+                    .offset(y: glow.topOffset)
+            } else if let still {
+                GlowBitmapView(image: still.image, scale: displayScale, appearance: appearance, pulses: pulses)
+                    .frame(width: still.size.width, height: still.size.height)
+                    .frame(width: glow.width, height: glow.height)
+                    .offset(y: glow.topOffset)
+            }
+            if drawsIsland {
+                BottomRoundedRectangle(radius: islandRadius)
+                    .fill(Color.black)
+                    .overlay {
+                        if lightBorder {
+                            BottomRoundedRectangle(radius: islandRadius).stroke(Color.white.opacity(0.18), lineWidth: 1)
                         }
-                        .frame(width: islandSize.width, height: islandSize.height)
-                }
+                    }
+                    .frame(width: islandSize.width, height: islandSize.height)
             }
         }
     }
@@ -117,7 +113,103 @@ struct GlowEffectView: NSViewRepresentable {
     }
 }
 
-final class GlowEffectLayerView: NSView {
+/// Window attachment alone is not visibility: closed and minimized windows still own their views.
+/// Both preview paths stop their animations while the window is off screen or covered.
+class GlowPreviewLayerView: NSView {
+    var isVisibleForAnimation: Bool {
+        window?.isVisible == true && window?.occlusionState.contains(.visible) == true && !isHiddenOrHasHiddenAncestor
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        NotificationCenter.default.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: nil)
+        if let window {
+            NotificationCenter.default.addObserver(self, selector: #selector(visibilityChanged),
+                name: NSWindow.didChangeOcclusionStateNotification, object: window)
+        }
+        updateVisibility()
+        // Attachment precedes orderFront on a newly created window. Check once after that turn, even if
+        // AppKit established the occlusion state before the observer was registered.
+        Task { @MainActor [weak self] in self?.updateVisibility() }
+    }
+
+    override func viewDidHide() { super.viewDidHide(); updateVisibility() }
+    override func viewDidUnhide() { super.viewDidUnhide(); updateVisibility() }
+
+    @objc private func visibilityChanged(_ notification: Notification) { updateVisibility() }
+
+    func updateVisibility() {}
+}
+
+struct GlowBitmapView: NSViewRepresentable {
+    let image: CGImage
+    let scale: CGFloat
+    let appearance: GlowAppearance
+    let pulses: Bool
+
+    func makeNSView(context: Context) -> GlowBitmapLayerView { GlowBitmapLayerView() }
+
+    func updateNSView(_ view: GlowBitmapLayerView, context: Context) {
+        view.update(image: image, scale: scale, appearance: appearance, pulses: pulses)
+    }
+
+    static func dismantleNSView(_ view: GlowBitmapLayerView, coordinator: ()) { view.stop() }
+}
+
+final class GlowBitmapLayerView: GlowPreviewLayerView {
+    let bitmapLayer = CALayer()
+    private var glowAppearance: GlowAppearance?
+    private var pulses = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        bitmapLayer.contentsGravity = .resize
+        layer?.addSublayer(bitmapLayer)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        bitmapLayer.frame = bounds
+        CATransaction.commit()
+    }
+
+    func update(image: CGImage, scale: CGFloat, appearance: GlowAppearance, pulses: Bool) {
+        let changed = glowAppearance != appearance || self.pulses != pulses
+        glowAppearance = appearance
+        self.pulses = pulses
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        bitmapLayer.contents = image
+        bitmapLayer.contentsScale = scale
+        bitmapLayer.opacity = Float(appearance.peakOpacity)
+        CATransaction.commit()
+        if changed { stop() }
+        updateVisibility()
+    }
+
+    func stop() { bitmapLayer.removeAnimation(forKey: "breathe") }
+
+    override func updateVisibility() {
+        guard isVisibleForAnimation, pulses, let appearance = glowAppearance, appearance.breathSeconds > 0,
+              appearance.peakOpacity != appearance.troughOpacity else { return stop() }
+        guard bitmapLayer.animation(forKey: "breathe") == nil else { return }
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = appearance.peakOpacity
+        animation.toValue = appearance.troughOpacity
+        animation.duration = appearance.breathSeconds / 2
+        animation.autoreverses = true
+        animation.repeatCount = .infinity
+        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        bitmapLayer.add(animation, forKey: "breathe")
+    }
+}
+
+final class GlowEffectLayerView: GlowPreviewLayerView {
     private let effectLayer = CALayer()
     private let frames = GlowFrameCache()
     private lazy var animator = GlowAnimator(host: self, layer: effectLayer)
@@ -140,10 +232,9 @@ final class GlowEffectLayerView: NSView {
         CATransaction.commit()
     }
 
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if window == nil { animator.stop() } else { resume() }
-    }
+    var isAnimating: Bool { animator.isRunning }
+
+    override func updateVisibility() { resume() }
 
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
@@ -162,7 +253,7 @@ final class GlowEffectLayerView: NSView {
 
     /// Starts once the view is on screen, drawing in that screen's colour space and scale.
     private func resume() {
-        guard let request, let window else { return }
+        guard isVisibleForAnimation, let request, let window else { return animator.stop() }
         var key = request.key
         key.colorSpace = window.screen?.colorSpace?.cgColorSpace
         effectLayer.contentsScale = window.backingScaleFactor

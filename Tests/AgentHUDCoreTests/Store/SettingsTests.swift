@@ -11,6 +11,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(s.glowOutwardOnly)
         XCTAssertEqual(s.glowBrightness, 0.9)
         XCTAssertEqual(s.hoverDelayMs, 400)
+        XCTAssertFalse(s.openImmediatelyAtTop)
         XCTAssertEqual(s.collapseDelayMs, 200)
         XCTAssertTrue(s.launchAtLogin)
         XCTAssertTrue(s.showMenuBarIcon)
@@ -26,6 +27,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(decoded.glowOutwardOnly)
         XCTAssertEqual(decoded.appearance, .system)
         XCTAssertTrue(decoded.showIslandTokens)
+        XCTAssertFalse(decoded.openImmediatelyAtTop)
         XCTAssertEqual(try JSONDecoder().decode(Settings.self, from: Data("{}".utf8)), Settings())
     }
 
@@ -44,6 +46,7 @@ final class SettingsTests: XCTestCase {
             $0.glowOutwardOnly = false
             $0.showIslandQuota = false; $0.showIslandTokens = false
             $0.showIslandSessions = false
+            $0.openImmediatelyAtTop = true
         }
         let data = try JSONEncoder().encode(original)
         XCTAssertEqual(try JSONDecoder().decode(Settings.self, from: data), original)
@@ -245,6 +248,7 @@ final class SettingsStoreTests: XCTestCase {
             $0.glowRange = 18
             $0.glowOutwardOnly = false
             $0.showIslandTokens = false
+            $0.openImmediatelyAtTop = true
         }
         store.setAgent(id: "chatgpt", enabled: false)
         store.moveAgent(id: "codex", to: 0)
@@ -254,6 +258,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.settings.glowRange, 18)
         XCTAssertFalse(reloaded.settings.glowOutwardOnly)
         XCTAssertFalse(reloaded.settings.showIslandTokens)
+        XCTAssertTrue(reloaded.settings.openImmediatelyAtTop)
         XCTAssertEqual(reloaded.agents.first?.id, "codex")
         XCTAssertFalse(reloaded.agents.first { $0.id == "chatgpt" }!.enabled)
         XCTAssertTrue(reloaded.hasCompletedOnboarding)
