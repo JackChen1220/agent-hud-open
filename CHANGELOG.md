@@ -2,6 +2,18 @@
 
 Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the three-part numeric version `X.Y.Z`. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
+## 0.4.35 — 2026-10-07
+
+- Antigravity quota refreshes request a fresh summary as its native quota popover does, avoiding stale cached readings; older per-model readings do not replace an available summary.
+- Antigravity local token accounting uses the recorded counters, includes cache writes in input and counts thinking tokens only once within output. Usage records match their recorded timestamps through exact message or execution identifiers.
+- False Antigravity local-session warnings from summary databases and failed generations without token usage are fixed. Usage that genuinely lacks a verifiable timestamp remains excluded with a warning.
+- Account-wide reading warnings appear only under current accounts, rather than repeating under retained accounts; client-home and account-specific notices keep their own scope.
+- Antigravity's native permission requests can be answered from the HUD with Allow once or Deny, without installing an execution hook or changing its permission settings. Requests answered in Antigravity disappear automatically; dismissing a request leaves its native prompt unanswered.
+- Codex completion reminders use the current conversation title and show the last paragraph of the final reply when available. The View token usage button opens the session's usage statistics.
+- Host API:
+  - `PermissionHooks.Source.antigravity` identifies approvals supplied by Antigravity's running local service; its `usesHook` is `false`.
+  - `SessionCompletion.message` holds an optional final-reply preview only in memory. Its initializer's `message` argument defaults to `nil`; the preview is excluded from serialization, preserving the existing encoded format.
+
 ## 0.4.34 — 2026-10-07
 
 - Long usage panels fit the display height and scroll above a fixed footer, keeping Settings, Stats and host controls visible.
