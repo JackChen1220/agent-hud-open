@@ -7,7 +7,6 @@ import SwiftUI
 final class IslandWindowController {
     let panel: OverlayPanel
     private let hosting: TrackingHostingView
-    private var measurement: NSHostingView<AnyView>?
 
     var onPointerChange: ((Bool) -> Void)? {
         didSet { hosting.onPointerChange = onPointerChange }
@@ -34,12 +33,9 @@ final class IslandWindowController {
         var natural = view
         natural.presentationSize = nil
         let content = AnyView(natural.content.fixedSize(horizontal: false, vertical: true))
-        if let measurement {
-            measurement.rootView = content
-        } else {
-            measurement = NSHostingView(rootView: content)
-        }
-        return measurement!.fittingSize.height
+        // The full panel only exists for this measurement; hovering never keeps a hidden UI alive.
+        let measurement = NSHostingView(rootView: content)
+        return measurement.fittingSize.height
     }
 
     func setFrame(_ frame: CGRect) {

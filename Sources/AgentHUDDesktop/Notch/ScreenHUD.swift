@@ -29,6 +29,8 @@ final class ScreenHUD {
     let glow: GlowWindowController
     let island: IslandWindowController
     private var machine = HoverMachine()
+    /// Only the measurements and bitmaps survive the hover's preparation, not a hidden panel.
+    private var openingPreparation: OpeningPreparation?
     private var timer: Timer?
     private var shrinkTask: Task<Void, Never>?
     private var targetWindowFrame: CGRect?
@@ -43,6 +45,44 @@ final class ScreenHUD {
     /// The user is typing into the island. It stays open under their hands, wherever the pointer goes, until they stop.
     private var typing = false
     private var modifierWatch: Timer?
+
+    /// Inputs that can change the natural layout while a hover is waiting, including token data that
+    /// need not change the coordinator's quota rows or glow appearance.
+    private struct OpeningInputs: Equatable {
+        let report: UsageReport?
+        let settings: AgentHUDCore.Settings
+        let agents: [AgentDescriptor]
+        let hookTurns: [String: SessionPhase.HookTurn]
+        let now: Date
+        let dataDate: Date
+        let error: String?
+        let loading: Bool
+        let range: StatsRange
+        let bucketSize: TokenBucketSize
+        let dimensions: TokenDimensions
+        let requests: [PermissionRequest]
+        let geometry: NotchGeometry
+        let light: Bool
+        let appearance: GlowAppearance
+        let alertID: String?
+        let alertDetails: Bool
+    }
+
+    private struct OpeningPreparation {
+        let inputs: OpeningInputs
+        let height: CGFloat
+        let images: GlowWindowController.PreparedImages
+    }
+
+    private var openingInputs: OpeningInputs {
+        OpeningInputs(report: store.report, settings: settings.settings, agents: settings.agents,
+                      hookTurns: store.hookTurns, now: store.now, dataDate: store.dataDate,
+                      error: store.lastError, loading: store.isLoading, range: store.statsRange,
+                      bucketSize: store.tokenBucketSize, dimensions: store.tokenDimensions,
+                      requests: PermissionRequests.shared.pending, geometry: geometry, light: systemIsLight,
+                      appearance: store.glowAppearance(light: systemIsLight, on: key),
+                      alertID: activeAlert?.id, alertDetails: alerts.current?.inUsagePanel == false)
+    }
 
     var onOpenStats: (() -> Void)?
     var onOpenSettings: (() -> Void)?
@@ -186,6 +226,7 @@ final class ScreenHUD {
         let silenced = (store.glowHidden || store.isPaused) && !alert.isPersistent
         guard !silenced, alerts.show(alert, inUsagePanel: inUsagePanel ?? machine.isOpen) else { return }
         // An event owns the brief expansion; a pending hover must not open the full panel underneath it.
+        openingPreparation = nil
         timer?.invalidate()
         timer = nil
         if !machine.isOpen { machine = HoverMachine() }
@@ -264,6 +305,7 @@ final class ScreenHUD {
     /// for the usage panel, and sliding the panel under it would answer a question nobody put. A card that was a row
     /// inside the panel leaves the panel exactly where it was.
     private func closeAfterLastAlert(wasInUsagePanel: Bool) {
+        openingPreparation = nil
         if ScreenHUD.closesAfterLastAlert(wasInUsagePanel: wasInUsagePanel, pointerInside: pointerInside) {
             machine = HoverMachine()
             timer?.invalidate()
@@ -315,6 +357,11 @@ final class ScreenHUD {
                 Task { @MainActor in self?.timerFired() }
             }
         }
+        if case .opening = machine.state {
+            prepareOpening()
+        } else if !machine.isOpen {
+            openingPreparation = nil
+        }
         if wasOpen != machine.isOpen {
             // The panel opening is someone looking at the numbers, which is reason enough to read the accounts again.
             if machine.isOpen { Task { await store.refreshAccounts() } }
@@ -328,9 +375,13 @@ final class ScreenHUD {
 
     // MARK: Layout
 
+    private var maximumContentHeight: CGFloat {
+        geometry.screenFrame.height - 80
+    }
+
     /// Resizes the open panel to its content (rows come and go as windows are discovered).
     private func updatePanelHeight(_ height: CGFloat) {
-        let clamped = max(80, min(height.rounded(), geometry.screenFrame.height - 80))
+        let clamped = max(80, min(height.rounded(), maximumContentHeight))
         if showsAlertDetails {
             guard abs(clamped - alertDetailHeight) >= 1 else { return }
             alertDetailHeight = clamped
@@ -393,6 +444,7 @@ final class ScreenHUD {
 
     /// Takes this HUD's windows off screen; the display it belonged to is gone.
     func close() {
+        openingPreparation = nil
         modifierWatch?.invalidate()
         timer?.invalidate()
         shrinkTask?.cancel()
@@ -400,10 +452,7 @@ final class ScreenHUD {
         glow.close()
     }
 
-    func apply(animated: Bool) {
-        let open = machine.isOpen
-        geometry = resolveGeometry()
-        let animated = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    private func makeRoot(open: Bool, animated: Bool) -> IslandRootView {
         var root = IslandRootView(
             store: store,
             isOpen: open,
@@ -423,14 +472,51 @@ final class ScreenHUD {
             waitingRequests: PermissionRequests.shared.pending,
             onSelectRequest: { [weak self] id in self?.selectRequest(id) },
             onTyping: { [weak self] typing in self?.setTyping(typing) },
-            showsAlertDetails: showsAlertDetails,
+            showsAlertDetails: open && alerts.current?.inUsagePanel == false,
             animatesGeometry: animated
         )
         root.logoQueue = logoQueue
         // The mode decides the silhouette, not whether there are marks to draw.
         root.hidesSilhouette = geometry.mode == .logos
+        return root
+    }
+
+    /// Run during the existing hover delay without touching the visible windows or their current glow.
+    private func prepareOpening() {
+        guard case .opening = machine.state else { return }
+        geometry = resolveGeometry()
+        let inputs = openingInputs
+        guard openingPreparation?.inputs != inputs else { return }
+        let root = makeRoot(open: true, animated: false)
+        let height = max(80, min(island.contentHeight(for: root).rounded(), maximumContentHeight))
+        let size = CGSize(width: inputs.alertDetails
+            ? activeAlert?.detailWidth ?? IslandController.alertDetailWidth
+            : IslandController.expandedWidth, height: height)
+        let islandFrame = geometry.expandedFrame(size: size)
+        let radius = IslandController.expandedRadius
+        let glowSettings = settings.settings.glow(on: key)
+        let glowGeometry = glowSettings
+            .geometry(islandWidth: islandFrame.width, islandHeight: islandFrame.height, islandRadius: radius)
+            .fitted(within: geometry.screenFrame.height)
+        let images = glow.prepare(geometry: geometry, island: islandFrame, islandRadius: radius,
+                                  glow: glowGeometry, outwardOnly: glowSettings.outwardOnly,
+                                  appearance: inputs.appearance, pattern: glowSettings.pattern(),
+                                  drawsGlow: geometry.mode != .logos)
+        openingPreparation = OpeningPreparation(inputs: inputs, height: height, images: images)
+    }
+
+    func apply(animated: Bool) {
+        let open = machine.isOpen
+        geometry = resolveGeometry()
+        let animated = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        var root = makeRoot(open: open, animated: animated)
+        // A report can change the token legend without changing the coordinator's observed quota rows.
+        // Validate at consumption as well as when the coordinator applies an update during the delay.
+        let prepared = open && openingPreparation?.inputs == openingInputs ? openingPreparation : nil
+        if open { openingPreparation = nil }
         if open {
-            let height = max(80, min(island.contentHeight(for: root).rounded(), geometry.screenFrame.height - 80))
+            let height = prepared?.height
+                ?? max(80, min(island.contentHeight(for: root).rounded(), maximumContentHeight))
             if showsAlertDetails { alertDetailHeight = height }
             else { panelHeight = height }
         }
@@ -520,7 +606,8 @@ final class ScreenHUD {
             quotaVendors: store.alertPulseVendors,
             pattern: glowSettings.pattern(),
             backdrop: backdrop ? geometry.rect : nil,
-            drawsGlow: drawsGlow
+            drawsGlow: drawsGlow,
+            prepared: prepared?.images
         )
         // The strip's place on screen is fixed; the window around it is not, so the offset between them is
         // measured rather than assumed to be the window's own top edge — which moves when the panel opens.
@@ -536,5 +623,6 @@ final class ScreenHUD {
         root.presentationSize = presentation
         root.onContentHeight = { [weak self] height in self?.updatePanelHeight(height) }
         island.setRootView(root)
+        prepareOpening()
     }
 }

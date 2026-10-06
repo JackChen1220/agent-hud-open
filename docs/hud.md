@@ -36,7 +36,7 @@ The HUD sits at the top of every attached display, and each display carries its 
 ### Hovering and events
 
 - A collapsed queue takes no mouse events, so clicks reach the menu bar and whatever window is under it; the pointer is followed by an event monitor instead.
-- Hovering opens the panel, inward from the edge the HUD sits on. Hovering can be asked to take Option as well, which leaves an accidental pass over the HUD closed.
+- Hovering opens the panel, inward from the edge the HUD sits on. Hovering can be asked to take Option as well, which leaves an accidental pass over the HUD closed. During the delay, content height, glow and shadow are prepared without retaining a hidden panel; leaving cancels preparation.
 - An event is shown once, on the display the pointer is on: repeating it on every screen would mean dismissing the same thing several times.
 - A successfully ended turn uses a blue outlined speech bubble and a neutral button for opening its session; the reminder reports the turn ending without claiming that the task has passed acceptance.
 - Clicking an event opens the statistics window on what it is about: a completed turn on its session's page in Sessions, a quota event on its agent's card in Tokens, shown if it was not picked and pointed out for a moment, and anything else on Tokens. A session row of the panel opens that session's page and its heading the Sessions list; the chart button and the menu bar's rows open Tokens, with Sessions back at its list.

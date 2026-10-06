@@ -23,14 +23,14 @@ final class GlowWindowController {
     private var restingKey: GlowFrameRenderer.Key?
     /// The soft glow's resting bitmap, restored when a frame-by-frame effect stops.
     private var softStill: CGImage?
-    private let frames = GlowFrameCache()
+    private var frameRenderer: GlowFrameRenderer?
     private lazy var animator = GlowAnimator(host: host, layer: glowLayer)
     var isAnimating: Bool { animator.isRunning }
 
     static let panelWidth: CGFloat = 1000
 
     /// Inputs of the soft glow bitmap.
-    private struct SoftKey: Hashable {
+    fileprivate struct SoftKey: Hashable {
         let glow: GlowGeometry
         let islandSize: CGSize
         let islandRadius: CGFloat
@@ -39,7 +39,7 @@ final class GlowWindowController {
         let scale: CGFloat
     }
 
-    private struct ShadowKey: Hashable {
+    fileprivate struct ShadowKey: Hashable {
         let size: CGSize
         let radius: CGFloat
         let scale: CGFloat
@@ -50,6 +50,16 @@ final class GlowWindowController {
         let peakOpacity: Double
         let troughOpacity: Double
         let breathSeconds: Double
+    }
+
+    /// Materials for one pending opening. The hover owner retains these until the panel opens or the pointer leaves.
+    struct PreparedImages {
+        fileprivate let softKey: SoftKey
+        let soft: GlowImage?
+        fileprivate let shadowKey: ShadowKey
+        let shadow: GlowImage?
+        let renderer: GlowFrameRenderer?
+        let resting: GlowImage?
     }
 
     init(geometry: NotchGeometry) {
@@ -124,6 +134,47 @@ final class GlowWindowController {
         CATransaction.commit()
     }
 
+    /// Prepares the open panel while its hover delay runs, leaving the collapsed HUD and its animation untouched.
+    func prepare(
+        geometry: NotchGeometry,
+        island: CGRect,
+        islandRadius: CGFloat,
+        glow: GlowGeometry,
+        outwardOnly: Bool,
+        appearance: GlowAppearance,
+        pattern: GlowPattern = GlowPattern(),
+        drawsGlow: Bool = true
+    ) -> PreparedImages {
+        let islandSize = island.size
+        let scale = geometry.backingScale
+        let softKey = SoftKey(glow: glow, islandSize: islandSize, islandRadius: islandRadius,
+                              outwardOnly: outwardOnly, stops: appearance.stops, scale: scale)
+        let shadowKey = ShadowKey(size: islandSize, radius: islandRadius, scale: scale)
+        let visible = !appearance.hidden
+        let soft = visible && drawsGlow && !pattern.usesGrid
+            ? GlowRenderer.render(glow: glow, islandSize: islandSize, islandRadius: islandRadius,
+                                  outwardOnly: outwardOnly, stops: appearance.stops, scale: scale)
+            : nil
+        let shadow = visible
+            ? GlowRenderer.renderShadow(width: islandSize.width, height: islandSize.height, cornerRadius: islandRadius, scale: scale)
+            : nil
+        let renderer: GlowFrameRenderer?
+        if visible && drawsGlow && (pattern.usesGrid || pattern.effect != .breathe) {
+            renderer = GlowFrameRenderer(.init(glow: glow, islandRadius: islandRadius, stops: appearance.stops,
+                scale: scale, pattern: pattern, colorSpace: panel.screen?.colorSpace?.cgColorSpace,
+                islandSize: pattern.usesGrid ? .zero : islandSize, outwardOnly: pattern.usesGrid ? true : outwardOnly))
+        } else {
+            renderer = nil
+        }
+        let motion = Self.playsMotion(pattern: pattern, appearance: appearance,
+                                      reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        let resting = pattern.usesGrid && !motion
+            ? renderer?.render(time: 0, blend: 0, breathSeconds: 0, breathAmplitude: 0)
+            : nil
+        return PreparedImages(softKey: softKey, soft: soft, shadowKey: shadowKey, shadow: shadow,
+                              renderer: renderer, resting: resting)
+    }
+
     /// - island: the island's current frame in screen coordinates.
     func update(
         geometry: NotchGeometry,
@@ -141,7 +192,8 @@ final class GlowWindowController {
         /// A logo queue's glow is a backdrop behind its marks, never a rim: once the panel has grown there
         /// is no backdrop left to draw, so the field stops rather than following the new shape around. The
         /// panel keeps its shadow, which lives here too.
-        drawsGlow: Bool = true
+        drawsGlow: Bool = true,
+        prepared: PreparedImages? = nil
     ) {
         let frame = Self.panelFrame(for: geometry)
         if panel.frame != frame { panel.setFrame(frame, display: false) }
@@ -169,12 +221,12 @@ final class GlowWindowController {
                                           reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
             if pattern.usesGrid {
                 updateGridImage(glow: glow, islandRadius: islandRadius, stops: appearance.stops, scale: geometry.backingScale,
-                                pattern: pattern, appearance: appearance, motion: motion)
+                                pattern: pattern, appearance: appearance, motion: motion, prepared: prepared)
             } else {
                 restingKey = nil
                 updateSoftImage(glow: glow, islandSize: island.size, islandRadius: islandRadius, outwardOnly: outwardOnly,
                                 stops: appearance.stops, scale: geometry.backingScale, pattern: pattern, appearance: appearance,
-                                motion: motion)
+                                motion: motion, prepared: prepared)
             }
         } else {
             animator.stop()
@@ -182,7 +234,7 @@ final class GlowWindowController {
             restingKey = nil
             glowLayer.contents = nil
         }
-        updateShadowImage(island: local, radius: islandRadius, scale: geometry.backingScale)
+        updateShadowImage(island: local, radius: islandRadius, scale: geometry.backingScale, prepared: prepared)
 
         CATransaction.begin()
         if animated {
@@ -281,10 +333,18 @@ final class GlowWindowController {
         alertLayer.add(pulse, forKey: "quota-event")
     }
 
+    private func renderer(for key: GlowFrameRenderer.Key, prepared: PreparedImages?) -> GlowFrameRenderer {
+        if let frameRenderer, frameRenderer.key == key { return frameRenderer }
+        let renderer = prepared?.renderer.flatMap { $0.key == key ? $0 : nil } ?? GlowFrameRenderer(key)
+        frameRenderer = renderer
+        return renderer
+    }
+
     private func updateGridImage(glow: GlowGeometry, islandRadius: CGFloat, stops: [GradientStop], scale: CGFloat,
-                                 pattern: GlowPattern, appearance: GlowAppearance, motion: Bool) {
-        let renderer = frames.renderer(for: .init(glow: glow, islandRadius: islandRadius, stops: stops, scale: scale, pattern: pattern,
-                                                  colorSpace: panel.screen?.colorSpace?.cgColorSpace))
+                                 pattern: GlowPattern, appearance: GlowAppearance, motion: Bool, prepared: PreparedImages?) {
+        let renderer = renderer(for: .init(glow: glow, islandRadius: islandRadius, stops: stops, scale: scale, pattern: pattern,
+                                           colorSpace: panel.screen?.colorSpace?.cgColorSpace), prepared: prepared)
+        let resting = prepared?.renderer?.key == renderer.key ? prepared?.resting : nil
         softKey = nil
         glowPadding = 0
         CATransaction.begin()
@@ -298,22 +358,24 @@ final class GlowWindowController {
             animator.play(renderer, breathSeconds: appearance.breathSeconds, breathAmplitude: Self.breathDepth(appearance))
         } else if animator.isRunning && !appearance.hidden {
             // The last agent went idle: ease back into the resting frame.
-            animator.settle(renderer) { [weak self] in self?.showResting(renderer) }
+            animator.settle(renderer) { [weak self] in self?.showResting(renderer, image: resting) }
         } else {
             animator.stop()
-            showResting(renderer)
+            showResting(renderer, image: resting)
         }
     }
 
     /// The soft glow keeps its nine-slice bitmap. Effects other than breathing swap in frames of the same size and
     /// layout, and hand the resting bitmap back when they stop.
     private func updateSoftImage(glow: GlowGeometry, islandSize: CGSize, islandRadius: CGFloat, outwardOnly: Bool, stops: [GradientStop],
-                                 scale: CGFloat, pattern: GlowPattern, appearance: GlowAppearance, motion: Bool) {
-        updateGlowImage(glow: glow, islandSize: islandSize, islandRadius: islandRadius, outwardOnly: outwardOnly, stops: stops, scale: scale)
+                                 scale: CGFloat, pattern: GlowPattern, appearance: GlowAppearance, motion: Bool,
+                                 prepared: PreparedImages?) {
+        updateGlowImage(glow: glow, islandSize: islandSize, islandRadius: islandRadius, outwardOnly: outwardOnly,
+                        stops: stops, scale: scale, prepared: prepared)
         guard pattern.effect != .breathe else { return stopSoftMotion() }
-        let renderer = frames.renderer(for: .init(glow: glow, islandRadius: islandRadius, stops: stops, scale: scale, pattern: pattern,
-                                                  colorSpace: panel.screen?.colorSpace?.cgColorSpace,
-                                                  islandSize: islandSize, outwardOnly: outwardOnly))
+        let renderer = renderer(for: .init(glow: glow, islandRadius: islandRadius, stops: stops, scale: scale, pattern: pattern,
+                                           colorSpace: panel.screen?.colorSpace?.cgColorSpace,
+                                           islandSize: islandSize, outwardOnly: outwardOnly), prepared: prepared)
         if motion {
             animator.play(renderer, breathSeconds: appearance.breathSeconds, breathAmplitude: Self.breathDepth(appearance))
         } else if animator.isRunning && !appearance.hidden {
@@ -343,9 +405,9 @@ final class GlowWindowController {
         CATransaction.commit()
     }
 
-    private func showResting(_ renderer: GlowFrameRenderer) {
+    private func showResting(_ renderer: GlowFrameRenderer, image: GlowImage? = nil) {
         guard restingKey != renderer.key,
-              let rendered = renderer.render(time: 0, blend: 0, breathSeconds: 0, breathAmplitude: 0) else { return }
+              let rendered = image ?? renderer.render(time: 0, blend: 0, breathSeconds: 0, breathAmplitude: 0) else { return }
         restingKey = renderer.key
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -354,10 +416,10 @@ final class GlowWindowController {
     }
 
     private func updateGlowImage(glow: GlowGeometry, islandSize: CGSize, islandRadius: CGFloat, outwardOnly: Bool,
-                                 stops: [GradientStop], scale: CGFloat) {
+                                 stops: [GradientStop], scale: CGFloat, prepared: PreparedImages?) {
         let key = SoftKey(glow: glow, islandSize: islandSize, islandRadius: islandRadius, outwardOnly: outwardOnly, stops: stops, scale: scale)
         guard key != softKey else { return }
-        guard let rendered = GlowRenderer.render(
+        guard let rendered = (prepared?.softKey == key ? prepared?.soft : nil) ?? GlowRenderer.render(
             glow: glow, islandSize: islandSize, islandRadius: islandRadius, outwardOnly: outwardOnly, stops: stops, scale: scale
         ) else { return }
         softKey = key
@@ -372,10 +434,11 @@ final class GlowWindowController {
         CATransaction.commit()
     }
 
-    private func updateShadowImage(island: CGRect, radius: CGFloat, scale: CGFloat) {
+    private func updateShadowImage(island: CGRect, radius: CGFloat, scale: CGFloat, prepared: PreparedImages?) {
         let key = ShadowKey(size: island.size, radius: radius, scale: scale)
         guard key != shadowKey else { return }
-        guard let rendered = GlowRenderer.renderShadow(width: island.width, height: island.height, cornerRadius: radius, scale: scale) else { return }
+        guard let rendered = (prepared?.shadowKey == key ? prepared?.shadow : nil)
+            ?? GlowRenderer.renderShadow(width: island.width, height: island.height, cornerRadius: radius, scale: scale) else { return }
         shadowKey = key
         shadowPadding = rendered.padding
         CATransaction.begin()
