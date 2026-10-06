@@ -68,7 +68,14 @@ struct IslandAlertDetailView: View {
                     Text(L10n.text("有新回复", "New reply"))
                         .font(.ui(11)).foregroundStyle(Color(alert.accent))
                 }
-                Text(event.task).font(.ui(15, .medium)).lineLimit(4).fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(event.task).font(.ui(15, .medium)).lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let message = event.message {
+                        Text(message).font(.ui(12)).foregroundStyle(.white.opacity(0.68)).lineLimit(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 HStack {
                     Text(event.completedAt.formatted(date: .omitted, time: .shortened))
                     Spacer()
@@ -77,7 +84,7 @@ struct IslandAlertDetailView: View {
                     }
                 }.font(.tabular(11)).foregroundStyle(.white.opacity(0.5))
                 Button(action: onOpen) {
-                    Text(L10n.text("查看会话记录", "View sessions"))
+                    Text(L10n.text("查看 Token 用量", "View token usage"))
                         .font(.ui(12, .semibold)).foregroundStyle(.white.opacity(0.92))
                         .frame(maxWidth: .infinity).frame(height: 32)
                         .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
@@ -105,7 +112,10 @@ struct IslandAlertInlineView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L10n.text("\(event.vendor) · 有新回复", "\(event.vendor) · New reply"))
                             .font(.ui(12, .medium)).foregroundStyle(Color(alert.accent))
-                        Text(event.task).font(.ui(10)).foregroundStyle(.white.opacity(0.45)).lineLimit(1)
+                        Text(event.task).font(.ui(10)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                        if let message = event.message {
+                            Text(message).font(.ui(10)).foregroundStyle(.white.opacity(0.45)).lineLimit(1)
+                        }
                     }
                     Spacer()
                     Image(systemName: "arrow.up.right").font(.ui(10))

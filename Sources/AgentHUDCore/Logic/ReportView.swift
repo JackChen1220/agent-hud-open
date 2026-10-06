@@ -217,14 +217,15 @@ public struct ReportView: Sendable {
 
     /// What the header of an account's section says about its readings, on the island and in the menu alike: the reason
     /// of the account's status, then its client's notices, which also name what holds nothing back, such as a notice about
-    /// local logs or hooks. A client's notices that already carry the reason do not repeat it. A billing pool speaks only
-    /// for itself: its vendor's notices can be about another of its pools.
+    /// local logs or hooks. A vendor's notices belong to its current accounts; retained accounts still show notices
+    /// scoped to their client home. A client's notices that already carry the reason do not repeat it. A billing pool
+    /// speaks only for itself: its vendor's notices can be about another of its pools.
     public func accountNotice(for section: AccountSection) -> String? {
         guard let account = section.account else { return nil }
         let reason = assessment(of: account).status.reason
         let client = account.account.isBillingPool ? nil :
             report?.sourceNotices[ClientHome.sourceKey(provider: account.account.provider, home: account.home)]
-                ?? report?.sourceNotices[account.account.provider]
+                ?? (account.isCurrent ? report?.sourceNotices[account.account.provider] : nil)
         var parts: [String] = []
         if let reason, !(client?.contains(reason) ?? false) { parts.append(reason) }
         if let client { parts.append(client) }

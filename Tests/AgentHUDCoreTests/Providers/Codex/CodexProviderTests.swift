@@ -174,6 +174,56 @@ final class CodexProviderTests: XCTestCase {
         XCTAssertNil(t.completions)
     }
 
+    func testCompletionUsesTheFinalAnswerAndKeepsItOutOfTheLedger() throws {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        var value = CodexTranscript()
+        ingest(&value, type: "session_meta", payload: ["id": "session", "source": "cli"], at: start)
+        ingest(&value, payload: ["type": "task_started", "turn_id": "first"], at: start.addingTimeInterval(1))
+        ingest(&value, payload: ["type": "agent_message", "message": "Checking the files", "channel": "commentary"], at: start.addingTimeInterval(2))
+        let final = String(repeating: "First paragraph. ", count: 300) + "\n\nThe final paragraph of this answer."
+        ingest(&value, payload: ["type": "task_complete", "turn_id": "first", "last_agent_message": final], at: start.addingTimeInterval(3))
+        let completion = try XCTUnwrap(value.completions?.first)
+        XCTAssertEqual(completion.message, "The final paragraph of this answer.", "the final paragraph is selected before truncating a long answer")
+
+        ingest(&value, payload: ["type": "task_started", "turn_id": "second"], at: start.addingTimeInterval(4))
+        ingest(&value, payload: ["type": "agent_message", "message": "Still checking", "channel": "commentary"], at: start.addingTimeInterval(5))
+        ingest(&value, payload: ["type": "task_complete", "turn_id": "second"], at: start.addingTimeInterval(6))
+        XCTAssertNil(value.completions?.last?.message, "a completion never substitutes commentary or an earlier answer")
+
+        let encoded = try JSONEncoder().encode(value)
+        XCTAssertFalse(String(decoding: encoded, as: UTF8.self).contains("The final paragraph"))
+        let restored = try JSONDecoder().decode(CodexTranscript.self, from: encoded)
+        XCTAssertEqual(restored.completions?.map(\.id), value.completions?.map(\.id))
+        XCTAssertTrue(restored.completions?.allSatisfy { $0.message == nil } == true)
+    }
+
+    func testCompletionFallbackRequiresAnExplicitFinalMessageFromItsOwnTurn() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        var value = CodexTranscript()
+        ingest(&value, type: "session_meta", payload: ["id": "session", "source": "cli"], at: start)
+        ingest(&value, payload: ["type": "task_started", "turn_id": "first"], at: start.addingTimeInterval(1))
+        ingest(&value, payload: ["type": "agent_message", "turn_id": "first", "message": "First answer", "channel": "final"], at: start.addingTimeInterval(2))
+        ingest(&value, payload: ["type": "task_started", "turn_id": "second"], at: start.addingTimeInterval(4))
+        ingest(&value, payload: ["type": "agent_message", "turn_id": "missing", "message": "Unrelated answer", "channel": "final"], at: start.addingTimeInterval(5))
+        ingest(&value, payload: ["type": "agent_message", "message": "Late earlier answer", "channel": "final"], at: start.addingTimeInterval(3))
+        ingest(&value, payload: ["type": "task_complete", "turn_id": "first"], at: start.addingTimeInterval(3))
+        ingest(&value, payload: ["type": "task_complete", "turn_id": "second"], at: start.addingTimeInterval(6))
+        XCTAssertEqual(value.completions?.map(\.message), ["First answer", nil])
+
+        ingest(&value, payload: ["type": "task_started", "turn_id": "current"], at: start.addingTimeInterval(7))
+        let item: [String: Any] = ["type": "AgentMessage", "phase": "final_answer", "content": [["type": "Text", "text": "Current answer\n\nFinal summary"]]]
+        ingest(&value, payload: ["type": "item_completed", "turn_id": "current", "item": item], at: start.addingTimeInterval(8))
+        ingest(&value, payload: ["type": "task_complete", "turn_id": "current", "last_agent_message": ""], at: start.addingTimeInterval(9))
+        XCTAssertEqual(value.completions?.last?.message, "Final summary")
+
+        ingest(&value, payload: ["type": "task_started", "turn_id": "long"], at: start.addingTimeInterval(10))
+        let paragraph = "Beginning of the final paragraph. " + String(repeating: "detail ", count: 400)
+        ingest(&value, payload: ["type": "agent_message", "turn_id": "long", "message": "Earlier paragraph\n\n" + paragraph, "channel": "final"],
+               at: start.addingTimeInterval(11))
+        ingest(&value, payload: ["type": "task_complete", "turn_id": "long"], at: start.addingTimeInterval(12))
+        XCTAssertEqual(value.completions?.last?.message, String(paragraph.prefix(599)) + "…", "a long final paragraph retains its beginning before clipping")
+    }
+
     func testLateCompletionDoesNotEndTheNextTurn() {
         let start = Date(timeIntervalSince1970: 1_800_000_000)
         var value = CodexTranscript()
@@ -468,6 +518,35 @@ final class CodexProviderTests: XCTestCase {
         XCTAssertTrue(report.snapshots.isEmpty)
         XCTAssertEqual(report.sourceNotices["Codex"], "signed out")
         XCTAssertNil(report.codexResetCredits)
+    }
+
+    func testCompletionsUseTheCurrentConversationTitleWithoutChangingIdentity() async throws {
+        let dir = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let index = dir.appendingPathComponent("session_index.jsonl")
+        let contents = [
+            line(type: "session_meta", payload: ["id": "session", "source": "cli", "cwd": "/project"]),
+            line(payload: ["type": "user_message", "message": "First question"]),
+            line(payload: ["type": "task_started", "turn_id": "turn"]),
+            line(payload: ["type": "task_complete", "turn_id": "turn", "last_agent_message": "Final answer"]),
+        ].joined(separator: "\n") + "\n"
+        try contents.write(to: dir.appendingPathComponent("rollout-session.jsonl"), atomically: true, encoding: .utf8)
+        let provider = CodexUsageProvider(readLimits: { throw UsageProviderError("signed out") },
+            transcripts: CodexTranscriptStore(roots: [dir], indexURL: index), history: QuotaHistoryStore())
+        let fallback = try await provider.fetchUsage(agents: [], historyHours: 48)
+        XCTAssertEqual(fallback.completions.first?.task, "First question")
+
+        try #"{"id":"session","thread_name":"Automatic update checks"}"#.write(to: index, atomically: true, encoding: .utf8)
+        let named = try await provider.fetchUsage(agents: [], historyHours: 48)
+        XCTAssertEqual(named.sessions.first?.task, "Automatic update checks")
+        XCTAssertEqual(named.completions.first?.task, named.sessions.first?.task)
+        XCTAssertEqual(named.completions.first?.message, "Final answer")
+        XCTAssertEqual(named.completions.first?.id, fallback.completions.first?.id, "a conversation rename does not produce a new completion")
+
+        try #"{"id":"session","thread_name":"A renamed conversation"}"#.write(to: index, atomically: true, encoding: .utf8)
+        let renamed = try await provider.fetchUsage(agents: [], historyHours: 48)
+        XCTAssertEqual(renamed.completions.first?.task, "A renamed conversation")
+        XCTAssertEqual(renamed.completions.first?.id, named.completions.first?.id)
     }
 
     func testForecastUsesEachServicesWindowPeriodAndRecentPace() async throws {

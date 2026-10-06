@@ -142,7 +142,7 @@ public struct PermissionRequest: Identifiable, Equatable, Sendable {
 
     /// Qwen Code's names for the tools Claude Code has, whose inputs use the same keys; a call reads the same
     /// whichever client makes it.
-    static let aliases = ["run_shell_command": "Bash", "edit": "Edit", "replace": "Edit", "write_file": "Write",
+    static let aliases = ["run_command": "Bash", "run_shell_command": "Bash", "edit": "Edit", "replace": "Edit", "write_file": "Write",
                           "read_file": "Read", "glob": "Glob", "grep_search": "Grep", "search_file_content": "Grep",
                           "web_fetch": "WebFetch", "web_search": "WebSearch", "agent": "Agent", "task": "Task"]
     static func kind(_ tool: String) -> String { aliases[tool] ?? tool }
@@ -325,6 +325,7 @@ public enum PermissionDecision: Sendable, Equatable {
     }
 
     public func response(for source: PermissionHooks.Source) -> Data {
+        guard source.usesHook else { return Self.noDecision }
         var decision: [String: JSONValue] = ["behavior": .string(behavior)]
         switch self {
         case .allowAlways(let update):

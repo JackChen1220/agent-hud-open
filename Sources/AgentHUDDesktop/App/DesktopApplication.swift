@@ -17,6 +17,7 @@ public final class DesktopApplication {
     private var shownRequests: [String] = []
     /// The clients whose observer directory existed at the last look, so one that appears later is noticed.
     private var observedClients: Set<String> = []
+    private let antigravityApprovals = AntigravityPermissionObserver()
     private var notch: IslandController?
     private var statusItem: StatusItemController?
     private lazy var settingsWindow = SettingsWindowController(
@@ -105,6 +106,7 @@ public final class DesktopApplication {
         }, onChange: { [weak self] in
             guard let self, !self.options.demo, let executable = Bundle.main.executableURL else { return }
             SessionObservers.configure(executable: executable, enabled: self.settings.settings.clientHooks)
+            self.antigravityApprovals.setEnabled(self.settings.settings.clientHooks)
         })
         // A client run for the first time creates its directory, and its observer goes in with the next report
         // rather than at the next launch.
@@ -122,6 +124,7 @@ public final class DesktopApplication {
                        onChange: { [weak self] in self?.syncPermissionRequests() })
         // Seeded after the island is listening, so the demo's requests arrive the way a client's would.
         if options.demo { PermissionRequests.shared.seedDemo() } else { PermissionRequests.shared.start() }
+        if !options.demo { antigravityApprovals.setEnabled(settings.settings.clientHooks) }
         store.start()
         if options.openPanel { notch.forceOpen() }
         if store.isAccessAllowed, options.showOnboarding || !settings.hasCompletedOnboarding { showOnboarding() }
@@ -130,6 +133,7 @@ public final class DesktopApplication {
     }
 
     public func stop() {
+        antigravityApprovals.stop()
         // Quitting must never leave a client waiting on an answer that is no longer coming.
         PermissionRequests.shared.stop()
         store.stop()
