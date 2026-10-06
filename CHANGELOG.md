@@ -6,10 +6,10 @@ Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` o
 
 - Long usage panels fit the display height and scroll above a fixed footer, keeping Settings, Stats and host controls visible.
 - Dynamic Dock can be dragged to any position along all four display edges; hidden logos reveal their drag area while Command is held. Display settings can reset its position.
-- Panel height, glow and shadow are prepared during the hover delay without retaining a hidden panel. Hidden glow previews stop rendering, and HUD animations share their drawing budget.
+- Panel height, glow and shadow are prepared during the hover delay without retaining a hidden panel. Hidden glow previews stop rendering, and HUD glow animations share their drawing budget.
 - Opening and closing keep the dock's contact edge fixed and clean up the native window after the geometry animation completes.
-- An optional setting opens the HUD immediately when the pointer reaches the top edge; normal hover opening remains delayed.
-- Statistics windows restore their content size correctly after native window restoration.
+- An optional setting opens the HUD immediately when the pointer reaches the display's top edge directly above it; other hover opening keeps the configured delay.
+- Statistics windows restore their content size correctly after restoring a minimized window.
 - Host API: `Settings.openImmediatelyAtTop` defaults to `false`; existing settings and desktop host entry points remain compatible.
 
 ## 0.4.34-beta.4 — 2026-10-03
