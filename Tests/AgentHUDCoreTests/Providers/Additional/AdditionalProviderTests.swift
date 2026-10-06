@@ -322,8 +322,14 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
     private func generation(timestamp: Bool = true, usage recordedUsage: [UInt8]? = nil,
                             model: String? = "gemini-test", executionID: String = "step") -> [UInt8] {
         // CortexStepGeneratorMetadata.chat_model -> ChatModelMetadata.usage -> ModelUsageStats.
-        let usage = recordedUsage ?? (number(1, 1405) + number(2, 20) + number(3, 8) + number(5, 40)
-            + number(9, 5) + number(10, 3) + message(11, Array("response".utf8)))
+        var defaultUsage = number(1, 1405)
+        defaultUsage += number(2, 20)
+        defaultUsage += number(3, 8)
+        defaultUsage += number(5, 40)
+        defaultUsage += number(9, 5)
+        defaultUsage += number(10, 3)
+        defaultUsage += message(11, Array("response".utf8))
+        let usage = recordedUsage ?? defaultUsage
         let stamp = timestamp ? message(9, message(4, number(1, 1788800000))) : message(9, message(10, [1, 2, 3, 4, 5, 6, 7, 8]))
         let name = model.map { message(19, Array($0.utf8)) } ?? []
         return message(1, number(3, 1405) + message(4, usage) + name + stamp) + message(4, Array(executionID.utf8))
