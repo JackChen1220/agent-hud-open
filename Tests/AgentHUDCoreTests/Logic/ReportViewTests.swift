@@ -65,6 +65,61 @@ final class ReportViewTests: XCTestCase {
         XCTAssertEqual(view.phase(of: ended), SessionPhase(state: .idle, since: ended.endedAt!, validUntil: nil))
     }
 
+    func testVendorLocalNoticesBelongToCurrentAccounts() throws {
+        let accounts = ["current", "retained"].map {
+            ProviderAccount.identified(provider: "Antigravity", user: $0, workspace: nil)!
+        }
+        let agents = accounts.map {
+            AgentDescriptor(id: $0.windowID("weekly"), vendor: "Antigravity", model: "Weekly", source: "", enabled: true, account: $0)
+        }
+        let warning = "Some local sessions could not be read; usage may be incomplete"
+        let report = UsageReport(generatedAt: now, snapshots: agents.map {
+            .init(agentId: $0.id, remainingPct: 100, updatedAt: now)
+        }, sessions: [], discoveredAgents: agents, sourceNotices: ["Antigravity": warning], quotaNotices: [:], readingIssues: [:],
+            accounts: ["Antigravity": [.init(account: accounts[0], observedAt: now),
+                                       .init(account: accounts[1], observedAt: now.addingTimeInterval(-420), isCurrent: false)]])
+        let view = ReportView(report: report, agents: agents, settings: Settings(), now: now)
+        let sections = view.accountSections(view.rows)
+
+        XCTAssertEqual(sections.map { view.accountNotice(for: $0) }, [warning, nil])
+        XCTAssertEqual(view.rows.map(\.usedPct), [0, 0], "a local notice keeps both accounts' quota readings")
+        XCTAssertEqual(view.rows.map(\.level), [.ok, nil], "only the current account's quota contributes a status")
+        XCTAssertEqual(view.assessment(of: try XCTUnwrap(sections[1].account)).accountLabel(now: now), "Last read 7m ago")
+    }
+
+    func testAccountNoticesKeepClientHomeAndAccountScope() {
+        let claude = ["first", "second", "retained-home", "retained-account"].map {
+            ProviderAccount.identified(provider: "Claude", user: $0, workspace: nil)!
+        }
+        let observations = [
+            AccountObservation(account: claude[0], home: "first-home", observedAt: now),
+            AccountObservation(account: claude[1], home: "second-home", observedAt: now),
+            AccountObservation(account: claude[2], home: "old-home", observedAt: now, isCurrent: false,
+                               readingIssue: .readFailed("Old home read failed")),
+            AccountObservation(account: claude[3], observedAt: now, isCurrent: false,
+                               readingIssue: .readFailed("Account read failed")),
+            AccountObservation(account: ProviderAccount(pool: pools[0]), observedAt: now,
+                               readingIssue: .readFailed("Pool read failed")),
+            AccountObservation(account: ProviderAccount(pool: pools[1]), observedAt: now),
+        ]
+        let agents = observations.map {
+            AgentDescriptor(id: $0.account.windowID("weekly"), vendor: $0.account.provider, model: "Weekly", source: "",
+                            enabled: true, account: $0.account)
+        }
+        let report = UsageReport(generatedAt: now, snapshots: [], sessions: [], discoveredAgents: agents,
+            sourceNotices: ["Claude": "Some local sessions could not be read",
+                            ClientHome.sourceKey(provider: "Claude", home: "first-home"): "First home logs could not be read",
+                            ClientHome.sourceKey(provider: "Claude", home: "old-home"): "Old home read failed · Logs incomplete",
+                            "Kimi": "Another pool failed"],
+            quotaNotices: [:], readingIssues: [:], accounts: ["Claude": Array(observations.prefix(4)), "Kimi": Array(observations.suffix(2))])
+        let view = ReportView(report: report, agents: agents, settings: Settings(), now: now)
+
+        XCTAssertEqual(view.accountSections(view.rows).map { view.accountNotice(for: $0) }, [
+            "First home logs could not be read", "Some local sessions could not be read",
+            "Old home read failed · Logs incomplete", "Account read failed", "Pool read failed", nil,
+        ])
+    }
+
     // MARK: Fixtures
 
     /// Every kind of row: two Claude windows and one switched off, an API row, two Kimi plan pools of which the report
