@@ -44,6 +44,10 @@ The HUD sits at the top of every attached display, and each display carries its 
 - A queue's glow is a backdrop, never a rim: once the panel opens or an event widens the island, the field stops rather than following the new shape around. Only a notch is rimmed.
 - The marks ride over the panel while it is open, so opening the HUD never makes the agents disappear.
 
+### Usage panel
+
+- Height follows content up to the display's height minus 80 pt; overflow scrolls above fixed settings, statistics and host controls, clear of the notch.
+
 ### Approvals
 
 - A client that stops to ask whether a tool may run reaches the HUD through a socket of its own, and the request lives only as long as that client waits for it. One copy of the application runs at a time ([command line](command-line.md#launch-and-display)) and serves the socket; should another start beside it with the same data directory, it leaves the socket to the first, and quitting removes only a socket that copy made. Answering resumes the client; the client giving up — timed out, killed — takes the request off the HUD by itself, and nothing is answered on anyone's behalf.

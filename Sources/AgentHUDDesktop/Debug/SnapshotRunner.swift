@@ -137,6 +137,9 @@ public enum SnapshotRunner {
         settings.update { $0.glowStyle = .blur; $0.glowEffect = .breathe }
         save("island-expanded-dark", IslandScene(store: store, settings: settings, open: true, light: false), folder: folder, scheme: .dark)
         save("island-expanded-light", IslandScene(store: store, settings: settings, open: true, light: true), folder: folder, scheme: .light)
+        let scrollScene = IslandScene(store: store, settings: settings, open: true, light: false, maximumPanelHeight: 420)
+        save("island-scroll-top", scrollScene, folder: folder, scheme: .dark)
+        save("island-scroll-bottom", scrollScene, folder: folder, scheme: .dark, scrollToBottom: true)
         save("menubar-dark", MenuBarStrip(store: store, light: false), folder: folder, scheme: .dark)
         save("menubar-light", MenuBarStrip(store: store, light: true), folder: folder, scheme: .light)
         for tab in SettingsTab.allCases {
@@ -639,6 +642,7 @@ struct IslandScene: View {
     let settings: SettingsStore
     let open: Bool
     let light: Bool
+    var maximumPanelHeight: CGFloat = (NSScreen.main?.frame.height ?? 900) - 80
     var alert: IslandAlert? = nil
     var showsAlertDetails = false
     var waitingRequests: [PermissionRequest] = []
@@ -657,7 +661,7 @@ struct IslandScene: View {
         }
         let hosting = NSHostingView(rootView: HoverPanelView(store: store, onOpenStats: {}, alert: alert)
             .frame(width: IslandController.expandedWidth).fixedSize(horizontal: false, vertical: true))
-        return max(80, hosting.fittingSize.height)
+        return max(80, min(hosting.fittingSize.height, maximumPanelHeight))
     }
 
     var body: some View {
@@ -709,7 +713,7 @@ struct IslandScene: View {
                 collapsedSize: CGSize(width: cameraWidth + NotchGeometry.collapsedTopRadius * 2, height: closedHeight),
                 collapsedTopRadius: NotchGeometry.collapsedTopRadius, collapsedBottomRadius: 14,
                 lightBorder: light, onOpenStats: {}, alert: alert, waitingRequests: waitingRequests,
-                showsAlertDetails: showsAlertDetails
+                showsAlertDetails: showsAlertDetails, presentationSize: islandSize
             )
                 .frame(width: islandSize.width + flare * 2, height: islandSize.height)
                 .shadow(color: Color.black.opacity(0.35), radius: 15, y: 8)

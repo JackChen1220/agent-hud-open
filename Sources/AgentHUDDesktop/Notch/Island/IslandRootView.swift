@@ -106,6 +106,7 @@ struct IslandRootView: View {
         } else if isOpen, let store {
             HoverPanelView(store: store, onOpenStats: onOpenStats, onOpenSettings: onOpenSettings,
                            additionalHUDControls: additionalHUDControls,
+                           height: presentationSize?.height,
                            alert: alert, onOpenAlert: onOpenAlert, onDecideAlert: onDecideAlert,
                            waitingRequests: waitingRequests)
                 .frame(width: IslandController.expandedWidth, alignment: .top)

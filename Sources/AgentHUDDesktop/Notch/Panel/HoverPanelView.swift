@@ -6,7 +6,7 @@ struct PanelHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
+        value += nextValue()
     }
 }
 
@@ -16,15 +16,46 @@ struct HoverPanelView: View {
     let onOpenStats: () -> Void
     var onOpenSettings: () -> Void = {}
     var additionalHUDControls: @MainActor () -> AnyView = { AnyView(EmptyView()) }
+    /// Nil measures the natural layout; the visible panel gives its bounded height.
+    var height: CGFloat? = nil
     var alert: IslandAlert? = nil
     var onOpenAlert: () -> Void = {}
     var onDecideAlert: (PermissionDecision) -> Void = { _ in }
     var waitingRequests: [PermissionRequest] = []
+    private let insets = EdgeInsets(top: 32, leading: 18, bottom: 14, trailing: 18)
 
     private let theme = Theme.island
+    private let spacing: CGFloat = 10
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: spacing) {
+            if height != nil {
+                ScrollView(.vertical) { measuredContent }
+            } else {
+                measuredContent
+            }
+            footer
+                .fixedSize(horizontal: false, vertical: true)
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: PanelHeightKey.self,
+                                           value: proxy.size.height + insets.top + insets.bottom + spacing)
+                })
+        }
+        .padding(insets)
+        .frame(height: height, alignment: .top)
+        .foregroundStyle(theme.text)
+    }
+
+    private var measuredContent: some View {
+        content
+            .fixedSize(horizontal: false, vertical: true)
+            .background(GeometryReader { proxy in
+                Color.clear.preference(key: PanelHeightKey.self, value: proxy.size.height)
+            })
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: spacing) {
             if let error = store.lastError {
                 Text(L10n.text("刷新失败：", "Refresh failed: ") + error)
                     .font(.ui(11)).foregroundStyle(theme.secondary)
@@ -53,13 +84,7 @@ struct HoverPanelView: View {
             if store.settings.settings.showIslandSessions {
                 sessionLine
             }
-            footer
         }
-        .padding(EdgeInsets(top: 32, leading: 18, bottom: 14, trailing: 18))
-        .foregroundStyle(theme.text)
-        .background(GeometryReader { proxy in
-            Color.clear.preference(key: PanelHeightKey.self, value: proxy.size.height)
-        })
     }
 
     private var quotaBlock: some View {
