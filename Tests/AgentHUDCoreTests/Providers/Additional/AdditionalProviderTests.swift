@@ -287,13 +287,17 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
     }
     private func number(_ field: UInt64, _ value: UInt64) -> [UInt8] { varint(field << 3) + varint(value) }
     private func message(_ field: UInt64, _ bytes: [UInt8]) -> [UInt8] { varint((field << 3) | 2) + varint(UInt64(bytes.count)) + bytes }
-    private func generation(timestamp: Bool = true) -> [UInt8] {
-        let usage = number(1, 10) + number(2, 20) + number(5, 40) + number(9, 5) + number(10, 3) + message(11, Array("response".utf8))
+    private func generation(timestamp: Bool = true, usage recordedUsage: [UInt8]? = nil,
+                            model: String? = "gemini-test", executionID: String = "step") -> [UInt8] {
+        // CortexStepGeneratorMetadata.chat_model -> ChatModelMetadata.usage -> ModelUsageStats.
+        let usage = recordedUsage ?? (number(1, 1405) + number(2, 20) + number(3, 8) + number(5, 40)
+            + number(9, 5) + number(10, 3) + message(11, Array("response".utf8)))
         let stamp = timestamp ? message(9, message(4, number(1, 1788800000))) : message(9, message(10, [1, 2, 3, 4, 5, 6, 7, 8]))
-        return message(1, message(4, usage) + message(19, Array("gemini-test".utf8)) + stamp) + message(4, Array("step".utf8))
+        let name = model.map { message(19, Array($0.utf8)) } ?? []
+        return message(1, number(3, 1405) + message(4, usage) + name + stamp) + message(4, Array(executionID.utf8))
     }
 
-    func testAntigravitySQLiteUsesRecordedTimeAndSeparateThinkingTokens() throws {
+    func testAntigravitySQLiteUsesRecordedTokensAndIncludesThinkingOnlyOnce() throws {
         let url = try directory().appendingPathComponent("conversation.db")
         try database(url) { db in
             try sql(db, "CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB)")
@@ -303,9 +307,117 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         let events = try AntigravitySessions.read(url).sessions[0].events
         XCTAssertEqual(events.count, 1)
         XCTAssertEqual(events[0].timestamp, now)
-        XCTAssertEqual(events[0].input, 30)
+        XCTAssertEqual(events[0].input, 20, "the model enum 1405 is not input usage")
         XCTAssertEqual(events[0].output, 8)
         XCTAssertEqual(events[0].cacheRead, 40)
+        XCTAssertEqual(events[0].reasoning, 5, "thinking is a subset of total output")
+        XCTAssertEqual(events[0].model, "gemini-test")
+    }
+
+    func testAntigravityCacheWritesAreIncludedInInputAndRetainedAsDetail() throws {
+        let url = try directory().appendingPathComponent("conversation.db")
+        let usage = number(1, 1405) + number(2, 20) + number(3, 8) + number(4, 7) + number(5, 40)
+        try database(url) { db in
+            try sql(db, "CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB)")
+            let hex = generation(usage: usage, model: nil).map { String(format: "%02x", $0) }.joined()
+            try sql(db, "INSERT INTO gen_metadata VALUES (0, X'\(hex)')")
+        }
+        let event = try XCTUnwrap(AntigravitySessions.read(url).sessions[0].events.first)
+        XCTAssertEqual(event.input, 27)
+        XCTAssertEqual(event.cacheWrite, 7)
+        XCTAssertEqual(event.cacheRead, 40, "cached reads are separate from input")
+        XCTAssertEqual(event.output, 8, "total output remains authoritative when component counters are omitted")
+        XCTAssertEqual(event.reasoning, 0)
+        XCTAssertEqual(event.model, "Antigravity model 1405", "an unnamed model enum remains an identity")
+    }
+
+    func testAntigravityModelOnlyFailedGenerationIsNotMissingUsage() throws {
+        let url = try directory().appendingPathComponent("conversation.db")
+        let completed = generation()
+        // The live failed generations carry the model enum, retries and error, but no recorded tokens or date.
+        let failed = generation(timestamp: false, usage: number(1, 1405), model: nil)
+            + message(5, Array("fixture generation failure".utf8))
+        try database(url) { db in
+            try sql(db, "CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB)")
+            for (index, bytes) in [completed, failed].enumerated() {
+                let hex = bytes.map { String(format: "%02x", $0) }.joined()
+                try sql(db, "INSERT INTO gen_metadata VALUES (\(index), X'\(hex)')")
+            }
+        }
+        let result = try AntigravitySessions.read(url)
+        XCTAssertNil(result.notice)
+        XCTAssertEqual(result.sessions[0].events.count, 1)
+        XCTAssertEqual(result.sessions[0].events[0].input, 20)
+    }
+
+    func testAntigravityRecordedUsageWithoutVerifiableTimeStillWarns() throws {
+        let url = try directory().appendingPathComponent("conversation.db")
+        let usages = [number(2, 20), number(3, 8), number(4, 7), number(5, 40)]
+        try database(url) { db in
+            try sql(db, "CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB)")
+            for (index, usage) in usages.enumerated() {
+                let bytes = generation(timestamp: false, usage: number(1, 1405) + usage,
+                                       executionID: "execution-\(index)")
+                let hex = bytes.map { String(format: "%02x", $0) }.joined()
+                try sql(db, "INSERT INTO gen_metadata VALUES (\(index), X'\(hex)')")
+            }
+        }
+        let result = try AntigravitySessions.read(url)
+        XCTAssertNotNil(result.notice)
+        XCTAssertTrue(result.sessions[0].events.isEmpty, "real token usage is never assigned an inferred date")
+    }
+
+    func testAntigravityMatchesUsageMessageToItsExactStepWithinAnExecution() throws {
+        let url = try directory().appendingPathComponent("conversation.db")
+        let usage = number(1, 1405) + number(2, 20) + number(3, 8) + message(7, Array("message-1".utf8))
+        let bytes = generation(timestamp: false, usage: usage)
+        let metadata = message(1, number(1, 1788800000))
+            + message(9, message(7, Array("message-1".utf8))) + message(12, Array("step".utf8))
+        let other = message(1, number(1, 1788800100))
+            + message(9, message(7, Array("message-2".utf8))) + message(12, Array("step".utf8))
+        try database(url) { db in
+            try sql(db, "CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB)")
+            try sql(db, "CREATE TABLE steps (idx INTEGER PRIMARY KEY, metadata BLOB)")
+            let hex = bytes.map { String(format: "%02x", $0) }.joined()
+            try sql(db, "INSERT INTO gen_metadata VALUES (0, X'\(hex)')")
+            for (index, step) in [metadata, other].enumerated() {
+                let hex = step.map { String(format: "%02x", $0) }.joined()
+                try sql(db, "INSERT INTO steps VALUES (\(index), X'\(hex)')")
+            }
+        }
+        let result = try AntigravitySessions.read(url)
+        XCTAssertNil(result.notice)
+        XCTAssertEqual(result.sessions[0].events.count, 1)
+        XCTAssertEqual(result.sessions[0].events[0].timestamp, now)
+    }
+
+    func testAntigravityDirectoryScanExcludesSummariesAndKeepsConversationLayouts() async throws {
+        let home = try directory(), base = home.appendingPathComponent(".gemini")
+        let conversations = ["antigravity-cli/conversations/cli.db", "antigravity/conversations/desktop.db", "antigravity/legacy.db"]
+            .map { base.appendingPathComponent($0) }
+        let hex = generation().map { String(format: "%02x", $0) }.joined()
+        for url in conversations {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try database(url) { db in
+                try sql(db, "CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB)")
+                try sql(db, "INSERT INTO gen_metadata VALUES (0, X'\(hex)')")
+            }
+        }
+        let summaries = base.appendingPathComponent("antigravity/conversation_summaries.db")
+        try database(summaries) { db in try sql(db, "CREATE TABLE conversation_summaries (id TEXT PRIMARY KEY)") }
+
+        let store = AdditionalLocalStore(source: .antigravity, roots: AntigravitySessions.roots(home: home, environment: [:]))
+        let result = await store.index(since: .distantPast)
+        XCTAssertNil(result.notice)
+        XCTAssertEqual(Set(result.sessions.map(\.id)), ["antigravity:cli", "antigravity:desktop", "antigravity:legacy"])
+        XCTAssertEqual(result.sessions.map { $0.events.count }, [1, 1, 1])
+        let filenames = Set(conversations.map(\.lastPathComponent))
+        XCTAssertEqual(result.files.map { Set($0.paths.map { URL(fileURLWithPath: $0).lastPathComponent }) }, filenames)
+
+        await store.fileChanges([summaries.path])
+        let changed = await store.index(since: .distantPast)
+        XCTAssertNil(changed.notice, "a summary database change is also ignored by the collector's watch")
+        XCTAssertEqual(changed.files.map { Set($0.paths.map { URL(fileURLWithPath: $0).lastPathComponent }) }, filenames)
     }
 
     func testAntigravityTakesTheTitleFromItsAnnotations() throws {
@@ -343,7 +455,7 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
     func testAntigravityRejectsOpaqueTimeAndAmbiguousStepJoin() throws {
         let turn = try XCTUnwrap(AntigravityProtoReader.parseTurn(generation(timestamp: false)))
         XCTAssertNil(turn.timestampMs)
-        let step = AntigravityProtoReader.StepMetadata(stepUUID: "step", botID: nil, timestampMs: 1788800000000)
+        let step = AntigravityProtoReader.StepMetadata(executionID: "step", messageID: nil, timestampMs: 1788800000000)
         XCTAssertEqual(AntigravitySessions.matchedTimestamp(turn, generations: [turn], steps: [step]), 1788800000000)
         XCTAssertNil(AntigravitySessions.matchedTimestamp(turn, generations: [turn, turn], steps: [step]))
         XCTAssertNil(AntigravitySessions.matchedTimestamp(turn, generations: [turn], steps: [step, step]))

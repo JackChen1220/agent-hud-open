@@ -2,7 +2,8 @@
 // See THIRD_PARTY_NOTICES.txt for the pinned source and license.
 import Foundation
 
-/// Decodes only the independently recorded generation layout; no inferred opaque timestamps.
+/// The CortexStepGeneratorMetadata layout in Antigravity 2.19.1's embedded protobuf descriptors.
+/// ChatModelMetadata.usage is ModelUsageStats; its model enum is never a token count.
 struct AntigravityProtoReader {
     private let bytes: ArraySlice<UInt8>
     private var offset: Int
@@ -18,16 +19,23 @@ struct AntigravityProtoReader {
     }
 
     struct ParsedUsage: Equatable, Sendable {
-        var systemPrompt = 0
-        var newInput = 0
+        var modelID: Int?
+        var input = 0
         var cacheRead = 0
+        var cacheWrite = 0
         var output = 0
-        var reasoning = 0
+        var thinkingOutput = 0
+        var responseOutput = 0
         var responseID: String?
-        fileprivate var botIdentifier = AuxiliaryIdentifier()
+        fileprivate var messageIdentifier = AuxiliaryIdentifier()
 
-        var botID: String? {
-            self.botIdentifier.value
+        var messageID: String? {
+            self.messageIdentifier.value
+        }
+
+        var hasTokens: Bool {
+            self.input > 0 || self.output > 0 || self.cacheRead > 0 || self.cacheWrite > 0
+                || self.thinkingOutput > 0 || self.responseOutput > 0
         }
     }
 
@@ -36,7 +44,8 @@ struct AntigravityProtoReader {
         var timestampMs: Int64?
         var model: String?
         var label: String?
-        var stepUUID: String?
+        var requestedModelID: Int?
+        var executionID: String?
     }
 
     private struct Timestamp {
@@ -183,10 +192,10 @@ struct AntigravityProtoReader {
                 switch field.number {
                 case 1:
                     foundChat = true
-                    try self.parseChat(
+                    try self.parseChatModelMetadata(
                         field.message(), turn: &turn, time: &time, checkCancellation: checkCancellation)
                 case 4:
-                    turn.stepUUID = try field.string()
+                    turn.executionID = try field.string()
                 default:
                     break
                 }
@@ -200,8 +209,8 @@ struct AntigravityProtoReader {
     }
 
     struct StepMetadata: Equatable, Sendable {
-        var stepUUID: String?
-        var botID: String?
+        var executionID: String?
+        var messageID: String?
         var timestampMs: Int64?
     }
 
@@ -209,8 +218,8 @@ struct AntigravityProtoReader {
         _ bytes: [UInt8],
         checkCancellation: () throws -> Void = {}) throws -> StepMetadata?
     {
-        var stepUUID: String?
-        var botIdentifier = AuxiliaryIdentifier()
+        var executionID: String?
+        var messageIdentifier = AuxiliaryIdentifier()
         var time = Timestamp()
         var timestampIsValid = true
         do {
@@ -228,26 +237,26 @@ struct AntigravityProtoReader {
                     do {
                         try self.fields(field.message(), checkCancellation: checkCancellation) { subfield in
                             if subfield.number == 7 {
-                                try botIdentifier.read(subfield)
+                                try messageIdentifier.read(subfield)
                             }
                         }
                     } catch AntigravityProtoFailure.invalid {
-                        botIdentifier.invalidate()
+                        messageIdentifier.invalidate()
                     }
                 case 12:
-                    stepUUID = try field.string()
+                    executionID = try field.string()
                 default:
                     break
                 }
             }
             let ms = timestampIsValid ? try time.milliseconds() : nil
-            return StepMetadata(stepUUID: stepUUID, botID: botIdentifier.value, timestampMs: ms)
+            return StepMetadata(executionID: executionID, messageID: messageIdentifier.value, timestampMs: ms)
         } catch AntigravityProtoFailure.invalid {
             return nil
         }
     }
 
-    private static func parseChat(
+    private static func parseChatModelMetadata(
         _ bytes: ArraySlice<UInt8>,
         turn: inout ParsedTurn,
         time: inout Timestamp,
@@ -255,12 +264,13 @@ struct AntigravityProtoReader {
     {
         try self.fields(bytes, checkCancellation: checkCancellation) { field in
             switch field.number {
+            case 3: turn.requestedModelID = try field.counter()
             case 4:
                 var usage = turn.usage ?? ParsedUsage()
                 try self.parseUsage(field.message(), usage: &usage, checkCancellation: checkCancellation)
                 turn.usage = usage
             case 9:
-                try self.parseGeneration(field.message(), time: &time, checkCancellation: checkCancellation)
+                try self.parseChatStartMetadata(field.message(), time: &time, checkCancellation: checkCancellation)
             case 19: turn.model = try field.string()
             case 21: turn.label = try field.string()
             default: break
@@ -275,12 +285,14 @@ struct AntigravityProtoReader {
     {
         try self.fields(bytes, checkCancellation: checkCancellation) { field in
             switch field.number {
-            case 1: usage.systemPrompt = try field.counter()
-            case 2: usage.newInput = try field.counter()
+            case 1: usage.modelID = try field.counter()
+            case 2: usage.input = try field.counter()
+            case 3: usage.output = try field.counter()
+            case 4: usage.cacheWrite = try field.counter()
             case 5: usage.cacheRead = try field.counter()
-            case 7: try usage.botIdentifier.read(field)
-            case 9: usage.output = try field.counter()
-            case 10: usage.reasoning = try field.counter()
+            case 7: try usage.messageIdentifier.read(field)
+            case 9: usage.thinkingOutput = try field.counter()
+            case 10: usage.responseOutput = try field.counter()
             case 11: usage.responseID = try field.string()
             default: break
             }
@@ -309,7 +321,7 @@ struct AntigravityProtoReader {
         }
     }
 
-    private static func parseGeneration(
+    private static func parseChatStartMetadata(
         _ bytes: ArraySlice<UInt8>,
         time: inout Timestamp,
         checkCancellation: () throws -> Void) throws
@@ -322,4 +334,3 @@ struct AntigravityProtoReader {
 }
 
 private enum AntigravityProtoFailure: Error { case invalid }
-

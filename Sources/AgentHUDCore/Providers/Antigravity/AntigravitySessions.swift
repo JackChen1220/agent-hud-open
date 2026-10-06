@@ -17,10 +17,12 @@ enum AntigravitySessions: LocalSessionLayout {
         return ["antigravity-cli/conversations", "antigravity", "antigravity/conversations"].map { base.appendingPathComponent($0) }
     }
 
-    static func accepts(_ url: URL) -> Bool { url.pathExtension == "db" }
+    static func accepts(_ url: URL) -> Bool {
+        url.pathExtension == "db" && url.lastPathComponent != "conversation_summaries.db"
+    }
 
-    /// The recognized SQLite roots are flat; configuration and storage beside the databases are not scanned.
-    static func skips(_ url: URL) -> Bool { url.pathExtension != "db" }
+    /// The recognized SQLite roots are flat; configuration, summaries and storage beside the conversations are not scanned.
+    static func skips(_ url: URL) -> Bool { !accepts(url) }
 
     static func related(_ url: URL) -> [URL] { [URL(fileURLWithPath: url.path + "-wal"), annotations(url)] }
 
@@ -93,7 +95,7 @@ enum AntigravitySessions: LocalSessionLayout {
             rows.append((sqlite3_column_int64(row, 0), turn))
         }
         var steps: [AntigravityProtoReader.StepMetadata] = []
-        if rows.contains(where: { $0.turn.usage != nil && $0.turn.timestampMs == nil }), (try? database.requireTable("steps")) != nil {
+        if rows.contains(where: { $0.turn.usage?.hasTokens == true && $0.turn.timestampMs == nil }), (try? database.requireTable("steps")) != nil {
             try database.rows("SELECT metadata FROM steps NOT INDEXED") { row in
                 guard let bytes = ReadOnlySQLite.blob(row, 0), let step = try AntigravityProtoReader.parseStepMetadata(Array(bytes)) else {
                     incomplete = true; return
@@ -110,16 +112,20 @@ enum AntigravitySessions: LocalSessionLayout {
             .mapValues { Set($0.compactMap(\.model)) }
         for row in rows {
             let turn = row.turn
-            guard let usage = turn.usage else { continue }
+            // Failed and unfinished generations can record only the model enum, with no token usage yet.
+            guard let usage = turn.usage, usage.hasTokens else { continue }
             let timestamp = turn.timestampMs ?? matchedTimestamp(turn, generations: rows.map(\.turn), steps: steps)
             guard let timestamp else { incomplete = true; continue }
-            let (input, overflowIn) = usage.systemPrompt.addingReportingOverflow(usage.newInput)
-            let (output, overflowOut) = usage.output.addingReportingOverflow(usage.reasoning)
-            guard !overflowIn, !overflowOut else { throw ProviderFailure.format }
+            let (input, overflowIn) = usage.input.addingReportingOverflow(usage.cacheWrite)
+            guard !overflowIn else { throw ProviderFailure.format }
             let mapped = turn.label.flatMap { labels[$0] }.flatMap { $0.count == 1 ? $0.first : nil }
-            let model = turn.model ?? mapped ?? turn.label ?? "Unknown"
+            let enumModel = (usage.modelID ?? turn.requestedModelID).flatMap { $0 > 0 ? "Antigravity model \($0)" : nil }
+            let model = turn.model ?? mapped ?? turn.label ?? enumModel ?? "Unknown"
             let identity = id + ":" + (usage.responseID ?? "row-\(row.index)")
-            let event = ProviderEvent(id: identity, model: model, timestamp: RecordCoding.date(timestamp), input: input, output: output, cacheRead: usage.cacheRead)
+            // output_tokens is the total; thinking/response counters are its parts, not additional output.
+            let event = ProviderEvent(id: identity, model: model, timestamp: RecordCoding.date(timestamp), input: input,
+                                      output: usage.output, cacheRead: usage.cacheRead, cacheWrite: usage.cacheWrite,
+                                      reasoning: usage.thinkingOutput)
             if let previous = identities[identity], previous != event { incomplete = true }
             else { identities[identity] = event }
         }
@@ -128,18 +134,18 @@ enum AntigravitySessions: LocalSessionLayout {
             ? L10n.text("部分 Antigravity 记录缺少可验证的时间或用量，未计入统计", "Some Antigravity records lack verifiable timestamps or usage and were excluded") : nil)
     }
 
-    /// Only exact, unique joins are accepted. Opaque agy timestamps and file modification times are never usage times.
+    /// Only exact, unique joins are accepted. Context-window metadata and file modification times are never usage times.
     static func matchedTimestamp(_ turn: AntigravityProtoReader.ParsedTurn,
         generations: [AntigravityProtoReader.ParsedTurn], steps: [AntigravityProtoReader.StepMetadata]) -> Int64? {
-        if let bot = turn.usage?.botID {
-            guard generations.filter({ $0.usage?.botID == bot }).count == 1 else { return nil }
-            let matches = steps.filter { $0.botID == bot }
+        if let message = turn.usage?.messageID {
+            guard generations.filter({ $0.usage?.messageID == message }).count == 1 else { return nil }
+            let matches = steps.filter { $0.messageID == message }
             guard matches.count == 1, let step = matches.first,
-                  turn.stepUUID == nil || step.stepUUID == turn.stepUUID else { return nil }
+                  turn.executionID == nil || step.executionID == turn.executionID else { return nil }
             return step.timestampMs
         }
-        guard let uuid = turn.stepUUID, generations.filter({ $0.stepUUID == uuid }).count == 1 else { return nil }
-        let matches = steps.filter { $0.stepUUID == uuid }
+        guard let execution = turn.executionID, generations.filter({ $0.executionID == execution }).count == 1 else { return nil }
+        let matches = steps.filter { $0.executionID == execution }
         return matches.count == 1 ? matches.first?.timestampMs : nil
     }
 }
