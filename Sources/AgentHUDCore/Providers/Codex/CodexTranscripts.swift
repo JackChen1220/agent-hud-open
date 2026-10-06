@@ -2,7 +2,7 @@ import AgentHUDSupport
 import Foundation
 
 /// Incremental summary of Codex rollout JSONL, shared by Desktop and CLI.
-/// It retains counters and lifecycle events, never conversation bodies or tool output.
+/// It persists counters and lifecycle events; answer previews are kept only while the app runs.
 public struct CodexTranscript: Codable, Sendable {
     public struct Usage: Codable, Sendable {
         public let timestamp: Date
@@ -49,6 +49,8 @@ public struct CodexTranscript: Codable, Sendable {
         var observedAt: Date
         /// What the agent said, kept only while the app runs: the ledger stores no conversation text.
         var message: String?
+        /// An explicitly final answer, kept apart from the agent's progress messages.
+        var finalMessage: String?
         enum CodingKeys: String, CodingKey { case id, startedAt, state, observedAt }
     }
     /// How much of an agent message is kept; readers truncate it further.
@@ -150,10 +152,14 @@ public struct CodexTranscript: Codable, Sendable {
                 lastActivityAt = max(lastActivityAt ?? timestamp, timestamp)
                 let finished = finishTurn(payload["turn_id"] as? String, state: .completed, at: timestamp)
                 if let id, !isSubagent, !isInternal {
+                    let answer = (payload["last_agent_message"] as? String).flatMap {
+                        $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
+                    } ?? finished?.finalMessage
                     let completion = SessionCompletion(sessionID: id, vendor: "Codex",
                         turnID: payload["turn_id"] as? String ?? finished?.id ?? String(RecordCoding.milliseconds(timestamp)),
                         task: task ?? cwd.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Codex",
-                        model: model, startedAt: finished?.startedAt, completedAt: timestamp)
+                        model: model, startedAt: finished?.startedAt, completedAt: timestamp,
+                        message: answer)
                     if completions?.contains(where: { $0.id == completion.id }) != true {
                         completions = (completions ?? []) + [completion]
                     }
@@ -171,11 +177,19 @@ public struct CodexTranscript: Codable, Sendable {
                     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmed.isEmpty { turns?[index].message = String(trimmed.prefix(Self.messageLength)) }
                 }
+                if payload["phase"] as? String == "final_answer" || payload["channel"] as? String == "final",
+                   let text = payload["message"] as? String {
+                    recordFinalMessage(text, turnID: payload["turn_id"] as? String, at: timestamp)
+                }
             case "item_completed":
                 // Current rollouts record a prompt only as a completed UserMessage item of text and image parts.
-                guard task == nil, let item = payload["item"] as? [String: Any], item["type"] as? String == "UserMessage",
-                      let content = item["content"] as? [[String: Any]] else { break }
-                task = content.lazy.filter { $0["type"] as? String == "text" }.compactMap { ($0["text"] as? String).flatMap(SessionTitle.from) }.first
+                guard let item = payload["item"] as? [String: Any], let content = item["content"] as? [[String: Any]] else { break }
+                if task == nil, item["type"] as? String == "UserMessage" {
+                    task = content.lazy.filter { $0["type"] as? String == "text" }.compactMap { ($0["text"] as? String).flatMap(SessionTitle.from) }.first
+                } else if item["type"] as? String == "AgentMessage", item["phase"] as? String == "final_answer" {
+                    let text = content.filter { $0["type"] as? String == "Text" }.compactMap { $0["text"] as? String }.joined(separator: "\n\n")
+                    recordFinalMessage(text, turnID: payload["turn_id"] as? String, at: timestamp)
+                }
             default: break
             }
         }
@@ -234,6 +248,13 @@ public struct CodexTranscript: Codable, Sendable {
                 startedAtMs: turn.startedAt.map(RecordCoding.milliseconds), observedAtMs: RecordCoding.milliseconds(turn.observedAt),
                 message: turn.message)
         }
+    }
+
+    private mutating func recordFinalMessage(_ text: String, turnID: String?, at date: Date) {
+        let index = turnID.flatMap { id in turns?.lastIndex(where: { $0.id == id }) } ?? (turnID == nil ? turns?.indices.last : nil)
+        guard let index, turns?[index].state == .running,
+              date >= (turns?[index].startedAt ?? .distantPast) else { return }
+        if let paragraph = SessionCompletion.lastParagraph(text) { turns?[index].finalMessage = paragraph }
     }
 
     private mutating func finishTurn(_ id: String?, state: SessionTurn.State, at date: Date) -> Turn? {
@@ -310,7 +331,9 @@ public actor CodexTranscriptStore {
 
     /// Thread names, read again only when the index file changed.
     private func readTitles() -> [String: String] {
-        guard let indexURL, let values = try? indexURL.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]) else { return [:] }
+        guard var indexURL else { return [:] }
+        indexURL.removeAllCachedResourceValues()
+        guard let values = try? indexURL.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]) else { return [:] }
         let signature = "\(values.contentModificationDate?.timeIntervalSince1970 ?? 0):\(values.fileSize ?? 0)"
         guard signature != titles.signature else { return titles.values }
         var result: [String: String] = [:]

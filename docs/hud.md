@@ -39,7 +39,7 @@ Each display has its own HUD and settings. Notch mode uses the physical notch or
 - A visible dock accepts dragging; with logos hidden, clicks pass through until Command reveals its drag area.
 - Hovering opens inward, optionally requiring Option, with the same opening and closing timing on all four edges. During the delay, content height, glow and shadow are prepared without retaining a hidden panel; leaving cancels preparation.
 - Events appear once, on the pointer's display.
-- A successfully ended turn uses a blue outlined speech bubble and a neutral button for opening its session; the reminder reports the turn ending without claiming that the task has passed acceptance.
+- A successfully ended turn shows its conversation title and, for Codex, the last paragraph of its final reply when available, with a blue outlined speech bubble and a neutral "View token usage" button for opening its session's usage statistics; the reminder reports the turn ending without claiming that the task has passed acceptance.
 - Events open statistics: completed turns open their Sessions page, quota events reveal and highlight their Tokens card, and other events open Tokens. Panel session rows open that session and the heading opens the list; chart and menu-bar controls open Tokens and reset Sessions to its list.
 - Opening statistics or settings collapses the HUD until the pointer leaves and returns; controls that change only the panel keep it open.
 - A dock's backdrop stops when the panel or an event opens; only notch mode draws a rim.

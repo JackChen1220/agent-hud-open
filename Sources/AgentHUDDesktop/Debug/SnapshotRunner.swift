@@ -39,8 +39,9 @@ public enum SnapshotRunner {
         for vendor in ["Claude", "Codex", "DeepSeek"] {
             let now = Date()
             let completion = SessionCompletion(sessionID: "snapshot", vendor: vendor, turnID: "preview",
-                task: L10n.text("完成本地用量面板", "Build the local usage dashboard"),
-                model: ["Claude": "Fable 5.1", "Codex": "gpt-6-astra"][vendor] ?? "deepseek-v4-flash", startedAt: now.addingTimeInterval(-83), completedAt: now)
+                task: L10n.text("自动更新检查", "Automatic update checks"),
+                model: ["Claude": "Fable 5.1", "Codex": "gpt-6.1-sol"][vendor] ?? "deepseek-v4-flash", startedAt: now.addingTimeInterval(-83), completedAt: now,
+                message: L10n.text("已改好：每次打开应用立即检查更新，之后每小时检查一次。后台发现新版本时，HUD 会显示更新入口。", "The app now checks for updates every time it opens, then once an hour. When a new version is available, the HUD shows an update shortcut."))
             let alert = IslandAlert.completion(completion)
             save("alert-completion-\(vendor)-compact", IslandScene(store: store, settings: settings, open: false, light: false, alert: alert), folder: folder, scheme: .dark)
             save("alert-completion-\(vendor)-detail", IslandScene(store: store, settings: settings, open: true, light: false, alert: alert, showsAlertDetails: true), folder: folder, scheme: .dark)

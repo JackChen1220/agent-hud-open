@@ -273,6 +273,13 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
                 resetCredits: reading.limits.rateLimitResetCredits,
                 aliases: reading.limits.partialKeys)
         }
+        let completions = indexed.sessions.flatMap { session in
+            (session.transcript.completions ?? []).map { completion in
+                var named = completion
+                named.task = session.title ?? completion.task
+                return named
+            }
+        }
         return UsageReport(generatedAt: now, snapshots: snapshots, sessions: sessions,
                            notice: notice, discoveredAgents: windows.map { $0.row.descriptor }, consumers: consumers,
                            indexing: indexed.indexing, insightsByAgent: byAgent,
@@ -280,7 +287,7 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
                            sourceNotices: sourceNotices, quotaNotices: sourceNotices, readingIssues: sourceNotices.mapValues(ReadingIssue.readFailed),
                            consumerIdsByQuota: consumerIdsByQuota, codexResetCredits: selected.count == 1 ? selected.first?.1.limits.rateLimitResetCredits : nil,
                            codexResetCreditsObservedAt: selected.count == 1 && selected.first?.1.limits.rateLimitResetCredits != nil ? selected.first?.1.at : nil,
-                           completions: indexed.sessions.flatMap { $0.transcript.completions ?? [] },
+                           completions: completions,
                            turns: indexed.sessions.flatMap { $0.transcript.sessionTurns },
                            accounts: lastRequestAt == nil || selected.isEmpty && !failures.isEmpty ? nil : ["Codex": observations])
     }

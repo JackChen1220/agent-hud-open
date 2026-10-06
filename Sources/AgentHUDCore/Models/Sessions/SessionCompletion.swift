@@ -6,15 +6,49 @@ public struct SessionCompletion: Codable, Hashable, Sendable, Identifiable {
     public let id: String
     public let sessionID: String
     public let vendor: String
-    public let task: String
+    public var task: String
     public let model: String
     public let startedAt: Date?
     public let completedAt: Date
+    /// The final reply's last paragraph, kept only in memory for the local completion reminder.
+    public let message: String?
 
     public init(sessionID: String, vendor: String, turnID: String, task: String, model: String,
-                startedAt: Date?, completedAt: Date) {
+                startedAt: Date?, completedAt: Date, message: String? = nil) {
         id = RecordCoding.hash([vendor, sessionID, turnID])
         self.sessionID = sessionID; self.vendor = vendor; self.task = task; self.model = model
         self.startedAt = startedAt; self.completedAt = completedAt
+        self.message = Self.lastParagraph(message)
+    }
+
+    static func lastParagraph(_ message: String?) -> String? {
+        guard let message else { return nil }
+        var lines: [Substring] = []
+        for line in message.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).reversed() {
+            if line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if !lines.isEmpty { break }
+            } else {
+                lines.append(line)
+            }
+        }
+        let paragraph = lines.reversed().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !paragraph.isEmpty else { return nil }
+        return paragraph.count > 600 ? String(paragraph.prefix(599)) + "…" : paragraph
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, sessionID, vendor, task, model, startedAt, completedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        sessionID = try values.decode(String.self, forKey: .sessionID)
+        vendor = try values.decode(String.self, forKey: .vendor)
+        task = try values.decode(String.self, forKey: .task)
+        model = try values.decode(String.self, forKey: .model)
+        startedAt = try values.decodeIfPresent(Date.self, forKey: .startedAt)
+        completedAt = try values.decode(Date.self, forKey: .completedAt)
+        message = nil
     }
 }
