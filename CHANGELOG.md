@@ -2,7 +2,7 @@
 
 Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the three-part numeric version `X.Y.Z`. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
-## 0.4.34-beta.5 — 2026-10-07
+## 0.4.34 — 2026-10-07
 
 - Long usage panels fit the display height and scroll above a fixed footer, keeping Settings, Stats and host controls visible.
 - Dynamic Dock can be dragged to any position along all four display edges; hidden logos reveal their drag area while Command is held. Display settings can reset its position.
