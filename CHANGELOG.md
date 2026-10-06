@@ -2,6 +2,16 @@
 
 Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the three-part numeric version `X.Y.Z`. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
+## 0.4.34-beta.5 — 2026-10-07
+
+- Long usage panels fit the display height and scroll above a fixed footer, keeping Settings, Stats and host controls visible.
+- Dynamic Dock can be dragged to any position along all four display edges; hidden logos reveal their drag area while Command is held. Display settings can reset its position.
+- Panel height, glow and shadow are prepared during the hover delay without retaining a hidden panel. Hidden glow previews stop rendering, and HUD animations share their drawing budget.
+- Opening and closing keep the dock's contact edge fixed and clean up the native window after the geometry animation completes.
+- An optional setting opens the HUD immediately when the pointer reaches the top edge; normal hover opening remains delayed.
+- Statistics windows restore their content size correctly after native window restoration.
+- Host API: `Settings.openImmediatelyAtTop` defaults to `false`; existing settings and desktop host entry points remain compatible.
+
 ## 0.4.34-beta.4 — 2026-10-03
 
 - The distributed Mac application's New Version menu entry uses blue text with the regular menu font.
