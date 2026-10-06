@@ -71,6 +71,38 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(AntigravityClient.ports("n127.0.0.1:42111\nn*:42111\nn[::1]:42112\n"), [42111, 42112])
     }
 
+    func testAntigravityRefreshesSummaryWithoutReplacingItWithOlderModelQuota() async throws {
+        let requests = Requests()
+        let endpoint = AntigravityService.Endpoint(pid: 1,
+            base: URL(string: "https://127.0.0.1:42111/exa.language_server_pb.LanguageServerService/")!, token: "fixture-csrf")
+        let client = AntigravityClient(http: ProviderHTTP(send: { request in
+            await requests.record(request)
+            let method = request.url?.lastPathComponent
+            if method == "RetrieveUserQuotaSummary" {
+                let body = try ProviderJSON.read(try XCTUnwrap(request.httpBody))
+                // The server otherwise returns a cached full bucket, as before the native popover requests a refresh.
+                let remaining = body["forceRefresh"].boolValue == true ? 0 : 1
+                return Data(#"{"response":{"groups":[{"displayName":"Claude and GPT models","buckets":[{"bucketId":"3p-5h","displayName":"Five Hour Limit Remaining","remainingFraction":\#(remaining)}]}]}}"#.utf8)
+            }
+            XCTAssertEqual(method, "GetUserStatus")
+            return Data(#"{"userStatus":{"email":"quota@example.com","cascadeModelConfigData":{"clientModelConfigs":[{"label":"Claude Sonnet","quotaInfo":{"remainingFraction":0.75}}]}}}"#.utf8)
+        }))
+
+        let quota = try await client.quota(from: endpoint)
+        XCTAssertEqual(quota.windows.map(\.id), ["antigravity:3p-5h"])
+        XCTAssertEqual(quota.windows.map(\.remaining), [0], "the fresh summary wins over a stale legacy model reading")
+        XCTAssertEqual(quota.label, "quota@example.com")
+        let sent = await requests.values
+        XCTAssertEqual(sent.map { $0.url?.lastPathComponent }, ["RetrieveUserQuotaSummary", "GetUserStatus"])
+        XCTAssertEqual(sent.map(\.httpMethod), ["POST", "POST"])
+        XCTAssertTrue(sent.allSatisfy { $0.value(forHTTPHeaderField: "X-Codeium-Csrf-Token") == "fixture-csrf" })
+        let summary = try ProviderJSON.read(try XCTUnwrap(sent.first?.httpBody))
+        XCTAssertEqual(summary["forceRefresh"].boolValue, true)
+        let status = try ProviderJSON.read(try XCTUnwrap(sent.last?.httpBody))
+        XCTAssertEqual(status["metadata"]["ideName"].stringValue, "antigravity")
+        XCTAssertNil(status["forceRefresh"].boolValue, "only the quota summary uses the native force-refresh option")
+    }
+
     func testAWholeFileStoreLooksOnlyAtThePathsTheWatchReports() async throws {
         let root = try directory()
         func session(_ id: String) throws -> URL {
