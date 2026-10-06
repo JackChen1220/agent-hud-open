@@ -33,14 +33,14 @@ Requires an Apple Silicon Mac running macOS 14 or later.
       <agenthudMinimumIOSVersion>1.4</agenthudMinimumIOSVersion>
     </item>
     <item>
-      <title>0.4.34</title>
-      <pubDate>Wed, 07 Oct 2026 02:00:20 +0800</pubDate>
-      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.34</link>
-      <sparkle:version>464</sparkle:version>
-      <sparkle:shortVersionString>0.4.34</sparkle:shortVersionString>
+      <title>0.4.35</title>
+      <pubDate>Wed, 07 Oct 2026 06:08:54 +0800</pubDate>
+      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.35</link>
+      <sparkle:version>465</sparkle:version>
+      <sparkle:shortVersionString>0.4.35</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-      <description sparkle:format="markdown"># Agent HUD 0.4.34
+      <description sparkle:format="markdown"># Agent HUD 0.4.35
 
 ## Compatibility
 
@@ -52,14 +52,21 @@ Requires an Apple Silicon Mac running macOS 14 or later.
 
 ## Changes
 
-- Long usage panels now fit the display height and scroll above a fixed footer, keeping Settings, Stats and host controls visible.
-- Dynamic Dock can be dragged to any position along the top, right, bottom or left display edge. Hold Command to reveal the drag area when logos are hidden, or reset its position in Display settings.
-- Panel height, glow and shadow are prepared during the hover delay without retaining a hidden panel. Hidden glow previews stop rendering, and HUD glow animations share their drawing budget.
-- Opening and closing keep the dock anchored to its display edge and avoid the jump at the end of the animation.
-- Enable immediate opening when the pointer reaches the top display edge directly above the HUD; other hover opening keeps the configured delay.
-- Statistics windows restore their content size correctly after restoring a minimized window.
+### Antigravity
+
+- Refresh quota summaries directly to avoid stale limits and reset times.
+- Correct local Token accounting, including cache writes and thinking tokens, and match usage to its recorded timestamps more accurately.
+- Fix false local-session warnings caused by summary databases and failed generations without Token usage. Records that genuinely cannot be verified still show a warning.
+- Show account-wide reading warnings on the current account instead of repeating them under retained accounts.
+- Answer native permission requests from the HUD with Allow once or Deny. Requests answered in Antigravity disappear automatically; dismissing a request leaves its native prompt unanswered.
+
+### Other improvements
+
+- Codex completion reminders use the current conversation title and show a short final-reply preview when available.
+- Check for new versions when the Mac app starts and every hour.
+- Support one-year gift licenses and upgrading the original gift key to lifetime access while keeping existing device activations.
 </description>
-      <enclosure url="https://github.com/jazzenchen/agent-hud-open/releases/download/v0.4.34/Agent-HUD-0.4.34-arm64.dmg" length="11590047" type="application/octet-stream" sparkle:edSignature="QF8efh6BlZV8iQP9fU0XNrn2hagABKZHcA40kph9Sp74wDNVwnyWj1FyhDE8L5xR044NGXMojGCB7SPAJYYWCw==" />
+      <enclosure url="https://github.com/jazzenchen/agent-hud-open/releases/download/v0.4.35/Agent-HUD-0.4.35-arm64.dmg" length="11627508" type="application/octet-stream" sparkle:edSignature="nNEH6dIUrCOqvx9mr4HNjiG4vZtITQR6fn5kesXw7vk/VJaPLMvGlBtC7YATyo1GASYqagF9lF3HJxFrxWlpDQ==" />
       <agenthudMacOnly>false</agenthudMacOnly>
       <agenthudMinimumIOSVersion>1.4</agenthudMinimumIOSVersion>
     </item>
