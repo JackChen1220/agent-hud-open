@@ -31,8 +31,9 @@ final class ScreenHUD {
     /// Only the measurements and bitmaps survive the hover's preparation, not a hidden panel.
     private var openingPreparation: OpeningPreparation?
     private var timer: Timer?
-    private var shrinkTask: Task<Void, Never>?
     private var targetWindowFrame: CGRect?
+    /// The card whose geometry is still interpolating; canvas-only changes share its completion.
+    private var geometryTransitionFrame: CGRect?
     /// The island's own shape while an event is showing: wider than the silhouette by the two wings it grew.
     private var alertFrame: CGRect?
     private let alerts = IslandAlertQueue()
@@ -490,7 +491,8 @@ final class ScreenHUD {
         previewPlacement?.mode = .logos
         timer?.invalidate()
         timer = nil
-        shrinkTask?.cancel()
+        targetWindowFrame = nil
+        geometryTransitionFrame = nil
         machine = HoverMachine()
         hoverOpens = false
         alerts.hold(true)
@@ -551,7 +553,8 @@ final class ScreenHUD {
         openingPreparation = nil
         modifierWatch?.invalidate()
         timer?.invalidate()
-        shrinkTask?.cancel()
+        targetWindowFrame = nil
+        geometryTransitionFrame = nil
         island.panel.orderOut(nil)
         glow.close()
         dragSurface.hide()
@@ -642,22 +645,26 @@ final class ScreenHUD {
             alertHoverFloor = 0
         }
         let appearance = store.glowAppearance(light: systemIsLight, on: key)
+        let previousCanvas = island.panel.frame
+        let previousCard = island.rootView.presentationFrame.map {
+            CGRect(x: previousCanvas.minX + $0.minX, y: previousCanvas.maxY - $0.maxY,
+                   width: $0.width, height: $0.height)
+        }
+        let cardFrame = surface.cardFrame
+        if animated && previousCard != cardFrame {
+            geometryTransitionFrame = cardFrame
+        } else if !animated {
+            geometryTransitionFrame = nil
+        }
 
         if !animated || targetWindowFrame != windowFrame {
-            shrinkTask?.cancel()
             targetWindowFrame = windowFrame
             if animated {
                 // Every edge uses the same transition canvas. Card geometry supplies the parked anchor;
                 // the union also covers a clamped card and any longer, stationary logo queue.
                 island.setFrame(island.panel.frame.union(windowFrame))
                 island.setVisibleSize(windowFrame.size)
-                shrinkTask = Task { [weak self] in
-                    do { try await Task.sleep(for: .seconds(IslandAnimation.duration)) } catch { return }
-                    self?.island.setFrame(windowFrame)
-                    self?.shrinkTask = nil
-                }
             } else {
-                shrinkTask = nil
                 island.setFrame(windowFrame)
                 island.setVisibleSize(windowFrame.size)
             }
@@ -697,7 +704,16 @@ final class ScreenHUD {
                                         y: canvas.maxY - surface.cardFrame.maxY,
                                         width: surface.cardFrame.width, height: surface.cardFrame.height)
         root.onContentHeight = { [weak self] height in self?.updatePanelHeight(height) }
+        root.onGeometryCompletion = { [weak self] in
+            // Reversing or repositioning can finish an older animation together with the new one.
+            // A changing logo queue can also change the canvas without changing the card's target.
+            guard let self, self.geometryTransitionFrame == cardFrame,
+                  let target = self.targetWindowFrame else { return }
+            self.geometryTransitionFrame = nil
+            self.island.setFrame(target)
+        }
         island.setRootView(root)
+        if geometryTransitionFrame == nil { island.setFrame(windowFrame) }
         updateDragSurface()
         prepareOpening()
     }

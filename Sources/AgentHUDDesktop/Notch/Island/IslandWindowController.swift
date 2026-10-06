@@ -50,6 +50,9 @@ final class IslandWindowController {
         let dx = previous.minX - panel.frame.minX
         let dy = panel.frame.maxY - previous.maxY
         var root = hosting.rootView
+        // NSHostingView can render this replacement after the enclosing transaction has ended.
+        // Carry the immediate rebase on the view itself so it cannot start another geometry animation.
+        root.animatesGeometry = false
         root.presentationFrame = root.presentationFrame?.offsetBy(dx: dx, dy: dy)
         root.logoQueueFrame = root.logoQueueFrame?.offsetBy(dx: dx, dy: dy)
         var transaction = Transaction()

@@ -30,6 +30,7 @@ struct IslandRootView: View {
     var presentationFrame: CGRect? = nil
     var animatesGeometry = true
     var onContentHeight: (CGFloat) -> Void = { _ in }
+    var onGeometryCompletion: () -> Void = {}
     /// Set on a screen in logo mode: the marks ride on top of the silhouette, collapsed or open, so hovering
     /// never makes the agents disappear.
     var logoQueue: LogoQueueConfig? = nil
@@ -86,16 +87,26 @@ struct IslandRootView: View {
                 }
             ZStack(alignment: .topLeading) {
                 if let presentationFrame {
+                    // The native canvas changes immediately. Only the card's size and its position
+                    // along the parked edge interpolate; the contact edge stays on that canvas.
+                    let offset = (hidesSilhouette ? edge : .top).isHorizontal
+                        ? CGSize(width: presentationFrame.midX - bounds.width / 2, height: 0)
+                        : CGSize(width: 0, height: presentationFrame.midY - bounds.height / 2)
                     surface
                         .frame(width: presentationFrame.width, height: presentationFrame.height,
                                alignment: surfaceAlignment)
-                        .position(x: presentationFrame.midX, y: presentationFrame.midY)
-                        .frame(width: bounds.width, height: bounds.height)
-                        .animation(geometryAnimation, value: size)
+                        .offset(offset)
                         .animation(geometryAnimation, value: presentationFrame)
+                        .transaction(value: presentationFrame) { transaction in
+                            if animatesGeometry {
+                                transaction.addAnimationCompletion(criteria: .removed, onGeometryCompletion)
+                            }
+                        }
+                        .frame(width: bounds.width, height: bounds.height, alignment: surfaceAlignment)
                 } else {
-                    surface.frame(width: bounds.width, height: bounds.height, alignment: surfaceAlignment)
+                    surface
                         .animation(geometryAnimation, value: size)
+                        .frame(width: bounds.width, height: bounds.height, alignment: surfaceAlignment)
                 }
                 if let logoQueue, alert == nil {
                     if let logoQueueFrame {
