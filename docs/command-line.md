@@ -28,6 +28,7 @@ Only one Agent HUD runs at a time, whichever application built on these librarie
 | `--probe` | Prints where Claude Code's engine, Codex's engine and home, DeepSeek Harness's home and Node.js are, the agents in the settings and one step of reading Claude Code's transcripts; then one real account refresh (48 h of history) and one report with how long each took, `Quota windows: n; sessions: n; live: n; billing accounts: n`, the plans and notice, the discovered rows, each window's share used and reset, sessions by client, DeepSeek Harness's sessions and tokens, each balance and its estimated cost, the five newest sessions with their tokens and the values the vendor catalog does not name. Exits 0, or prints the error and exits 1. It issues the same provider requests as the running application and nothing else, and keeps what it reads in memory: it writes nothing to the usage ledger, removes or imports no earlier version's files and remembers no account identity. No conversation text and no credential is printed. |
 | `--probe-open-agents` | Indexes the last seven days of local OpenCode, Kimi and Pi sessions and prints, per client, the session count, running count, distinct usage events, In / Out / Cache totals and the read status. No network requests, no transcript text, no credentials in the output. |
 | `AGENT_HUD_PROBE_ADDITIONAL=1 swift test --filter AdditionalProviderTests/testInstalledSourcesReadOnlyProbe` | Read-only probe of the installed Antigravity, Cursor and Grok sources from the test suite; the test is skipped unless the variable is set. |
+| `AGENT_HUD_PROBE_ANTIGRAVITY=1 swift test --filter AntigravityPermissionsTests/testInstalledAntigravityPermissionsReadOnlyProbe` | Reads Antigravity's native waiting permissions and prints their count. Sends no approval or rejection and prints no command, conversation text or credential. |
 
 ## Adapter commands
 
@@ -48,6 +49,7 @@ Normal start-up already runs `SessionObservers.configure(executable:enabled:)` f
 | `SWIFT_SCRATCH_PATH` | Passed to `swift build` as `--scratch-path` by the build script |
 | `AGENTHUD_SNAPSHOT_PREFIX` | Limits `--snapshot` to snapshots whose name starts with the prefix |
 | `AGENT_HUD_PROBE_ADDITIONAL` | Enables the read-only probe test above |
+| `AGENT_HUD_PROBE_ANTIGRAVITY` | Enables the read-only native permission probe above |
 | Client home overrides and provider keys (`CODEX_HOME`, `DSH_HOME`, `PI_CODING_AGENT_DIR`, …) | Read from the process environment ([providers](providers.md)); a directory variable that is empty or only whitespace counts as unset. An application started from Finder or Launch Services inherits the login session's environment, not the exports of a terminal shell. |
 
 ## Code map

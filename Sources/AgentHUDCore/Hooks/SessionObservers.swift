@@ -17,7 +17,7 @@ public enum SessionObservers {
             do { try AttentionHooks.configure(source, enabled: enabled, executable: executable, home: home) }
             catch { NSLog("[AgentHUD] Notification hook setup failed for %@: %@", source.rawValue, error.localizedDescription) }
         }
-        for source in PermissionHooks.Source.allCases where source.isInstalled(home: home) {
+        for source in PermissionHooks.Source.allCases where source.usesHook && source.isInstalled(home: home) {
             do { try PermissionHooks.configure(source, enabled: enabled, executable: executable, home: home) }
             catch { NSLog("[AgentHUD] Permission hook setup failed for %@: %@", source.rawValue, error.localizedDescription) }
         }

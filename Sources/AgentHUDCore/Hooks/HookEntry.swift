@@ -36,6 +36,7 @@ public enum HookEntry {
             // The client waits on this one: it holds the request open until the user answers on the HUD, and prints
             // nothing when it cannot be answered, which leaves the client's own permission prompt exactly as it was.
             guard let source = PermissionHooks.Source(rawValue: name) else { return nil }
+            guard source.usesHook else { return 0 }
             PermissionHookClient.run(source: source)
             return 0
         case "--install-completion-hook":

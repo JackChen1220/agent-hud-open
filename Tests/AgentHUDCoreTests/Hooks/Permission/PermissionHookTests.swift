@@ -101,7 +101,7 @@ final class PermissionHookTests: XCTestCase, @unchecked Sendable {
 
     func testEachForkIsFoundInItsOwnHome() throws {
         let home = try directory()
-        for source in PermissionHooks.Source.allCases {
+        for source in PermissionHooks.Source.allCases where source.usesHook {
             XCTAssertFalse(source.isInstalled(home: home), "a machine without the client keeps its home untouched")
         }
         try FileManager.default.createDirectory(at: home.appendingPathComponent(".qoder"), withIntermediateDirectories: true)
@@ -168,7 +168,7 @@ final class PermissionHookTests: XCTestCase, @unchecked Sendable {
                       URL(fileURLWithPath: "/private/var/folders/x1/T/AppTranslocation/5D1C/d/Agent HUD.app/Contents/MacOS/Agent HUD"),
                       URL(fileURLWithPath: "/Volumes/Agent HUD/Agent HUD.app/Contents/MacOS/Agent HUD"),
                       URL(fileURLWithPath: "/Users/me/.Trash/Agent HUD.app/Contents/MacOS/Agent HUD")]
-        for source in PermissionHooks.Source.allCases {
+        for source in PermissionHooks.Source.allCases where source.usesHook {
             let home = try directory(), file = source.configuration(home: home)
             let ours = { HookCommand.make(executable: $0, arguments: "--permission-hook \(source.rawValue)") }
             let installed = { PermissionHooks.commands(in: try PermissionHooks.configuration(source, home: home), source: source) }
@@ -201,6 +201,44 @@ final class PermissionHookTests: XCTestCase, @unchecked Sendable {
         }
         XCTAssertEqual(PermissionHooks.Source.codex.configuration(home: home),
                        CodexLocator.dataDirectory(home: home).appendingPathComponent("hooks.json"))
+    }
+
+    func testAntigravityNativeApprovalsNeverInstallPermissionHooks() throws {
+        let home = try directory(), source = PermissionHooks.Source.antigravity
+        XCTAssertFalse(source.isInstalled(home: home), "a system app outside this home does not establish local sessions")
+        XCTAssertEqual(source.vendor, "Antigravity")
+        XCTAssertEqual(source.sessionID("conversation"), "antigravity:conversation")
+        XCTAssertFalse(source.usesHook)
+        XCTAssertFalse(source.supportsPermissionUpdates)
+        XCTAssertFalse(source.recordsCalls)
+        XCTAssertTrue(source.unanswerableTools.isEmpty)
+
+        let conversations = AntigravitySessions.home(home).appendingPathComponent("antigravity-cli/conversations")
+        try FileManager.default.createDirectory(at: conversations, withIntermediateDirectories: true)
+        XCTAssertTrue(source.isInstalled(home: home))
+        let file = source.configuration(home: home), executable = URL(fileURLWithPath: "/tmp/hud")
+        XCTAssertEqual(file, CompletionHooks.Source.antigravity.configuration(home: home))
+        for enabled in [true, false] {
+            try PermissionHooks.configure(source, enabled: enabled, executable: executable, home: home)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+        }
+
+        let original = Data(#"{"hooks":"native configuration"}"#.utf8)
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try original.write(to: file)
+        for enabled in [true, false] {
+            try PermissionHooks.configure(source, enabled: enabled, executable: executable, home: home)
+            XCTAssertEqual(try Data(contentsOf: file), original)
+        }
+        let object = try XCTUnwrap(try ProviderJSON.read(original).objectValue)
+        XCTAssertEqual(try PermissionHooks.updating(object, source: source, command: "'/tmp/hud' --permission-hook antigravity"), object)
+        XCTAssertEqual(try PermissionHooks.configuration(source, home: home), [:])
+        XCTAssertTrue(PermissionHooks.commands(in: object, source: source).isEmpty)
+        XCTAssertFalse(PermissionHooks.isActive(source, home: home))
+    }
+
+    func testAntigravityPermissionHookCommandExitsWithoutStartingTheApp() {
+        XCTAssertEqual(HookEntry.handle(arguments: ["/tmp/hud", "--permission-hook", "antigravity"]), 0)
     }
 
     func testClaudeAndAntigravityHooksFollowTheDirectoriesTheirReadersFollow() throws {

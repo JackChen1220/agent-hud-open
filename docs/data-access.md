@@ -44,6 +44,8 @@ Per-client fields, endpoints and stored data: [providers](providers.md). Token c
 - Optional completion hooks write one small local record per finished turn (session and turn identity, model, workspace folder name and time) and nothing else; they send no notifications and upload nothing ([completion hooks](session-lifecycle.md#completion-hooks)).
 - Pi's extension and OpenCode's plugin run inside those clients and write only metadata records of their turns — session and turn identity, workspace, the session's title, model, provider and times — beside the client's own data; they make no request and upload nothing ([observers](session-lifecycle.md#observers)).
 
+- Antigravity approvals are read from its already-running local service, without changing its permission settings or installing a tool-execution hook. Only the user's explicit allow-once or deny sends an interaction answer to that same service; credentials and waiting tool inputs stay in memory. Client hooks off stops the observer.
+
 ## Related
 
 [providers.md](providers.md) per-client details · [usage-semantics.md](usage-semantics.md) counting and retention · [session-lifecycle.md](session-lifecycle.md) turn evidence · [../THIRD_PARTY_NOTICES.txt](../THIRD_PARTY_NOTICES.txt) provider protocol references and licenses

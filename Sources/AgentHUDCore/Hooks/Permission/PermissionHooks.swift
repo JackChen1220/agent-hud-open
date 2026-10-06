@@ -7,10 +7,10 @@ import Foundation
 /// output and acts on what it says, so a request can be approved from the HUD instead of the terminal. Saying nothing
 /// is always available and always safe: the client then behaves exactly as it would with no hook installed.
 public enum PermissionHooks {
-    /// Clients with the PermissionRequest hook contract: it runs only when the client is about to ask, and the client
-    /// reads Claude Code's allow/deny answer. Codex CLI and Desktop share one hooks file, WorkBuddy runs CodeBuddy
-    /// Code's engine, ZCode's desktop app and terminal share one engine and one configuration file, and Qwen Code
-    /// reads the answer unchanged; only Claude Code and the Qoder builds apply a permission-rule update sent back.
+    /// Clients whose approvals the HUD can answer. Hook clients read Claude Code's allow/deny answer; Antigravity
+    /// approvals travel through its native local service. Codex CLI and Desktop share one hooks file, WorkBuddy runs
+    /// CodeBuddy Code's engine, and ZCode's desktop app and terminal share one engine and configuration file.
+    /// Only Claude Code and the Qoder builds apply a permission-rule update sent back.
     public enum Source: String, CaseIterable, Sendable {
         case claude
         case codex
@@ -21,6 +21,7 @@ public enum PermissionHooks {
         case workbuddy
         case zcode
         case qwen
+        case antigravity
 
         public var vendor: String {
             switch self {
@@ -33,16 +34,20 @@ public enum PermissionHooks {
             case .workbuddy: return "WorkBuddy"
             case .zcode: return "ZCode"
             case .qwen: return "Qwen"
+            case .antigravity: return "Antigravity"
             }
         }
 
+        /// Native-service approvals do not install or run a permission hook.
+        public var usesHook: Bool { self != .antigravity }
+
         var event: String { "PermissionRequest" }
         /// The id this client's sessions carry in reports, so a request stands beside its session everywhere. The providers
-        /// that read CodeBuddy, WorkBuddy, ZCode and Qwen Code prefix their ids with the client; Claude Code and Codex keep
+        /// that read CodeBuddy, WorkBuddy, ZCode, Qwen Code and Antigravity prefix their ids with the client; Claude Code and Codex keep
         /// the client's own, and the Qoder builds report no sessions.
         func sessionID(_ raw: String) -> String {
             switch self {
-            case .codebuddy, .workbuddy, .zcode, .qwen: return "\(rawValue):\(raw)"
+            case .codebuddy, .workbuddy, .zcode, .qwen, .antigravity: return "\(rawValue):\(raw)"
             case .claude, .codex, .qoder, .qoderCN, .qoderWork: return raw
             }
         }
@@ -52,7 +57,7 @@ public enum PermissionHooks {
         var supportsPermissionUpdates: Bool {
             switch self {
             case .claude, .qoder, .qoderCN, .qoderWork: return true
-            case .codex, .codebuddy, .workbuddy, .zcode, .qwen: return false
+            case .codex, .codebuddy, .workbuddy, .zcode, .qwen, .antigravity: return false
             }
         }
         /// Matched against the tool name; empty is every tool. ZCode rejects an empty matcher and runs a group without
@@ -70,7 +75,7 @@ public enum PermissionHooks {
             case .zcode: return ["AskUserQuestion", "ExitPlanMode"]
             case .qwen: return ["ask_user_question", "exit_plan_mode"]
             case .qoder, .qoderCN, .qoderWork, .codebuddy, .workbuddy: return ["AskUserQuestion", "ExitPlanMode"]
-            case .claude, .codex: return []
+            case .claude, .codex, .antigravity: return []
             }
         }
         /// Whether the client writes Claude Code's session record, where a call answered in the client's own dialog
@@ -93,6 +98,7 @@ public enum PermissionHooks {
             case .workbuddy: return ".workbuddy"
             case .zcode: return ".zcode/cli"
             case .qwen: return ".qwen"
+            case .antigravity: return ".gemini"
             }
         }
 
@@ -100,17 +106,20 @@ public enum PermissionHooks {
             if case .codex = self { return CodexLocator.dataDirectory(home: base) }
             if case .codebuddy = self { return CodeBuddySessions.home(base) }
             if case .qwen = self { return QwenSessions.home(base) }
+            if case .antigravity = self { return AntigravitySessions.home(base) }
             // Claude Code's configuration directory moves with CLAUDE_CONFIG_DIR; the forks have no such variable.
             if case .claude = self { return ClaudeSubscription.directory(home: base) }
             return base.appendingPathComponent(directory, isDirectory: true)
         }
 
-        /// The client's settings file that holds its hooks, in the directory its environment variable moves.
+        /// The client's settings file, in the directory its environment variable moves. Native sources keep this
+        /// location for client identity; permission hook setup never reads or writes it.
         public func configuration(home base: URL) -> URL {
             let name: String
             switch self {
             case .codex: name = "hooks.json"
             case .zcode: name = "config.json"
+            case .antigravity: name = "config/hooks.json"
             default: name = "settings.json"
             }
             return home(base).appendingPathComponent(name)
@@ -129,6 +138,9 @@ public enum PermissionHooks {
             // The session folder is what the usage provider reads; a settings folder alone can be the IDE extension's.
             case .codebuddy, .workbuddy:
                 return fileManager.fileExists(atPath: self.home(home).appendingPathComponent("projects").path)
+            case .antigravity:
+                return AntigravitySessions.roots(home: home, environment: ProcessInfo.processInfo.environment)
+                    .contains { fileManager.fileExists(atPath: $0.path) }
             }
         }
     }
@@ -143,17 +155,21 @@ public enum PermissionHooks {
     }
 
     static func configuration(_ source: Source, home: URL) throws -> [String: ProviderJSON] {
-        try installer(source, home: home).read()
+        guard source.usesHook else { return [:] }
+        return try installer(source, home: home).read()
     }
 
-    static func ownsCommand(_ command: String?, source: Source) -> Bool { HookCommand.runs(command, arguments: arguments(source)) }
+    static func ownsCommand(_ command: String?, source: Source) -> Bool {
+        source.usesHook && HookCommand.runs(command, arguments: arguments(source))
+    }
 
     public static func isActive(_ source: Source, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Bool {
-        guard let object = try? configuration(source, home: home) else { return false }
+        guard source.usesHook, let object = try? configuration(source, home: home) else { return false }
         return !commands(in: object, source: source).isEmpty
     }
 
     static func commands(in configuration: [String: ProviderJSON], source: Source) -> [String] {
+        guard source.usesHook else { return [] }
         let hooks = ProviderJSON.object(configuration)["hooks"]
         let events = source.nestsEvents ? hooks["events"] : hooks
         return (events[source.event].arrayValue ?? []).flatMap { $0["hooks"].arrayValue ?? [] }
@@ -165,6 +181,7 @@ public enum PermissionHooks {
     /// unrecognized layout throws rather than being rewritten.
     public static func configure(_ source: Source, enabled: Bool, executable: URL,
                                  home: URL = FileManager.default.homeDirectoryForCurrentUser) throws {
+        guard source.usesHook else { return }
         try installer(source, home: home).configure(enabled: enabled, executable: executable) {
             try updating($0, source: source, command: $1)
         }
@@ -173,6 +190,7 @@ public enum PermissionHooks {
     /// The configuration with Agent HUD's handlers taken out, or with `command` when it is given: in the first handler
     /// already there, or in a group of its own.
     static func updating(_ configuration: [String: ProviderJSON], source: Source, command: String?) throws -> [String: ProviderJSON] {
+        guard source.usesHook else { return configuration }
         var object = configuration
         guard object["hooks"] == nil || object["hooks"]?.objectValue != nil else { throw ProviderFailure.format }
         var hooks = object["hooks"]?.objectValue ?? [:]
