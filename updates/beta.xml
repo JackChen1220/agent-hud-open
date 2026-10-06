@@ -33,15 +33,35 @@ Requires an Apple Silicon Mac running macOS 14 or later.
       <agenthudMinimumIOSVersion>1.4</agenthudMinimumIOSVersion>
     </item>
     <item>
-      <title>0.4.29</title>
-      <pubDate>Wed, 30 Sep 2026 17:58:10 +0000</pubDate>
-      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.29</link>
-      <sparkle:version>450</sparkle:version>
-      <sparkle:shortVersionString>0.4.29</sparkle:shortVersionString>
+      <title>0.4.34</title>
+      <pubDate>Wed, 07 Oct 2026 02:00:20 +0800</pubDate>
+      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.34</link>
+      <sparkle:version>464</sparkle:version>
+      <sparkle:shortVersionString>0.4.34</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-      <sparkle:informationalUpdate />
-      <description>Agent HUD 0.4.29 supports the App Store iPhone app 1.3. This Mac release predates in-app updates; download it from the release page.</description>
+      <description sparkle:format="markdown"># Agent HUD 0.4.34
+
+## Compatibility
+
+**Requires Agent HUD for iPhone 1.4 or later** for iPhone and Apple Watch sync. Update the iPhone app before updating the Mac. Older iPhone versions cannot read this release's data.
+
+[Get the iPhone app](https://apps.apple.com/app/id6812113619).
+
+Requires an Apple Silicon Mac running macOS 14 or later.
+
+## Changes
+
+- Long usage panels now fit the display height and scroll above a fixed footer, keeping Settings, Stats and host controls visible.
+- Dynamic Dock can be dragged to any position along the top, right, bottom or left display edge. Hold Command to reveal the drag area when logos are hidden, or reset its position in Display settings.
+- Panel height, glow and shadow are prepared during the hover delay without retaining a hidden panel. Hidden glow previews stop rendering, and HUD glow animations share their drawing budget.
+- Opening and closing keep the dock anchored to its display edge and avoid the jump at the end of the animation.
+- Enable immediate opening when the pointer reaches the top display edge directly above the HUD; other hover opening keeps the configured delay.
+- Statistics windows restore their content size correctly after restoring a minimized window.
+</description>
+      <enclosure url="https://github.com/jazzenchen/agent-hud-open/releases/download/v0.4.34/Agent-HUD-0.4.34-arm64.dmg" length="11590047" type="application/octet-stream" sparkle:edSignature="QF8efh6BlZV8iQP9fU0XNrn2hagABKZHcA40kph9Sp74wDNVwnyWj1FyhDE8L5xR044NGXMojGCB7SPAJYYWCw==" />
+      <agenthudMacOnly>false</agenthudMacOnly>
+      <agenthudMinimumIOSVersion>1.4</agenthudMinimumIOSVersion>
     </item>
   </channel>
 </rss>
