@@ -61,8 +61,8 @@ struct NotchGeometry: Equatable {
     /// Where the queue sits, centred on `placement.offset` along its edge and kept on screen. Nothing is drawn
     /// here — the marks stand on their own — so the rect only has to hold them and catch the pointer; the
     /// padding is hover slack, not a visible strip.
-    private static func stripRect(queue: CGSize, frame: CGRect, menuBar: CGFloat,
-                                  placement: ScreenPlacement) -> CGRect {
+    static func stripRect(queue: CGSize, frame: CGRect, menuBar: CGFloat,
+                          placement: ScreenPlacement) -> CGRect {
         // The run is the marks themselves: the backdrop is clipped to this rect, and anything added here
         // would show up as backdrop reaching past the last mark. Whole points, because the spacing is a
         // fraction of the logo and a window on a half point puts every mark on a blurred pixel boundary.
@@ -83,6 +83,37 @@ struct NotchGeometry: Equatable {
             let x = placement.edge == .left ? frame.minX : frame.maxX - thick
             return CGRect(x: x, y: y, width: thick, height: height)
         }
+    }
+
+    /// Parks the queue at the edge nearest the pointer, keeping the originally grabbed point under it.
+    /// `grabFraction` runs left to right on horizontal edges and top to bottom on vertical ones. The offset
+    /// uses the same available travel as `stripRect`, including the queue's own length. `queue` is measured
+    /// in the existing placement's orientation; its run stays the same when the queue turns onto a side.
+    static func dragPlacement(at point: CGPoint, screenFrame: CGRect, queue: CGSize,
+                              placement: ScreenPlacement, grabFraction: CGFloat = 0.5) -> ScreenPlacement {
+        func distance(to edge: HUDEdge) -> CGFloat {
+            switch edge {
+            case .top: return abs(screenFrame.maxY - point.y)
+            case .bottom: return abs(point.y - screenFrame.minY)
+            case .left: return abs(point.x - screenFrame.minX)
+            case .right: return abs(screenFrame.maxX - point.x)
+            }
+        }
+        // Starting from the current edge keeps an exact diagonal tie stable while dragging.
+        let edge = HUDEdge.allCases.reduce(placement.edge) { nearest, candidate in
+            distance(to: candidate) < distance(to: nearest) ? candidate : nearest
+        }
+        let run = (placement.edge.isHorizontal ? queue.width : queue.height).rounded()
+        let length = edge.isHorizontal ? screenFrame.width : screenFrame.height
+        let measuredRun = min(run, length)
+        let travel = length - measuredRun
+        let readingCoordinate = edge.isHorizontal ? point.x - screenFrame.minX : screenFrame.maxY - point.y
+        let origin = readingCoordinate - measuredRun * grabFraction
+        var result = placement
+        result.mode = .logos
+        result.edge = edge
+        result.offset = travel > 0 ? Double(min(1, max(0, origin / travel))) : 0.5
+        return result
     }
 
     var centerX: CGFloat { rect.midX }
@@ -109,15 +140,19 @@ struct NotchGeometry: Equatable {
 
     /// Core of the expanded panel: anchored to the same edge, centred on the collapsed rect, growing inward.
     func expandedFrame(size: CGSize) -> CGRect {
+        let width = min(size.width, screenFrame.width)
+        let height = min(size.height, screenFrame.height)
+        let x = min(screenFrame.maxX - width, max(screenFrame.minX, centerX - width / 2))
+        let y = min(screenFrame.maxY - height, max(screenFrame.minY, rect.midY - height / 2))
         switch edge {
         case .top:
-            return CGRect(x: centerX - size.width / 2, y: screenFrame.maxY - size.height, width: size.width, height: size.height)
+            return CGRect(x: x, y: screenFrame.maxY - height, width: width, height: height)
         case .bottom:
-            return CGRect(x: centerX - size.width / 2, y: screenFrame.minY, width: size.width, height: size.height)
+            return CGRect(x: x, y: screenFrame.minY, width: width, height: height)
         case .left:
-            return CGRect(x: screenFrame.minX, y: rect.midY - size.height / 2, width: size.width, height: size.height)
+            return CGRect(x: screenFrame.minX, y: y, width: width, height: height)
         case .right:
-            return CGRect(x: screenFrame.maxX - size.width, y: rect.midY - size.height / 2, width: size.width, height: size.height)
+            return CGRect(x: screenFrame.maxX - width, y: y, width: width, height: height)
         }
     }
 }

@@ -22,7 +22,9 @@ struct HoverPanelView: View {
     var onOpenAlert: () -> Void = {}
     var onDecideAlert: (PermissionDecision) -> Void = { _ in }
     var waitingRequests: [PermissionRequest] = []
-    private let insets = EdgeInsets(top: 32, leading: 18, bottom: 14, trailing: 18)
+    /// The notch keeps its hardware clearance; a dock leaves room beside its parked logo strip instead.
+    var insets = HoverPanelView.notchInsets
+    static let notchInsets = EdgeInsets(top: 32, leading: 18, bottom: 14, trailing: 18)
 
     private let theme = Theme.island
     private let spacing: CGFloat = 10

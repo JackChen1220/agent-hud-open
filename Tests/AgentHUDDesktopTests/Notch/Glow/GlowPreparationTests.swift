@@ -168,10 +168,45 @@ final class GlowPreparationTests: XCTestCase {
         XCTAssertNil(controller.shadowLayer.contents)
     }
 
-    private func geometry() -> NotchGeometry {
+    @MainActor
+    func testFourEdgeDockPreparationUsesTheSameCanonicalCoreAsOpening() throws {
+        _ = NSApplication.shared
+        for edge in HUDEdge.allCases {
+            let geometry = geometry(edge: edge, mode: .logos)
+            let controller = GlowWindowController(geometry: geometry)
+            defer { controller.close() }
+            let flare = NotchGeometry.expandedTopRadius
+            let horizontal = edge.isHorizontal
+            let card = geometry.expandedFrame(size: CGSize(width: 240 + (horizontal ? flare * 2 : 0),
+                                                           height: 120 + (horizontal ? 0 : flare * 2)))
+            let island = card.insetBy(dx: horizontal ? flare : 0, dy: horizontal ? 0 : flare)
+            let local = GlowWindowController.canonicalIslandFrame(island,
+                panel: GlowWindowController.panelFrame(for: geometry), edge: edge)
+            XCTAssertEqual(island.size, CGSize(width: 240, height: 120), "\(edge): materials use the card core")
+            XCTAssertEqual(local.size, horizontal ? island.size : CGSize(width: island.height, height: island.width))
+            let settings = GlowSettings()
+            let glow = settings.geometry(islandWidth: local.width, islandHeight: local.height, islandRadius: 26)
+            let prepared = controller.prepare(geometry: geometry, island: island, islandRadius: 26, glow: glow,
+                outwardOnly: true, appearance: .idle())
+
+            controller.update(geometry: geometry, island: island, islandRadius: 26, glow: glow,
+                outwardOnly: true, appearance: .idle(), animated: true, prepared: prepared)
+            let shadow = try XCTUnwrap(prepared.shadow)
+            XCTAssertEqual(shadow.image.width, Int((local.width + 90) * geometry.backingScale))
+            XCTAssertEqual(shadow.image.height, Int((local.height + 90) * geometry.backingScale))
+            XCTAssertTrue(controller.shadowLayer.contents as AnyObject? === shadow.image,
+                          "\(edge): opening reuses the prepared shadow bitmap")
+            XCTAssertTrue(controller.glowLayer.contents as AnyObject? === (try XCTUnwrap(prepared.soft)).image)
+        }
+    }
+
+    private func geometry(edge: HUDEdge = .top, mode: HUDMode? = nil) -> NotchGeometry {
         let screen = CGRect(x: -20000, y: -20000, width: 1000, height: 800)
-        return NotchGeometry(screenFrame: screen, mode: .notch, edge: .top, hasNotch: false,
-            rect: CGRect(x: screen.midX - 100, y: screen.maxY - 24, width: 200, height: 24),
+        let queue = edge.isHorizontal ? CGSize(width: 200, height: 24) : CGSize(width: 24, height: 200)
+        let rect = NotchGeometry.stripRect(queue: queue, frame: screen, menuBar: 24,
+                                          placement: ScreenPlacement(edge: edge))
+        return NotchGeometry(screenFrame: screen, mode: mode ?? (edge == .top ? .notch : .logos), edge: edge, hasNotch: false,
+            rect: rect,
             cornerRadius: 12, backingScale: 2, menuBarHeight: 24)
     }
 

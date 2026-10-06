@@ -8,6 +8,8 @@ final class IslandWindowController {
     let panel: OverlayPanel
     private let hosting: TrackingHostingView
 
+    var rootView: IslandRootView { hosting.rootView }
+
     var onPointerChange: ((Bool) -> Void)? {
         didSet { hosting.onPointerChange = onPointerChange }
     }
@@ -32,6 +34,7 @@ final class IslandWindowController {
     func contentHeight(for view: IslandRootView) -> CGFloat {
         var natural = view
         natural.presentationSize = nil
+        natural.presentationFrame = nil
         let content = AnyView(natural.content.fixedSize(horizontal: false, vertical: true))
         // The full panel only exists for this measurement; hovering never keeps a hidden UI alive.
         let measurement = NSHostingView(rootView: content)
@@ -40,7 +43,21 @@ final class IslandWindowController {
 
     func setFrame(_ frame: CGRect) {
         guard panel.frame != frame else { return }
-        panel.setFrame(frame, display: true)
+        let previous = panel.frame
+        panel.setFrame(frame, display: false)
+        // Native canvas changes are immediate. Rebase the existing surface before its next animated
+        // target, so both the card and the marks keep their screen coordinates during that change.
+        let dx = previous.minX - panel.frame.minX
+        let dy = panel.frame.maxY - previous.maxY
+        var root = hosting.rootView
+        root.presentationFrame = root.presentationFrame?.offsetBy(dx: dx, dy: dy)
+        root.logoQueueFrame = root.logoQueueFrame?.offsetBy(dx: dx, dy: dy)
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            hosting.rootView = root
+            hosting.layoutSubtreeIfNeeded()
+        }
     }
 
     /// Part of the window that counts as "the island" for hover purposes (nil = whole window).

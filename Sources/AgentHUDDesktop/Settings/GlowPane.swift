@@ -92,7 +92,7 @@ struct GlowPane: View {
                 SettingsDivider(theme: theme)
                 SettingsToggleRow(
                     label: L10n.text("仅向外扩散", "Outward only"),
-                    subtitle: L10n.text("贴近灵动岛的边缘更浓，向外逐渐变淡。", "Keep the rim defined and fade gently outward."),
+                    subtitle: L10n.text("贴近 HUD 的边缘更浓，向外逐渐变淡。", "Keep the rim defined and fade gently outward."),
                     isOn: binding(\.outwardOnly)
                 )
             }
@@ -120,8 +120,8 @@ struct GlowPane: View {
             return L10n.text("Agent 运行时按工作周期呼吸，空闲时按空闲周期放慢；只有暂停检测或还没有可显示的读数时才静止。",
                              "The glow breathes at the working period while an agent runs and slows to the idle period otherwise; it rests only while detection is paused or no agent has a reading to show.")
         }
-        return density + L10n.text("上方预览会一直播放所选动效；灵动岛上 Agent 运行时按工作周期播放，空闲时按空闲周期放慢。",
-                                   "The preview always plays the selected effect; the notch plays it at the working period while an agent runs and at the idle period otherwise.")
+        return density + L10n.text("上方预览会一直播放所选动效；HUD 上 Agent 运行时按工作周期播放，空闲时按空闲周期放慢。",
+                                   "The preview always plays the selected effect; the HUD plays it at the working period while an agent runs and at the idle period otherwise.")
     }
 }
 
@@ -175,9 +175,8 @@ struct ScreenMetrics: Equatable {
     var islandRadius: CGFloat { notch == nil ? NotchGeometry.fallbackCornerRadius : NotchGeometry.notchCornerRadius }
 }
 
-/// What a screen in logo mode looks like: the marks with the backdrop falling behind them. The curtain is
-/// the same trick the real HUD uses — a flat lip run wider than the preview, clipped back to it, so the
-/// field falls straight down instead of curling in at the ends.
+/// A horizontal sample of the Dynamic Dock's marks and backdrop, independent of the selected screen edge.
+/// The curtain uses the same flat lip as the real HUD, clipped back to the marks' run.
 struct LogoQueuePreview: View {
     let settings: SettingsStore
     let store: UsageStore
@@ -187,9 +186,15 @@ struct LogoQueuePreview: View {
     /// Overrides what the queue shows. Only the snapshot runner uses it, to lay out every bundled mark.
     var marks: [LogoQueueItem]?
 
+    private var samplePlacement: ScreenPlacement {
+        var sample = placement
+        sample.edge = .top
+        return sample
+    }
+
     var body: some View {
         let items = marks ?? LogoQueueItem.queue(rows: store.queueVendors)
-        let config = LogoQueueConfig(items: items, placement: placement, settings: settings.settings)
+        let config = LogoQueueConfig(items: items, placement: samplePlacement, settings: settings.settings)
         let strip = max(metrics.menuBar, config.logo)
         let margin = GlowWindowController.logoEdgeMargin(stripThickness: strip)
         // The lip is run past the marks by the same amount the real backdrop uses, so the preview's field
@@ -216,8 +221,10 @@ struct LogoQueuePreview: View {
                         .init(color: .clear, location: 1),
                     ], startPoint: .leading, endPoint: .trailing)
                 }
-                LogoQueueView(config: config, light: false, previewsMotion: true)
-                    .frame(width: width, height: strip)
+                if placement.showsLogos {
+                    LogoQueueView(config: config, light: false, previewsMotion: true)
+                        .frame(width: width, height: strip)
+                }
             }
             .frame(width: proxy.size.width, alignment: .center)
         }

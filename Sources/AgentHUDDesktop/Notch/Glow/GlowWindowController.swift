@@ -8,6 +8,9 @@ import AgentHUDCore
 final class GlowWindowController {
     let panel: OverlayPanel
     private let host = NSView()
+    /// Render every material in the existing top-edge coordinate space, then turn the canvas toward the
+    /// chosen edge. This keeps the soft bitmap, grid shaders, alerts and shadow on one orientation.
+    private let materialCanvas = CALayer()
     let glowLayer = CALayer()
     let shadowLayer = CALayer()
     private let alertLayer = CALayer()
@@ -69,11 +72,12 @@ final class GlowWindowController {
         host.wantsLayer = true
         host.layer?.masksToBounds = true
         panel.contentView = host
+        host.layer?.addSublayer(materialCanvas)
         for layer in [shadowLayer, glowLayer, alertLayer] {
             layer.contentsGravity = .resize
             layer.contentsScale = geometry.backingScale
             layer.anchorPoint = .zero
-            host.layer?.addSublayer(layer)
+            materialCanvas.addSublayer(layer)
         }
         shadowLayer.opacity = 0
         alertLayer.opacity = 0
@@ -112,25 +116,65 @@ final class GlowWindowController {
     /// Keeps a backdrop to `column`, dying away over `margin` on each side. Passing no column removes the
     /// mask: an island that has grown — for an event, or because the panel opened — wants its whole rim,
     /// not the slice of it that fits the marks' column.
-    private func updateEdgeFade(column: CGRect?, margin: CGFloat, panel: CGRect) {
-        guard let column, panel.width > 0 else {
+    private func updateEdgeFade(column: CGRect?, margin: CGFloat, panel: CGRect, edge: HUDEdge) {
+        let horizontal = edge.isHorizontal
+        let length = horizontal ? panel.width : panel.height
+        guard let column, length > 0 else {
             if host.layer?.mask != nil { host.layer?.mask = nil }
             return
         }
         let bounds = CGRect(origin: .zero, size: panel.size)
-        func stop(_ x: CGFloat) -> NSNumber { NSNumber(value: Double(min(1, max(0, (x - panel.minX) / panel.width)))) }
+        let start = horizontal ? panel.minX : panel.minY
+        let lower = horizontal ? column.minX : column.minY
+        let upper = horizontal ? column.maxX : column.maxY
+        func stop(_ coordinate: CGFloat) -> NSNumber {
+            NSNumber(value: Double(min(1, max(0, (coordinate - start) / length))))
+        }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         edgeFade.frame = bounds
-        edgeFade.startPoint = CGPoint(x: 0, y: 0.5)
-        edgeFade.endPoint = CGPoint(x: 1, y: 0.5)
+        edgeFade.startPoint = horizontal ? CGPoint(x: 0, y: 0.5) : CGPoint(x: 0.5, y: 0)
+        edgeFade.endPoint = horizontal ? CGPoint(x: 1, y: 0.5) : CGPoint(x: 0.5, y: 1)
         edgeFade.colors = [
             CGColor(gray: 0, alpha: 0), CGColor(gray: 0, alpha: 1),
             CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 0),
         ]
-        edgeFade.locations = [stop(column.minX - margin), stop(column.minX),
-                              stop(column.maxX), stop(column.maxX + margin)]
+        edgeFade.locations = [stop(lower - margin), stop(lower), stop(upper), stop(upper + margin)]
         if host.layer?.mask !== edgeFade { host.layer?.mask = edgeFade }
+        CATransaction.commit()
+    }
+
+    /// The island expressed with its parked edge at the top. For vertical queues, increasing x follows
+    /// the marks from top to bottom, preserving agent colours in the same order as their logos.
+    nonisolated static func canonicalIslandFrame(_ island: CGRect, panel: CGRect, edge: HUDEdge) -> CGRect {
+        let local = island.offsetBy(dx: -panel.minX, dy: -panel.minY)
+        switch edge {
+        case .top: return local
+        case .bottom:
+            return CGRect(x: local.minX, y: panel.height - local.maxY, width: local.width, height: local.height)
+        case .left:
+            return CGRect(x: panel.height - local.maxY, y: panel.width - local.maxX,
+                          width: local.height, height: local.width)
+        case .right:
+            return CGRect(x: panel.height - local.maxY, y: local.minX,
+                          width: local.height, height: local.width)
+        }
+    }
+
+    private func orientCanvas(in frame: CGRect, edge: HUDEdge) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        materialCanvas.bounds = CGRect(origin: .zero, size: edge.isHorizontal
+            ? frame.size : CGSize(width: frame.height, height: frame.width))
+        materialCanvas.position = CGPoint(x: frame.width / 2, y: frame.height / 2)
+        let transform: CGAffineTransform
+        switch edge {
+        case .top: transform = .identity
+        case .bottom: transform = CGAffineTransform(scaleX: 1, y: -1)
+        case .left: transform = CGAffineTransform(a: 0, b: -1, c: -1, d: 0, tx: 0, ty: 0)
+        case .right: transform = CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: 0, ty: 0)
+        }
+        materialCanvas.setAffineTransform(transform)
         CATransaction.commit()
     }
 
@@ -145,24 +189,24 @@ final class GlowWindowController {
         pattern: GlowPattern = GlowPattern(),
         drawsGlow: Bool = true
     ) -> PreparedImages {
-        let islandSize = island.size
+        let local = Self.canonicalIslandFrame(island, panel: Self.panelFrame(for: geometry), edge: geometry.edge)
         let scale = geometry.backingScale
-        let softKey = SoftKey(glow: glow, islandSize: islandSize, islandRadius: islandRadius,
+        let softKey = SoftKey(glow: glow, islandSize: local.size, islandRadius: islandRadius,
                               outwardOnly: outwardOnly, stops: appearance.stops, scale: scale)
-        let shadowKey = ShadowKey(size: islandSize, radius: islandRadius, scale: scale)
+        let shadowKey = ShadowKey(size: local.size, radius: islandRadius, scale: scale)
         let visible = !appearance.hidden
         let soft = visible && drawsGlow && !pattern.usesGrid
-            ? GlowRenderer.render(glow: glow, islandSize: islandSize, islandRadius: islandRadius,
+            ? GlowRenderer.render(glow: glow, islandSize: local.size, islandRadius: islandRadius,
                                   outwardOnly: outwardOnly, stops: appearance.stops, scale: scale)
             : nil
         let shadow = visible
-            ? GlowRenderer.renderShadow(width: islandSize.width, height: islandSize.height, cornerRadius: islandRadius, scale: scale)
+            ? GlowRenderer.renderShadow(width: local.width, height: local.height, cornerRadius: islandRadius, scale: scale)
             : nil
         let renderer: GlowFrameRenderer?
         if visible && drawsGlow && (pattern.usesGrid || pattern.effect != .breathe) {
             renderer = GlowFrameRenderer(.init(glow: glow, islandRadius: islandRadius, stops: appearance.stops,
                 scale: scale, pattern: pattern, colorSpace: panel.screen?.colorSpace?.cgColorSpace,
-                islandSize: pattern.usesGrid ? .zero : islandSize, outwardOnly: pattern.usesGrid ? true : outwardOnly))
+                islandSize: pattern.usesGrid ? .zero : local.size, outwardOnly: pattern.usesGrid ? true : outwardOnly))
         } else {
             renderer = nil
         }
@@ -198,7 +242,8 @@ final class GlowWindowController {
         let frame = Self.panelFrame(for: geometry)
         if panel.frame != frame { panel.setFrame(frame, display: false) }
         // The host has not been resized to the new panel frame yet; the fade is measured against it directly.
-        updateEdgeFade(column: backdrop, margin: Self.logoEdgeMargin(for: geometry), panel: frame)
+        updateEdgeFade(column: backdrop, margin: Self.logoEdgeMargin(for: geometry), panel: frame, edge: geometry.edge)
+        orientCanvas(in: frame, edge: geometry.edge)
         glowLayer.contentsScale = geometry.backingScale
         shadowLayer.contentsScale = geometry.backingScale
 
@@ -211,8 +256,8 @@ final class GlowWindowController {
         }
         if !panel.isVisible { panel.orderFrontRegardless() }
 
-        // Island rect in the host's (bottom-left origin) coordinates.
-        let local = CGRect(x: island.minX - frame.minX, y: island.minY - frame.minY, width: island.width, height: island.height)
+        // Bitmaps and shader geometry retain their top-edge convention, including on a vertical dock.
+        let local = Self.canonicalIslandFrame(island, panel: frame, edge: geometry.edge)
         let glowTop = local.maxY - glow.topOffset
         let glowRect = CGRect(x: local.minX - glow.sideInset, y: glowTop - glow.height, width: glow.width, height: glow.height)
 
@@ -224,7 +269,7 @@ final class GlowWindowController {
                                 pattern: pattern, appearance: appearance, motion: motion, prepared: prepared)
             } else {
                 restingKey = nil
-                updateSoftImage(glow: glow, islandSize: island.size, islandRadius: islandRadius, outwardOnly: outwardOnly,
+                updateSoftImage(glow: glow, islandSize: local.size, islandRadius: islandRadius, outwardOnly: outwardOnly,
                                 stops: appearance.stops, scale: geometry.backingScale, pattern: pattern, appearance: appearance,
                                 motion: motion, prepared: prepared)
             }
@@ -257,7 +302,7 @@ final class GlowWindowController {
             alertLayer.opacity = 0
             return
         }
-        applyAlert(alert, vendors: quotaVendors, glow: glow, islandSize: island.size, radius: islandRadius,
+        applyAlert(alert, vendors: quotaVendors, glow: glow, islandSize: local.size, radius: islandRadius,
                    outwardOnly: outwardOnly, scale: geometry.backingScale, pattern: pattern)
     }
 

@@ -1,10 +1,12 @@
 import SwiftUI
+import AgentHUDCore
 
-/// The island silhouette: top corners flare outward with concave curves (where the notch meets the screen edge),
-/// bottom corners are convex. `rect` includes the flares, so the vertical sides sit `topRadius` in from the edges.
+/// One island silhouette on any screen edge. Its two contact corners flare outward; its inward corners are
+/// convex. `rect` includes the flares along the contact edge, outside the core that holds upright content.
 struct IslandShape: Shape, Animatable {
     var topRadius: CGFloat
     var bottomRadius: CGFloat
+    var edge: HUDEdge = .top
 
     var animatableData: AnimatablePair<CGFloat, CGFloat> {
         get { AnimatablePair(topRadius, bottomRadius) }
@@ -15,6 +17,24 @@ struct IslandShape: Shape, Animatable {
     }
 
     func path(in rect: CGRect) -> Path {
+        // Build once against the top edge, then rotate the silhouette into SwiftUI's y-down coordinates.
+        // The view's content never rotates with it.
+        let size = edge.isHorizontal ? rect.size : CGSize(width: rect.height, height: rect.width)
+        let transform: CGAffineTransform
+        switch edge {
+        case .top:
+            transform = CGAffineTransform(translationX: rect.minX, y: rect.minY)
+        case .bottom:
+            transform = CGAffineTransform(a: -1, b: 0, c: 0, d: -1, tx: rect.maxX, ty: rect.maxY)
+        case .left:
+            transform = CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: rect.minX, ty: rect.maxY)
+        case .right:
+            transform = CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: rect.maxX, ty: rect.minY)
+        }
+        return topPath(in: CGRect(origin: .zero, size: size)).applying(transform)
+    }
+
+    private func topPath(in rect: CGRect) -> Path {
         let top = max(0, min(topRadius, rect.width / 2, rect.height / 2))
         let bottom = max(0, min(bottomRadius, (rect.width - 2 * top) / 2, rect.height - top))
         var path = Path()

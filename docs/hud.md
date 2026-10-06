@@ -2,51 +2,52 @@
 
 ## Overview
 
-The HUD sits at the top of every attached display, and each display carries its own. A Mac with a notch keeps the island around it; a display without one shows the watched agents' own logos in a row. Both are backed by the same glow, which reads as a rim around the island and as a backdrop behind the logos. Every display is configured on its own, so a laptop and the monitor beside it need not agree on anything.
+Each display has its own HUD and settings. Notch mode uses the physical notch or a stand-in bar; Dynamic Dock places agent logos along any screen edge. The glow forms a rim around the island or a backdrop behind the logos.
 
 ## Model
 
 | Concept | Meaning |
 |---|---|
-| HUD | One display's presentation: a collapsed shape at the screen's top edge, the panel it opens into, and the glow behind both |
+| HUD | One display's presentation: a collapsed entry on a screen edge, the panel it opens into, and its glow |
 | Notch mode | The island: the physical notch on a Mac that has one, or a bar standing in for it on a display that does not |
-| Logo queue | A row of marks — the watched vendors and any run in the last day — centred at the screen's top edge with no shape behind them |
-| Glow | Colour drawn from the enabled windows' levels — a rim around the island, a curtain falling from the top edge behind a queue |
-| Placement | What one display shows and how large: mode, logo size, logo spacing, whether the marks are drawn |
+| Dynamic Dock | A queue of marks — the watched vendors and any run in the last day — along a screen edge with no shape behind them |
+| Glow | Colour drawn from the enabled windows' levels — a rim around the island, a backdrop falling inward behind the dock |
+| Placement | What one display shows and where: mode, edge, position along the edge, logo size, logo spacing, whether the marks are drawn |
 
 ## Rules
 
 ### Placement
 
-- A display with a notch defaults to notch mode; a display without one defaults to the logo queue, so no screen draws a bar pretending to have a notch.
-- Either mode can be chosen for any display, including a notched one; a queue on a notched Mac is centred on the screen, so the notch covers the marks behind it.
-- A display keeps its own placement, keyed by the display's UUID, and a newly attached display needs no setup.
-- The queue runs along the top edge, centred. Logo size is 12–24 pt and spacing is 0.1–0.6 of the logo; the number of marks that fit is an outcome, never a setting.
+- A display with a notch defaults to notch mode; a display without one defaults to Dynamic Dock, so no screen draws a bar pretending to have a notch.
+- Either mode can be chosen for any display; notch mode stays at the physical notch or the screen's top centre.
+- A display keeps its own placement under its UUID; display settings can reset its position to top centre, or top left for a dock on a notched display, keeping its mode and logo settings.
+- The dock can sit anywhere along the top, right, bottom or left edge, running horizontally on the top and bottom and vertically on the sides; logo size is 12–24 pt and spacing is 0.1–0.6 of the logo.
+- Drag a visible HUD directly to any edge; dragging a notch switches it to Dynamic Dock. With logos hidden, hold Command to reveal the dashed drag area.
 - The marks can be hidden, which leaves the backdrop alone, still where they would have been and as wide.
 
 ### What the queue shows
 
 - The enabled, non-API-billed agents first, in the order they are watched in, then any vendor that ran in the last day without a window on that list, most recently used first.
-- A watched vendor's mark is drawn whether or not it has ever reported anything; a vendor that is only there for having run leaves again a day after its last turn, and a vendor whose Live status is off never arrives that way, since that switch is what says its runs may be reported at all.
-- One mark per piece of artwork rather than per vendor: two Claude windows are one Claude, and so are Codex and ChatGPT, which share OpenAI's mark. A second identical mark would take a place in the row and tell a glance nothing.
-- A mark bobs while any session behind it is live, including a turn blocked on the user, and holds still otherwise, so motion means exactly one thing. Liveness is the store's, the same the panel ranks sessions by.
-- A queue with nothing to show — nothing watched and nothing run — falls back to the screen's notch shape.
-- Marks keep their own artwork at full strength with a hairline outline; a single-colour mark is drawn white. Status colour is carried by the glow behind them, never by the logos.
+- Watched vendors appear before their first reading; vendors shown only for recent activity leave a day after their last turn and never appear with Live status off.
+- Shared artwork appears once: Claude windows share one mark, as do Codex and ChatGPT.
+- Marks bob while a session is live, including one blocked on the user, using the same liveness as the panel.
+- A dock with nothing to show keeps a minimal entry at its saved position without drawing a logo.
+- Marks retain their artwork with a hairline outline; single-colour marks are white, and status colour appears in the glow.
 
 ### Hovering and events
 
-- A collapsed queue takes no mouse events, so clicks reach the menu bar and whatever window is under it; the pointer is followed by an event monitor instead.
-- Hovering opens the panel, inward from the edge the HUD sits on. Hovering can be asked to take Option as well, which leaves an accidental pass over the HUD closed. During the delay, content height, glow and shadow are prepared without retaining a hidden panel; leaving cancels preparation.
-- An event is shown once, on the display the pointer is on: repeating it on every screen would mean dismissing the same thing several times.
+- A visible dock accepts dragging; with logos hidden, clicks pass through until Command reveals its drag area.
+- Hovering opens inward, optionally requiring Option, with the same opening and closing timing on all four edges. During the delay, content height, glow and shadow are prepared without retaining a hidden panel; leaving cancels preparation.
+- Events appear once, on the pointer's display.
 - A successfully ended turn uses a blue outlined speech bubble and a neutral button for opening its session; the reminder reports the turn ending without claiming that the task has passed acceptance.
-- Clicking an event opens the statistics window on what it is about: a completed turn on its session's page in Sessions, a quota event on its agent's card in Tokens, shown if it was not picked and pointed out for a moment, and anything else on Tokens. A session row of the panel opens that session's page and its heading the Sessions list; the chart button and the menu bar's rows open Tokens, with Sessions back at its list.
-- Whatever on the HUD opens another window, the statistics or the settings, collapses the HUD first, so the window is not left underneath it; the pointer has to leave and come back to open it again. Controls that only change the panel, such as a group's metric or an account's page, leave it open.
-- A queue's glow is a backdrop, never a rim: once the panel opens or an event widens the island, the field stops rather than following the new shape around. Only a notch is rimmed.
-- The marks ride over the panel while it is open, so opening the HUD never makes the agents disappear.
+- Events open statistics: completed turns open their Sessions page, quota events reveal and highlight their Tokens card, and other events open Tokens. Panel session rows open that session and the heading opens the list; chart and menu-bar controls open Tokens and reset Sessions to its list.
+- Opening statistics or settings collapses the HUD until the pointer leaves and returns; controls that change only the panel keep it open.
+- A dock's backdrop stops when the panel or an event opens; only notch mode draws a rim.
+- Expanded docks and reminders flare outward at both ends of their contact with the parked edge, while their text stays upright; the marks keep their saved position over the open usage panel, even when its content is shorter than the queue.
 
 ### Usage panel
 
-- Height follows content up to the display's height minus 80 pt; overflow scrolls above fixed settings, statistics and host controls, clear of the notch.
+- Height follows content up to the display's height minus 80 pt; overflow scrolls above fixed settings, statistics and host controls, clear of the notch and dock.
 
 ### Approvals
 
@@ -77,7 +78,8 @@ The HUD sits at the top of every attached display, and each display carries its 
 
 | Setting | Values | Default |
 |---|---|---|
-| `screens[<display UUID>].mode` | `notch`, `logos` | By hardware: `notch` with a notch, `logos` without |
+| `screens[<display UUID>].mode` | `notch`, `logos` (Dynamic Dock) | By hardware: `notch` with a notch, `logos` without |
+| `screens[…].edge` / `offset` | `top`, `right`, `bottom`, `left` / 0–1 along the edge | `top` / 0.5 |
 | `screens[…].logoSize` / `gapScale` | 12–24 pt / 0.1–0.6 of the logo | 20 pt / 0.4 |
 | `screens[…].showsLogos` | Draw the marks, or the backdrop alone | `true` |
 | `screenGlow[<display UUID>].style` | `blur`, `dots`, `ascii`, `blocks`, `braille`, `binary` | `blur` |
