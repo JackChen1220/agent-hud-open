@@ -41,10 +41,10 @@ final class HoverPanelLayoutTests: XCTestCase {
         window.makeKey()
         defer { window.orderOut(nil) }
 
-        // SwiftUI does not expose an AX tree in a headless test process. Its native focus views still report
-        // the laid-out button bounds, so locate the row controls from those real views and click their physical gaps.
+        // SwiftUI's focus proxies can be nested, and a disabled title need not have a proxy. Find the enabled
+        // title and both enabled token controls; the second token row locates the disabled title below it.
         try await waitUntil("the native session controls have laid-out bounds", hosting: hosting) {
-            self.rowTitleFrames(in: hosting).count == 2 && self.rowTokenFrames(in: hosting).count == 2
+            !self.rowTitleFrames(in: hosting).isEmpty && self.rowTokenFrames(in: hosting).count == 2
         }
         let titleBounds = try XCTUnwrap(rowTitleFrames(in: hosting).first)
         let tokenBounds = rowTokenFrames(in: hosting)
@@ -190,6 +190,8 @@ final class HoverPanelLayoutTests: XCTestCase {
             hosting.layoutSubtreeIfNeeded()
             hosting.window?.displayIfNeeded()
             guard Date() < deadline else {
+                print("Native title candidates: \(rowTitleFrames(in: hosting)); token candidates: \(rowTokenFrames(in: hosting))")
+                print(nativeViewHierarchy(in: hosting))
                 XCTFail("Timed out waiting until \(what)")
                 throw LayoutTimeout()
             }
@@ -223,8 +225,31 @@ final class HoverPanelLayoutTests: XCTestCase {
 
     @MainActor
     private func nativeButtonFrames(in hosting: NSView) -> [CGRect] {
-        hosting.subviews.filter { $0.bounds.height > 0 }.map { $0.convert($0.bounds, to: hosting) }
-            .reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
+        var frames: [CGRect] = []
+        func visit(_ view: NSView) {
+            if view.bounds.width > 0, view.bounds.height > 0, !view.isHiddenOrHasHiddenAncestor {
+                let frame = view.convert(view.bounds, to: hosting)
+                if !frames.contains(frame) { frames.append(frame) }
+            }
+            for child in view.subviews { visit(child) }
+        }
+        for child in hosting.subviews { visit(child) }
+        return frames
+    }
+
+    @MainActor
+    private func nativeViewHierarchy(in hosting: NSView) -> String {
+        var lines: [String] = []
+        func visit(_ view: NSView, depth: Int) {
+            lines.append("\(String(repeating: "  ", count: depth))\(type(of: view)) "
+                         + "bounds=\(view.bounds) frame=\(view.convert(view.bounds, to: hosting)) "
+                         + "hidden=\(view.isHiddenOrHasHiddenAncestor) "
+                         + "role=\(String(describing: view.accessibilityRole())) "
+                         + "id=\(String(describing: view.accessibilityIdentifier()))")
+            for child in view.subviews { visit(child, depth: depth + 1) }
+        }
+        visit(hosting, depth: 0)
+        return lines.joined(separator: "\n")
     }
 
     @MainActor
