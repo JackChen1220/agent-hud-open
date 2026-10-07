@@ -15,6 +15,8 @@ protocol TailLog {
     static func contents(of url: URL) async throws -> Data?
     /// Reads one or more complete lines, each ending in a newline, and returns the usage they added.
     static func ingest(_ lines: Data, into summary: inout Summary) throws -> [UsageLedger.Event]
+    /// Whether a multi-chunk line needs its body. Only a confidently identified, irrelevant envelope may be dropped.
+    static func keepsLongLine(prefix: Data) -> Bool
     /// The prompts and compactions read since the last call.
     static func drainMarks(_ summary: inout Summary) -> [UsageLedger.Mark]
     /// Runs once a read of the log ends.
@@ -25,6 +27,7 @@ protocol TailLog {
 }
 
 extension TailLog {
+    static func keepsLongLine(prefix: Data) -> Bool { true }
     static func contents(of url: URL) async throws -> Data? { nil }
     static func drainMarks(_ summary: inout Summary) -> [UsageLedger.Mark] { [] }
     static func finishRead(_ summary: inout Summary, now: Date) {}
@@ -66,6 +69,24 @@ final class TailLogStore<Log: TailLog> {
     private let ledger: UsageLedger
     private let files: LogFiles
     private var entries: [String: Entry] = [:]
+    /// The uncommitted final line, kept across cooperative passes instead of rereading its prefix. It stays out of the
+    /// ledger (which stores no conversation text); a restart safely rereads from the last complete line.
+    private struct PartialRead {
+        var committedOffset: Int
+        var readOffset: Int
+        var carry = Data()
+        var discarding = false
+
+        mutating func append(_ data: Data) {
+            guard !discarding else { return }
+            carry.append(data)
+            if carry.count >= TailLogStore.chunkSize, !Log.keepsLongLine(prefix: Data(carry.prefix(512))) {
+                carry = Data()
+                discarding = true
+            }
+        }
+    }
+    private var partialReads: [String: PartialRead] = [:]
     /// Stored states not decoded yet; most logs are older than the cutoff and never need it.
     private var stored: [String: UsageLedger.FileState] = [:]
     /// Sessions and modification times of grouped logs, for choosing the copy that counts.
@@ -95,6 +116,7 @@ final class TailLogStore<Log: TailLog> {
         if loadedGeneration != generation {
             stored = (try? await ledger.fileStates(source: Log.source)) ?? [:]
             entries = [:]
+            partialReads = [:]
             groups = stored.compactMapValues(\.group)
             modified = stored.compactMapValues { $0.group == nil ? nil : LedgerCopies.signature($0.signature)?.modified }
             loadedGeneration = generation
@@ -121,6 +143,7 @@ final class TailLogStore<Log: TailLog> {
                 updates[log.path] = update
                 if update.entry.offset < update.entry.committed { pass.pending += 1 }
             } catch {
+                partialReads[log.path] = nil
                 pass.failures.append(error)
             }
         }
@@ -156,13 +179,14 @@ final class TailLogStore<Log: TailLog> {
                 }
             }
             for (path, update) in updates { entries[path] = update.entry }
-            for path in removed { entries[path] = nil; stored[path] = nil }
+            for path in removed { entries[path] = nil; stored[path] = nil; partialReads[path] = nil }
             groups = nextGroups
             modified = nextModified
             pass.changed = Array(updates.keys)
             pass.removed = Array(removed)
         } catch {
             // Positions stay where the ledger has them, so the next poll reads the same bytes again.
+            for path in updates.keys { partialReads[path] = nil }
             pass.pending += updates.count
         }
         return pass
@@ -187,6 +211,7 @@ final class TailLogStore<Log: TailLog> {
         }
         pass.filesRead += 1
         if let contents {
+            partialReads[path] = nil
             pass.bytesRead += contents.count - entry.offset
             entry.committed = contents.lastIndex(of: 0x0A).map { $0 + 1 } ?? 0
             repeat {
@@ -200,23 +225,65 @@ final class TailLogStore<Log: TailLog> {
         } else {
             let handle = try FileHandle(forReadingFrom: url)
             defer { try? handle.close() }
-            try handle.seek(toOffset: UInt64(entry.offset))
-            var carry = Data()
+            var partial = partialReads[path] ?? PartialRead(committedOffset: entry.offset, readOffset: entry.offset)
+            if reset || partial.committedOffset != entry.offset || partial.readOffset > file.size {
+                partial = PartialRead(committedOffset: entry.offset, readOffset: entry.offset)
+            }
+            try handle.seek(toOffset: UInt64(partial.readOffset))
             repeat {
                 guard let chunk = try handle.read(upToCount: Self.chunkSize), !chunk.isEmpty else { break }
                 pass.bytesRead += chunk.count
-                carry.append(chunk)
-                guard let newline = carry.lastIndex(of: 0x0A) else { continue }
-                events += try Log.ingest(carry[...newline], into: &entry.summary)
-                marks += Log.drainMarks(&entry.summary)
-                entry.offset += newline + 1
-                carry = Data(carry[(newline + 1)...])
+                var start = 0
+                if !partial.carry.isEmpty || partial.discarding {
+                    if let newline = Self.newline(in: chunk) {
+                        partial.append(chunk[...newline])
+                        if !partial.discarding {
+                            events += try Log.ingest(partial.carry, into: &entry.summary)
+                            marks += Log.drainMarks(&entry.summary)
+                        }
+                        start = newline + 1
+                        entry.offset = partial.readOffset + start
+                        partial.carry = Data()
+                        partial.discarding = false
+                    } else {
+                        partial.append(chunk)
+                        start = chunk.count
+                    }
+                }
+                if start < chunk.count {
+                    // Search only the new chunk, using memchr rather than Data's byte-by-byte Collection search.
+                    if let newline = Self.newline(in: chunk, from: start, last: true) {
+                        events += try Log.ingest(chunk[start...newline], into: &entry.summary)
+                        marks += Log.drainMarks(&entry.summary)
+                        start = newline + 1
+                        entry.offset = partial.readOffset + start
+                    }
+                    partial.append(chunk[start...])
+                }
+                partial.readOffset += chunk.count
             } while Date() < deadline
             // A read the budget stopped before the listed size leaves the rest of the file for the next poll.
-            entry.committed = entry.offset + carry.count >= file.size ? entry.offset : file.size
+            entry.committed = partial.readOffset >= file.size ? entry.offset : file.size
+            partial.committedOffset = entry.offset
+            partialReads[path] = partial.readOffset > entry.offset ? partial : nil
         }
         Log.finishRead(&entry.summary, now: Date())
         return (entry, events, marks, reset)
+    }
+
+    /// Byte offset of the first or last newline; each byte of the new chunk is searched at most once.
+    private static func newline(in data: Data, from start: Int = 0, last: Bool = false) -> Int? {
+        data.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+            guard let base = bytes.baseAddress else { return nil }
+            var position = start, found: Int?
+            while position < bytes.count, let hit = memchr(base + position, 0x0A, bytes.count - position) {
+                let offset = base.distance(to: hit)
+                if !last { return offset }
+                found = offset
+                position = offset + 1
+            }
+            return found
+        }
     }
 
     private static func state(_ entry: Entry) -> UsageLedger.FileState {

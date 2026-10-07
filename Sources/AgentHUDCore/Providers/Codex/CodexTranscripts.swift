@@ -325,6 +325,14 @@ enum CodexRollouts: TailLog {
 
     static func summary(for url: URL) -> CodexTranscript { CodexTranscript() }
 
+    static func keepsLongLine(prefix: Data) -> Bool {
+        // Codex serializes timestamp and type ahead of payload. A response_item is conversation/tool output,
+        // which ingest never uses. Match only the outer header; unknown ordering falls back to retaining the line.
+        let header = String(decoding: prefix, as: UTF8.self)
+        return header.range(of: #"^\s*\{\s*(?:"timestamp"\s*:\s*"[^"\\]*"\s*,\s*)?"type"\s*:\s*"response_item"\s*[,}]"#,
+                            options: .regularExpression) == nil
+    }
+
     static func ingest(_ lines: Data, into transcript: inout CodexTranscript) -> [UsageLedger.Event] {
         for line in lines.split(separator: 0x0A) { transcript.ingest(line) }
         return transcript.drainUsage()
