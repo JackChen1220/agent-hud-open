@@ -149,6 +149,40 @@ final class PiSessionObserverTests: XCTestCase, @unchecked Sendable {
         XCTAssertThrowsError(try PiSessionObserver.read(Data("{}".utf8)))
     }
 
+    func testLatestObserverOwnsNavigationAndCanClearAnOlderTerminal() async throws {
+        let home = try temporaryHome(), paths = OpenAgentPaths(home: home, environment: [:])
+        var captured = observation(.completed, age: 60, turnID: "captured")
+        captured.navigationTarget = .iTermSession(id: "w0t0p0:exact-terminal")
+        try write(JSONEncoder().encode(captured), to: paths.piTurns.appendingPathComponent("captured.json"))
+        let transcript = paths.pi.appendingPathComponent("sessions/workspace/session.jsonl")
+        try write(Data("""
+        {"type":"session","id":"session","cwd":"/workspace","timestamp":"\(now.ISO8601Format())"}
+        """.utf8), to: transcript)
+        let store = OpenAgentLocalStore(paths: paths)
+        let capturedReport = try await report(await store.index(since: now.addingTimeInterval(-86400)))
+        XCTAssertEqual(capturedReport.sessions.first?.navigationTarget, captured.navigationTarget,
+                       "the usage log cannot overwrite a destination its source observer captured")
+        XCTAssertEqual(capturedReport.completions.first?.navigationTarget, captured.navigationTarget)
+
+        var relocated = observation(.completed, age: 30, turnID: "relocated")
+        relocated.navigationTarget = .iTermSession(id: "w1t2p0:new-terminal")
+        try write(JSONEncoder().encode(relocated), to: paths.piTurns.appendingPathComponent("relocated.json"))
+        let moved = try await report(await store.index(since: now.addingTimeInterval(-86400)))
+        XCTAssertEqual(moved.completions.count, 2)
+        XCTAssertTrue(moved.completions.allSatisfy { $0.navigationTarget == relocated.navigationTarget },
+                      "past turns return to the session's current terminal after a resume elsewhere")
+
+        let unsupported = observation(.completed, turnID: "unsupported")
+        try write(JSONEncoder().encode(unsupported), to: paths.piTurns.appendingPathComponent("unsupported.json"))
+        let current = try await report(await store.index(since: now.addingTimeInterval(-86400)))
+        XCTAssertNil(current.sessions.first?.navigationTarget, "a newer source without an exact target clears the older destination")
+        XCTAssertEqual(current.completions.count, 3)
+        XCTAssertTrue(current.completions.allSatisfy { $0.navigationTarget == nil },
+                      "the latest unsupported source clears destinations for every past turn")
+        let oldRecord = try PiSessionObserver.read(JSONEncoder().encode(unsupported))
+        XCTAssertNil(oldRecord.navigationTarget, "observer records before navigation capture remain readable")
+    }
+
     func testNativeExtensionLifecycleRetriesHeartbeatAndPrivacy() async throws {
         let home = try temporaryHome()
         let script = home.appendingPathComponent("observer.mjs"), test = home.appendingPathComponent("test.mjs")
@@ -159,6 +193,9 @@ final class PiSessionObserverTests: XCTestCase, @unchecked Sendable {
         import { join } from 'node:path';
         import observer from './observer.mjs';
         process.env.PI_CODING_AGENT_DIR = process.argv[2];
+        delete process.env.TMUX;
+        process.env.TERM_PROGRAM = 'Apple_Terminal';
+        process.env.ITERM_SESSION_ID = 'inherited-terminal';
         let timer, cleared = 0, clock = 1789000000000;
         Date.now = () => ++clock;
         globalThis.setInterval = (fn, ms) => { assert.equal(ms, 15000); timer = fn; return { unref() {} }; };
@@ -176,6 +213,7 @@ final class PiSessionObserverTests: XCTestCase, @unchecked Sendable {
         const first = rows()[0];
         assert.equal(first.state, 'running');
         assert.equal(first.sessionFile, undefined);
+        assert.equal(first.navigationTarget, undefined, 'an inherited iTerm id does not make another terminal an iTerm target');
         emit('message_end', { message: { role: 'assistant', stopReason: 'error', content: 'private prompt', usage: { input: 99 } } });
         const beating = cleared;
         emit('agent_end');
@@ -206,6 +244,21 @@ final class PiSessionObserverTests: XCTestCase, @unchecked Sendable {
         assert.equal(JSON.stringify(rows()).includes('private prompt'), false);
         assert.equal(JSON.stringify(rows()).includes('usage'), false);
         assert.equal(JSON.stringify(rows()).includes('content'), false);
+        for (const [program, id, tmux, expected] of [
+          ['iTerm.app', 'w7t2p0:exact-terminal', '', { kind: 'iTermSession', id: 'w7t2p0:exact-terminal' }],
+          ['iTerm.app', 'w7t2p0:exact-terminal', '/tmp/tmux,123,0', undefined],
+          ['Apple_Terminal', 'w7t2p0:exact-terminal', '', undefined],
+          ['iTerm.app', '', '', undefined],
+        ]) {
+          process.env.TERM_PROGRAM = program;
+          process.env.ITERM_SESSION_ID = id;
+          process.env.TMUX = tmux;
+          emit('agent_start');
+          emit('message_end', { message: { role: 'assistant', stopReason: 'stop' } });
+          emit('agent_settled');
+          const latest = rows().sort((a, b) => b.observedAtMs - a.observedAtMs)[0];
+          assert.deepEqual(latest.navigationTarget, expected);
+        }
         // An unwritable inbox cannot break an agent run.
         process.env.PI_CODING_AGENT_DIR = join(process.argv[2], 'blocked');
         writeFileSync(process.env.PI_CODING_AGENT_DIR, 'file instead of directory');

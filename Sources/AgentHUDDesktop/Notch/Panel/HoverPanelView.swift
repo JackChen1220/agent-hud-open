@@ -20,6 +20,11 @@ struct HoverPanelView: View {
     var height: CGFloat? = nil
     var alert: IslandAlert? = nil
     var onOpenAlert: () -> Void = {}
+    var onOpenAlertSession: () -> Void = {}
+    var onOpenAlertUsage: () -> Void = {}
+    var sessionNavigationFailed = false
+    var onOpenListedSession: (String) -> Void = { _ in }
+    var failedListedSessionID: String? = nil
     var onDecideAlert: (PermissionDecision) -> Void = { _ in }
     var waitingRequests: [PermissionRequest] = []
     /// The notch keeps its hardware clearance; a dock leaves room beside its parked logo strip instead.
@@ -63,8 +68,10 @@ struct HoverPanelView: View {
                     .font(.ui(11)).foregroundStyle(theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if let alert {
+            if let alert, !alert.isSessionEvent {
                 IslandAlertInlineView(alert: alert, onOpen: onOpenAlert, onDecide: onDecideAlert,
+                                      onOpenSession: onOpenAlertSession, onOpenUsage: onOpenAlertUsage,
+                                      sessionNavigationFailed: sessionNavigationFailed,
                                       waitingRequests: waitingRequests).id(alert.id)
                     .padding(.bottom, 4)
             }
@@ -107,43 +114,31 @@ struct HoverPanelView: View {
     /// What is running right now: every running session, up to `sessionRowLimit` of them, and the rest as a count.
     /// The statistics window's range never applies here — that range belongs to the session card, which answers a
     /// different question. When nothing is running, the sessions that ended most recently take the same rows.
-    /// The header opens the statistics window's Sessions page, a row that session's own page.
+    /// The header opens the session list; each title returns to its agent and its token count opens usage.
     private var sessionLine: some View {
         let rows = Self.sessionRows(store)
         let running = rows.running, shown = rows.shown
         return VStack(alignment: .leading, spacing: 6) {
             Button { openSessions() } label: {
-                HStack(spacing: 8) {
-                    Circle().fill(running.isEmpty ? theme.tertiary : theme.status(.ok)).frame(width: 6, height: 6)
-                    Text(L10n.text("活跃会话", "Active sessions")).foregroundStyle(theme.text)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(L10n.text("活跃会话", "Active sessions"))
+                        .font(.ui(13, .semibold)).foregroundStyle(theme.text)
                     Spacer()
                     Text(running.isEmpty
                          ? L10n.text("最近结束", "Recently ended")
                          : L10n.text("\(running.count) 个运行中", "\(running.count) running"))
-                        .foregroundStyle(theme.secondary)
+                        .font(.tabular(12)).foregroundStyle(theme.secondary)
                 }
                 .contentShape(Rectangle())
             }
             .help(L10n.text("查看会话列表", "Show sessions"))
+            .accessibilityIdentifier("island-sessions")
             if shown.isEmpty {
                 Text(L10n.text("还没有会话", "No sessions yet"))
                     .foregroundStyle(theme.secondary)
             } else {
                 ForEach(shown) { session in
-                    Button { openSessions(session.id) } label: {
-                        HStack(spacing: 8) {
-                            Circle().fill(sessionDotColor(session)).frame(width: 6, height: 6)
-                            Text("\(Self.shortTask(session.task)) · \(session.terminal ?? "—")")
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                            Spacer(minLength: 8)
-                            Text("\(TokenFormat.short(session.tokensIn + session.tokensOut)) tok")
-                                .fixedSize()
-                        }
-                        .foregroundStyle(theme.secondary)
-                        .contentShape(Rectangle())
-                    }
-                    .help(session.task)
+                    sessionRow(session)
                 }
                 if rows.more > 0 {
                     Button { openSessions() } label: {
@@ -157,6 +152,55 @@ struct HoverPanelView: View {
         .font(.ui(12))
         .padding(.top, 8)
         .topDivider(theme.divider)
+    }
+
+    private func sessionRow(_ session: LiveSession) -> some View {
+        let canReturn = session.navigationTarget != nil
+        let failed = failedListedSessionID == session.id
+        let tokens = "\(TokenFormat.short(session.tokensIn + session.tokensOut)) tok"
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                Button { onOpenListedSession(session.id) } label: {
+                    HStack(spacing: 8) {
+                        Circle().fill(sessionDotColor(session)).frame(width: 6, height: 6)
+                        Text("\(Self.shortTask(session.task)) · \(session.terminal ?? "—")")
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .disabled(!canReturn)
+                .help(session.task + "\n" + (canReturn
+                      ? L10n.text("返回会话", "Return to session")
+                      : L10n.text("无法返回此会话", "Session return unavailable")))
+                .accessibilityLabel(L10n.text("返回会话：", "Return to session: ") + session.task)
+                .accessibilityHint(canReturn ? L10n.text("在 agent 中打开", "Open in the agent")
+                                   : L10n.text("无法返回此会话", "Session return unavailable"))
+                .accessibilityIdentifier("island-session-return-\(session.id)")
+
+                Button { openSessions(session.id) } label: {
+                    Text(tokens)
+                        .fixedSize()
+                        .contentShape(Rectangle())
+                }
+                .help(L10n.text("查看此会话的用量", "View this session's token usage"))
+                .accessibilityLabel(L10n.text("查看会话用量：", "View token usage: ") + session.task)
+                .accessibilityValue(tokens)
+                .accessibilityIdentifier("island-session-usage-\(session.id)")
+            }
+            .foregroundStyle(theme.secondary)
+            if failed {
+                Text(canReturn
+                     ? L10n.text("返回失败，点击标题重试", "Couldn't return. Click the title to retry.")
+                     : L10n.text("无法返回此会话", "Session return unavailable"))
+                    .font(.ui(11))
+                    .foregroundStyle(theme.status(.warning))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 14)
+            }
+        }
     }
 
     /// The statistics window on its Sessions page: the list, or one session's page.

@@ -53,7 +53,8 @@ public enum CompletionHooks {
         let title = event.workspace.map { URL(fileURLWithPath: $0).lastPathComponent }.flatMap { $0.isEmpty ? nil : $0 }
         return SessionCompletion(sessionID: "\(source.rawValue):\(event.session)", vendor: source.vendor, turnID: event.turn,
             task: title.map { "\(source.vendor) · \($0)" } ?? source.vendor,
-            model: event.model ?? source.vendor, startedAt: nil, completedAt: now)
+            model: event.model ?? source.vendor, startedAt: nil, completedAt: now,
+            navigationTarget: source == .antigravity ? .antigravityConversation(id: event.session) : nil)
     }
 
     public static func record(source: Source, data: Data, now: Date = Date(), directory: URL = directory) throws {
@@ -73,7 +74,10 @@ public enum CompletionHooks {
         guard FileManager.default.fileExists(atPath: inbox.folder.path) else { return [] }
         return try inbox.files(keys: [.contentModificationDateKey]).compactMap { url in
             guard let date = try url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, date >= since else { return nil }
-            let event = try JSONDecoder().decode(SessionCompletion.self, from: HookInbox.data(of: url))
+            var event = try JSONDecoder().decode(SessionCompletion.self, from: HookInbox.data(of: url))
+            if source == .antigravity, event.sessionID.hasPrefix("antigravity:") {
+                event.navigationTarget = .antigravityConversation(id: String(event.sessionID.dropFirst("antigravity:".count)))
+            }
             return event.vendor == source.vendor && event.completedAt >= since ? event : nil
         }
     }

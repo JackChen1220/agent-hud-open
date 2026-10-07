@@ -50,6 +50,13 @@ struct OpenAgentSession: Sendable {
     var end: Date?
     var turns: [SessionTurn] = []
     var completions: [SessionCompletion] = []
+    /// A missing target in the latest observer reading clears an older terminal destination.
+    var navigation: NavigationObservation?
+
+    struct NavigationObservation: Sendable {
+        let observedAt: Date
+        let target: SessionNavigationTarget?
+    }
 
     /// Which copy's title wins when copies of one session merge: a name or first prompt from the session's own log,
     /// then the name Pi's observer saw when a turn settled, then a name standing in for a missing title.

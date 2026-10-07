@@ -41,11 +41,12 @@ public enum SnapshotRunner {
             let completion = SessionCompletion(sessionID: "snapshot", vendor: vendor, turnID: "preview",
                 task: L10n.text("自动更新检查", "Automatic update checks"),
                 model: ["Claude": "Fable 5.1", "Codex": "gpt-6.1-sol"][vendor] ?? "deepseek-v4-flash", startedAt: now.addingTimeInterval(-83), completedAt: now,
-                message: L10n.text("已改好：每次打开应用立即检查更新，之后每小时检查一次。后台发现新版本时，HUD 会显示更新入口。", "The app now checks for updates every time it opens, then once an hour. When a new version is available, the HUD shows an update shortcut."))
+                message: L10n.text("已改好：每次打开应用立即检查更新，之后每小时检查一次。后台发现新版本时，HUD 会显示更新入口。", "The app now checks for updates every time it opens, then once an hour. When a new version is available, the HUD shows an update shortcut."),
+                navigationTarget: vendor == "Claude" ? .iTermSession(id: "snapshot-terminal")
+                    : vendor == "Codex" ? .codexThread(id: "00000000-0000-0000-0000-000000000001") : nil)
             let alert = IslandAlert.completion(completion)
             save("alert-completion-\(vendor)-compact", IslandScene(store: store, settings: settings, open: false, light: false, alert: alert), folder: folder, scheme: .dark)
             save("alert-completion-\(vendor)-detail", IslandScene(store: store, settings: settings, open: true, light: false, alert: alert, showsAlertDetails: true), folder: folder, scheme: .dark)
-            save("alert-completion-\(vendor)-inline", IslandScene(store: store, settings: settings, open: true, light: false, alert: alert), folder: folder, scheme: .dark)
         }
 
         // A tool call waiting for its user: the reminder that holds, and what hovering turns it into.
@@ -73,13 +74,29 @@ public enum SnapshotRunner {
             let alert = IslandAlert.permission(request)
             save("alert-permission-\(name)-compact", IslandScene(store: store, settings: settings, open: false, light: false, alert: alert), folder: folder, scheme: .dark)
             save("alert-permission-\(name)-detail", IslandScene(store: store, settings: settings, open: true, light: false, alert: alert, showsAlertDetails: true), folder: folder, scheme: .dark)
-            save("alert-permission-\(name)-inline", IslandScene(store: store, settings: settings, open: true, light: false, alert: alert), folder: folder, scheme: .dark)
             guard name == "bash" else { continue }
             let queue = DemoData.permissionRequests()
             let queued = IslandAlert.permission(queue[0])
             save("alert-permission-queued-compact", IslandScene(store: store, settings: settings, open: false, light: false, alert: queued, waitingRequests: queue), folder: folder, scheme: .dark)
             save("alert-permission-queued-detail", IslandScene(store: store, settings: settings, open: true, light: false, alert: queued, showsAlertDetails: true, waitingRequests: queue), folder: folder, scheme: .dark)
         }
+
+        let waiting = DemoData.permissionRequests()
+        let reply = IslandAlert.completion(SessionCompletion(
+            sessionID: "snapshot", vendor: "Codex", turnID: "shared-panel",
+            task: L10n.text("修复会话跳转", "Fix session navigation"), model: "gpt-6.1-sol",
+            startedAt: Date().addingTimeInterval(-60), completedAt: Date(),
+            message: L10n.text("标题返回 agent，token 数字打开会话用量。", "Titles return to the agent; token counts open session usage."),
+            navigationTarget: .codexThread(id: "00000000-0000-0000-0000-000000000001")))
+        let sessionEvents: [IslandAlert] = [.permission(waiting[0]), reply]
+        save("alert-events-permission-selected", IslandScene(store: store, settings: settings, open: true, light: false,
+                                                            alert: sessionEvents[0], showsAlertDetails: true,
+                                                            waitingRequests: waiting, sessionEvents: sessionEvents),
+             folder: folder, scheme: .dark)
+        save("alert-events-reply-selected", IslandScene(store: store, settings: settings, open: true, light: false,
+                                                       alert: reply, showsAlertDetails: true,
+                                                       waitingRequests: waiting, sessionEvents: sessionEvents),
+             folder: folder, scheme: .dark)
 
         save("island-collapsed", IslandScene(store: store, settings: settings, open: false, light: false), folder: folder, scheme: .dark)
         for style in GlowStyle.allCases where style != .blur {
@@ -143,6 +160,30 @@ public enum SnapshotRunner {
         settings.update { $0.glowStyle = .blur; $0.glowEffect = .breathe }
         save("island-expanded-dark", IslandScene(store: store, settings: settings, open: true, light: false), folder: folder, scheme: .dark)
         save("island-expanded-light", IslandScene(store: store, settings: settings, open: true, light: true), folder: folder, scheme: .light)
+        // Session titles and token counts remain separate controls, including unavailable and failed returns.
+        if let codex = settings.agents.first(where: { $0.vendor == "Codex" }) {
+            let saved = settings.settings
+            settings.update { $0.showIslandQuota = false; $0.showIslandTokens = false; $0.showIslandSessions = true }
+            let sessions = UsageStore(provider: DemoUsageProvider(), settings: settings)
+            let now = Date()
+            sessions.replace(report: UsageReport(generatedAt: now, snapshots: [], sessions: [
+                LiveSession(id: "snapshot-native", agentId: codex.id,
+                            task: L10n.text("修复会话跳转", "Fix session navigation"), terminal: "app",
+                            startedAt: now.addingTimeInterval(-60), pctOfWindow: nil,
+                            tokensIn: 250_000, tokensOut: 25_000, observedAt: now,
+                            navigationTarget: .codexThread(id: "00000000-0000-0000-0000-000000000001")),
+                LiveSession(id: "snapshot-unavailable", agentId: codex.id,
+                            task: L10n.text("检查用量统计", "Check usage statistics"), terminal: "workspace",
+                            startedAt: now.addingTimeInterval(-120), pctOfWindow: nil,
+                            tokensIn: 1_600_000, tokensOut: 100_000, observedAt: now)
+            ]))
+            save("island-session-actions", IslandScene(store: sessions, settings: settings, open: true, light: false),
+                 folder: folder, scheme: .dark)
+            save("island-session-actions-failed", IslandScene(store: sessions, settings: settings, open: true, light: false,
+                                                            failedListedSessionID: "snapshot-native"),
+                 folder: folder, scheme: .dark)
+            settings.update { $0 = saved }
+        }
         let scrollScene = IslandScene(store: store, settings: settings, open: true, light: false, maximumPanelHeight: 420)
         save("island-scroll-top", scrollScene, folder: folder, scheme: .dark)
         save("island-scroll-bottom", scrollScene, folder: folder, scheme: .dark, scrollToBottom: true)
@@ -525,11 +566,12 @@ public enum SnapshotRunner {
         }
 
         let originalAgents = store.settings.agents
-        store.settings.updateAgents { agents in
-            agents + (0..<40).map {
-                AgentDescriptor(id: "sizing-\($0)", vendor: "Preview \($0)", model: "Quota", source: "Snapshot", enabled: true)
-            }
+        let originalPickedAgents = store.pickedAgents
+        let sizingAgents = (0..<40).map {
+            AgentDescriptor(id: "sizing-\($0)", vendor: "Preview \($0)", model: "Quota", source: "Snapshot", enabled: true)
         }
+        store.settings.updateAgents { $0 + sizingAgents }
+        store.pickedAgents = store.shownAgents.union(sizingAgents.map(\.vendor))
         for _ in 0..<6 {
             try? await Task.sleep(for: .milliseconds(50))
             hosting.layoutSubtreeIfNeeded()
@@ -540,6 +582,7 @@ public enum SnapshotRunner {
             print("snapshot adaptive \(capped && overflow > 0 ? "PASS" : "FAILED"): screen cap height=\(window.frame.height) overflow=\(overflow)")
         }
         store.settings.updateAgents { _ in originalAgents }
+        store.pickedAgents = originalPickedAgents
         for _ in 0..<6 {
             try? await Task.sleep(for: .milliseconds(50))
             hosting.layoutSubtreeIfNeeded()
@@ -652,20 +695,30 @@ struct IslandScene: View {
     var alert: IslandAlert? = nil
     var showsAlertDetails = false
     var waitingRequests: [PermissionRequest] = []
+    var sessionEvents: [IslandAlert] = []
+    var failedListedSessionID: String? = nil
     /// A fixed effect time for the dot and ASCII glow styles.
     var glowTime: Double? = nil
 
     private var panelHeight: CGFloat {
         if showsAlertDetails, let alert {
-            let hosting = NSHostingView(rootView: IslandAlertDetailView(alert: alert, onOpen: {}, onDecide: { _ in },
-                                                                         waitingRequests: waitingRequests)
+            let detail: AnyView
+            if alert.isSessionEvent {
+                detail = AnyView(IslandEventPanelView(alert: alert, onOpen: {}, onDecide: { _ in },
+                                                     events: sessionEvents, waitingRequests: waitingRequests))
+            } else {
+                detail = AnyView(IslandAlertDetailView(alert: alert, onOpen: {}, onDecide: { _ in },
+                                                      waitingRequests: waitingRequests))
+            }
+            let hosting = NSHostingView(rootView: detail
                             .padding(alert.detailInsets.map {
                     EdgeInsets(top: max($0.top, 38), leading: $0.leading, bottom: $0.bottom, trailing: $0.trailing)
                 } ?? EdgeInsets(top: 38 + alert.detailTopInset, leading: 24, bottom: 22, trailing: 24))
                 .frame(width: alert.detailWidth).fixedSize(horizontal: false, vertical: true))
             return hosting.fittingSize.height
         }
-        let hosting = NSHostingView(rootView: HoverPanelView(store: store, onOpenStats: {}, alert: alert)
+        let hosting = NSHostingView(rootView: HoverPanelView(store: store, onOpenStats: {}, alert: alert,
+                                                            failedListedSessionID: failedListedSessionID)
             .frame(width: IslandController.expandedWidth).fixedSize(horizontal: false, vertical: true))
         return max(80, min(hosting.fittingSize.height, maximumPanelHeight))
     }
@@ -718,7 +771,8 @@ struct IslandScene: View {
                 store: store, isOpen: open,
                 collapsedSize: CGSize(width: cameraWidth + NotchGeometry.collapsedTopRadius * 2, height: closedHeight),
                 collapsedTopRadius: NotchGeometry.collapsedTopRadius, collapsedBottomRadius: 14,
-                lightBorder: light, onOpenStats: {}, alert: alert, waitingRequests: waitingRequests,
+                lightBorder: light, onOpenStats: {}, alert: alert, failedListedSessionID: failedListedSessionID,
+                waitingRequests: waitingRequests, sessionEvents: sessionEvents,
                 showsAlertDetails: showsAlertDetails, presentationSize: islandSize
             )
                 .frame(width: islandSize.width + flare * 2, height: islandSize.height)

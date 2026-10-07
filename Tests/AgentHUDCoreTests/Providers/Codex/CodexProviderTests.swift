@@ -104,6 +104,100 @@ final class CodexProviderTests: XCTestCase {
                        "the collector's path reaches the index even before its own watcher reports the append")
     }
 
+    func testOnlyDesktopRolloutsNavigateToTheirThreadAfterTheCacheReopens() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let now = Date(timeIntervalSince1970: 1_789_000_000)
+        let origins = [("desktop", "vscode", "Codex Desktop"), ("cli", "cli", "Codex Desktop"),
+                       ("exec", "exec", "Codex Desktop"), ("ide", "vscode", "codex_vscode"),
+                       ("unknown", "other", "new-client")]
+        for (id, source, origin) in origins {
+            let rows = [line(type: "session_meta", payload: ["id": id, "cwd": "/same-project", "source": source, "originator": origin], at: now.ISO8601Format()),
+                        line(payload: ["type": "task_started", "turn_id": "turn"], at: now.ISO8601Format()),
+                        line(payload: ["type": "task_complete", "turn_id": "turn"], at: now.addingTimeInterval(1).ISO8601Format())]
+            try Data((rows.joined(separator: "\n") + "\n").utf8).write(to: directory.appendingPathComponent("rollout-\(id).jsonl"))
+        }
+        let database = directory.appendingPathComponent("ledger.sqlite")
+        let initial = CodexTranscriptStore(roots: [directory], ledger: try UsageLedger(url: database))
+        let indexed = await initial.index(since: .distantPast)
+        XCTAssertEqual(indexed.sessions.first(where: { $0.transcript.id == "desktop" })?.transcript.navigationTarget, .codexThread(id: "desktop"))
+        let reopened = CodexTranscriptStore(roots: [directory], ledger: try UsageLedger(url: database))
+        let provider = CodexUsageProvider(readLimits: { throw UsageProviderError("signed out") }, transcripts: reopened,
+            history: QuotaHistoryStore(), clock: { now.addingTimeInterval(2) })
+        let report = try await provider.fetchUsage(agents: [], historyHours: 168)
+        XCTAssertEqual(report.sessions.count, origins.count)
+        XCTAssertEqual(report.completions.count, origins.count)
+        for session in report.sessions {
+            let expected: SessionNavigationTarget? = session.id == "desktop" ? .codexThread(id: session.id) : nil
+            XCTAssertEqual(session.navigationTarget, expected)
+            XCTAssertEqual(report.completions.first(where: { $0.sessionID == session.id })?.navigationTarget, expected)
+        }
+    }
+
+    func testCurrentCodexOriginRoutesSameDirectorySessionsAndAllCachedCompletions() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let now = Date(timeIntervalSince1970: 1_789_000_000)
+        let origins = directory.appendingPathComponent("origins")
+        try CodexSessionOrigins.prepare(directory: origins)
+        for (id, source, origin) in [("a", "vscode", "Codex Desktop"), ("b", "cli", "codex_cli_rs")] {
+            var rows = [line(type: "session_meta", payload: ["id": id, "cwd": "/same-project", "source": source, "originator": origin], at: now.ISO8601Format())]
+            for turn in ["first", "second"] {
+                rows.append(line(payload: ["type": "task_started", "turn_id": turn], at: now.ISO8601Format()))
+                rows.append(line(payload: ["type": "task_complete", "turn_id": turn], at: now.addingTimeInterval(1).ISO8601Format()))
+            }
+            try Data((rows.joined(separator: "\n") + "\n").utf8).write(to: directory.appendingPathComponent("rollout-\(id).jsonl"))
+        }
+        let ledger = directory.appendingPathComponent("ledger.sqlite")
+        _ = await CodexTranscriptStore(roots: [directory], ledger: try UsageLedger(url: ledger)).index(since: .distantPast)
+        let store = CodexTranscriptStore(roots: [directory], ledger: try UsageLedger(url: ledger))
+        let liveTargets: [String: SessionNavigationTarget] = ["a": .iTermSession(id: "daemon-pane-a"), "b": .iTermSession(id: "daemon-pane-b")]
+        let provider = CodexUsageProvider(readLimits: { throw UsageProviderError("signed out") }, transcripts: store,
+            history: QuotaHistoryStore(), clock: { now.addingTimeInterval(10) }, sessionOriginsDirectory: origins,
+            readTerminalOrigins: { _ in liveTargets })
+        XCTAssertTrue(provider.watchedDirectories?.contains(origins) == true)
+
+        func assertTargets(_ report: UsageReport, a: SessionNavigationTarget?, b: SessionNavigationTarget?,
+                           file: StaticString = #filePath, line: UInt = #line) {
+            XCTAssertEqual(report.sessions.count, 2, file: file, line: line)
+            XCTAssertEqual(report.completions.count, 4, file: file, line: line)
+            for (id, expected) in [("a", a), ("b", b)] {
+                XCTAssertEqual(report.sessions.first(where: { $0.id == id })?.navigationTarget, expected, file: file, line: line)
+                XCTAssertTrue(report.completions.filter { $0.sessionID == id }.allSatisfy { $0.navigationTarget == expected }, file: file, line: line)
+            }
+        }
+        func record(_ id: String, host: CodexSessionOrigins.Host, target: String?, at: Date) throws {
+            let payload = try JSONSerialization.data(withJSONObject: ["session_id": id, "hook_event_name": "UserPromptSubmit"])
+            let environment = target.map { ["TERM_PROGRAM": "iTerm.app", "ITERM_SESSION_ID": $0] } ?? [:]
+            try CodexSessionOrigins.record(data: payload, host: host, environment: environment, now: at, directory: origins)
+        }
+
+        // A current daemon CLI overrides the rollout's original Desktop identity; cwd never binds two sessions.
+        assertTargets(try await provider.fetchUsage(agents: [], historyHours: 168), a: liveTargets["a"], b: liveTargets["b"])
+        try record("a", host: .cli, target: "embedded-pane-a", at: now)
+        try record("b", host: .cli, target: "embedded-pane-b", at: now)
+        assertTargets(try await provider.fetchUsage(agents: [], historyHours: 168),
+                      a: .iTermSession(id: "embedded-pane-a"), b: .iTermSession(id: "embedded-pane-b"))
+        try record("a", host: .daemon, target: "inherited-wrong-pane", at: now.addingTimeInterval(1))
+        assertTargets(try await provider.fetchUsage(agents: [], historyHours: 168), a: liveTargets["a"], b: .iTermSession(id: "embedded-pane-b"))
+        try record("a", host: .cli, target: nil, at: now.addingTimeInterval(2))
+        assertTargets(try await provider.fetchUsage(agents: [], historyHours: 168), a: nil, b: .iTermSession(id: "embedded-pane-b"))
+        try record("a", host: .desktop, target: "inherited-wrong-pane", at: now.addingTimeInterval(3))
+        assertTargets(try await provider.fetchUsage(agents: [], historyHours: 168), a: .codexThread(id: "a"), b: .iTermSession(id: "embedded-pane-b"))
+        try record("a", host: .daemon, target: nil, at: now.addingTimeInterval(4))
+        let moving = CodexUsageProvider(readLimits: { throw UsageProviderError("signed out") }, transcripts: store,
+            history: QuotaHistoryStore(), clock: { now.addingTimeInterval(10) }, sessionOriginsDirectory: origins,
+            readTerminalOrigins: { _ in
+                let payload = try! JSONSerialization.data(withJSONObject: ["session_id": "a", "hook_event_name": "UserPromptSubmit"])
+                try? CodexSessionOrigins.record(data: payload, host: .cli, environment: [:],
+                    now: now.addingTimeInterval(5), directory: origins)
+                return liveTargets
+            })
+        assertTargets(try await moving.fetchUsage(agents: [], historyHours: 168), a: nil, b: .iTermSession(id: "embedded-pane-b"))
+        XCTAssertEqual(CodexSessionOrigins.read(directory: origins)["a"]?.at, now.addingTimeInterval(5),
+                       "a host change during the async daemon lookup is applied to this report")
+    }
+
     func testForkHistoryIsDeduplicatedButInternalModelUsageIsIncluded() {
         var t = CodexTranscript()
         ingest(&t, type: "session_meta", payload: ["id":"child", "timestamp":"2026-09-07T09:00:00Z", "source":["subagent":["thread_spawn":["parent_thread_id":"parent"]]]])

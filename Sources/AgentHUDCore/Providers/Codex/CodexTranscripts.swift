@@ -25,6 +25,11 @@ public struct CodexTranscript: Codable, Sendable {
     public private(set) var id: String?
     public private(set) var cwd: String?
     public private(set) var client = "Codex"
+    /// The rollout's authoritative client distinguishes Desktop from a CLI that inherited its originator.
+    public var navigationTarget: SessionNavigationTarget? {
+        guard client == "Desktop", let id, !id.isEmpty else { return nil }
+        return .codexThread(id: id)
+    }
     public private(set) var isSubagent = false
     public private(set) var isInternal = false
     /// The thread that started this rollout's sub-agent: a spawned agent names it in its source, a guardian beside it.

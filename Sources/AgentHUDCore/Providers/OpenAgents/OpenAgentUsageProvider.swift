@@ -195,7 +195,7 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
                 terminal: item.workspace.map { URL(fileURLWithPath: $0).lastPathComponent }, startedAt: start, endedAt: running ? nil : end,
                 pctOfWindow: nil, tokensIn: unique.reduce(0) { $0 + $1.tokensIn }, tokensOut: unique.reduce(0) { $0 + $1.tokensOut },
                 client: item.client.name, transcriptPath: item.path.isEmpty ? nil : item.path, cacheReadTokens: unique.reduce(0) { $0 + $1.cacheReadTokens }, observedAt: now,
-                workingDirectory: item.workspace, lastActivityAt: end)
+                workingDirectory: item.workspace, lastActivityAt: end, navigationTarget: item.navigation?.target)
         }
         var snapshots: [UsageSnapshot] = [], descriptors: [AgentDescriptor] = []
         var insights: [String: UsageInsights] = [:]
@@ -253,7 +253,13 @@ actor OpenAgentUsageProvider: UsageProvider, LedgerRecording {
             indexing: local.indexing, insightsByAgent: insights, subscriptions: plans, sourceNotices: notices,
             // Every reading belongs to one pool, whose account carries its notice: none is the whole vendor's.
             quotaNotices: [:], readingIssues: [:], consumerIdsByQuota: links,
-            completions: local.sessions.flatMap(\.completions), turns: local.sessions.flatMap(\.turns), services: services,
+            completions: local.sessions.flatMap { item in
+                item.completions.map { event in
+                    var current = event
+                    current.navigationTarget = item.navigation?.target
+                    return current
+                }
+            }, turns: local.sessions.flatMap(\.turns), services: services,
             activeQuotaPoolIDs: cached == nil ? nil : activePools, accounts: cached == nil ? nil : accounts)
     }
 }

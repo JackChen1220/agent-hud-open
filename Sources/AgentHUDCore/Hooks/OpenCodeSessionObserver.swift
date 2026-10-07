@@ -49,6 +49,7 @@ public enum OpenCodeSessionObserver {
         let turnID: String
         let startedAtMs: Int64
         let completedAtMs: Int64
+        var navigationTarget: SessionNavigationTarget? = nil
 
         var session: OpenAgentSession {
             let named = OpenAgentParser.openCodeTitle(title)
@@ -57,8 +58,10 @@ public enum OpenCodeSessionObserver {
                 titleSource: named == nil ? .placeholder : .observer, workspace: workspace, path: "",
                 start: RecordCoding.date(startedAtMs), end: RecordCoding.date(completedAtMs))
             if let model, let providerID { value.setModel(model, provider: providerID) }
+            value.navigation = .init(observedAt: RecordCoding.date(completedAtMs), target: navigationTarget)
             value.completions = [.init(sessionID: sessionID, vendor: "OpenCode", turnID: turnID, task: value.title,
-                model: model ?? "Unknown", startedAt: RecordCoding.date(startedAtMs), completedAt: RecordCoding.date(completedAtMs))]
+                model: model ?? "Unknown", startedAt: RecordCoding.date(startedAtMs), completedAt: RecordCoding.date(completedAtMs),
+                navigationTarget: navigationTarget)]
             return value
         }
     }
@@ -99,6 +102,12 @@ public enum OpenCodeSessionObserver {
         return value;
       }
 
+      function navigationTarget() {
+        const id = process.env.ITERM_SESSION_ID;
+        return process.env.TERM_PROGRAM === "iTerm.app" && !process.env.TMUX && id
+          ? { kind: "iTermSession", id } : undefined;
+      }
+
       // A busy stretch holds tool calls, retries, compaction and queued prompts, and ends when the session goes idle. It
       // completed when its newest reply answers its newest prompt, stopped on its own and carries no error. An error or an
       // abort makes the session idle before the reply that carries it is closed, so a reply still open is judged on closing.
@@ -112,6 +121,7 @@ public enum OpenCodeSessionObserver {
           version: 1, sessionID: "opencode:" + id, workspace: value.directory || input.directory, title: value.title,
           model: reply.modelID, providerID: reply.providerID, turnID: reply.parentID,
           startedAtMs: startedAtMs || reply.createdAtMs || reply.completedAtMs, completedAtMs: Date.now(),
+          navigationTarget: navigationTarget(),
         };
         try {
           mkdirSync(directory, { recursive: true, mode: 0o700 });

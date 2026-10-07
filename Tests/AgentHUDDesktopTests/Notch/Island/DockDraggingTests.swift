@@ -63,7 +63,7 @@ final class DockDraggingTests: XCTestCase {
     }
 
     @MainActor
-    func testVisibleLogosProvideATransparentGrabSurfaceWithoutCommand() throws {
+    func testVisibleLogosProvideATransparentGrabSurface() throws {
         _ = NSApplication.shared
         let screen = try XCTUnwrap(NSScreen.main)
         let key = ScreenIdentity.key(for: screen)
@@ -77,22 +77,14 @@ final class DockDraggingTests: XCTestCase {
             historyHours: UsageStore.historyHours, now: Date()))
         let hud = ScreenHUD(key: key, screen: screen, store: store, settings: settings)
         defer { hud.close() }
-        hud.updateMoveHint(commandDown: false)
         let surface = try XCTUnwrap(visibleMoveSurface())
         assertFrame(surface.frame, equals: ScreenHUD.dragSurfaceFrame(for: hud.geometry),
                     "The transparent surface includes padding at both ends of the queue")
-        XCTAssertFalse(surface.ignoresMouseEvents, "Visible logos must be directly draggable without Command")
+        XCTAssertFalse(surface.ignoresMouseEvents, "Visible logos must be directly draggable")
         XCTAssertFalse(surface.isOpaque)
         XCTAssertEqual(surface.backgroundColor?.alphaComponent ?? 1, 0, accuracy: 0.001)
         let outline = try XCTUnwrap(outline(in: surface))
         XCTAssertEqual(outline.opacity, 0, "An idle grab surface must preserve the bare-logo appearance")
-
-        hud.updateMoveHint(commandDown: true)
-        XCTAssertTrue(surface.isVisible)
-        XCTAssertEqual(outline.opacity, 1, "Command reveals the otherwise transparent bounds")
-        hud.updateMoveHint(commandDown: false)
-        XCTAssertTrue(surface.isVisible, "Visible logos remain draggable after releasing Command")
-        XCTAssertEqual(outline.opacity, 0)
     }
 
     @MainActor
@@ -173,7 +165,7 @@ final class DockDraggingTests: XCTestCase {
     }
 
     @MainActor
-    func testHiddenLogosHaveAMoveSurfaceThatFollowsThePreviewAndDisappearsAfterDropping() throws {
+    func testHiddenLogosPassClicksThroughAndShowingThemRestoresDragging() throws {
         _ = NSApplication.shared
         let screen = try XCTUnwrap(NSScreen.main)
         let key = ScreenIdentity.key(for: screen)
@@ -181,37 +173,44 @@ final class DockDraggingTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
         defer { defaults.removePersistentDomain(forName: domain) }
         let settings = SettingsStore(defaults: defaults, defaultAgents: DemoData.agents)
-        let original = ScreenPlacement(mode: .logos, edge: .bottom, offset: 0.25, showsLogos: false)
-        settings.update { $0.screens[key] = original }
+        var placement = ScreenPlacement(mode: .logos, edge: .bottom, offset: 0.25, showsLogos: false)
+        settings.update { $0.screens[key] = placement }
         let store = UsageStore(provider: DemoUsageProvider(), settings: settings)
+        store.replace(report: DemoUsageProvider.report(agents: settings.agents,
+            historyHours: UsageStore.historyHours, now: Date()))
         let hud = ScreenHUD(key: key, screen: screen, store: store, settings: settings)
         defer { hud.close() }
         XCTAssertTrue(hud.island.panel.ignoresMouseEvents)
-        hud.updateMoveHint(commandDown: false)
-        XCTAssertNil(visibleMoveSurface(), "Hidden logos expose no grab panel until Command reveals their bounds")
-        hud.updateMoveHint(commandDown: true)
+        XCTAssertNil(visibleMoveSurface(), "Hidden logos expose no grab panel")
+
+        placement.showsLogos = true
+        settings.update { $0.screens[key] = placement }
+        hud.apply(animated: false)
         let surface = try XCTUnwrap(visibleMoveSurface())
         assertFrame(surface.frame, equals: ScreenHUD.dragSurfaceFrame(for: hud.geometry),
-                    "Command reveals the padded hidden-logo target")
-        XCTAssertEqual(try XCTUnwrap(outline(in: surface)).opacity, 1)
+                    "Showing logos restores the padded grab surface")
+        XCTAssertEqual(try XCTUnwrap(outline(in: surface)).opacity, 0)
         hud.beginMoving()
-        hud.updateMoveHint(commandDown: false)
-        XCTAssertTrue(surface.isVisible, "Releasing Command during a drag must retain its grab surface")
+        XCTAssertTrue(surface.isVisible)
         XCTAssertEqual(try XCTUnwrap(outline(in: surface)).opacity, 1,
                        "The active drag must keep showing its dashed bounds")
         hud.move(to: CGPoint(x: screen.frame.maxX, y: screen.frame.midY))
         XCTAssertEqual(hud.geometry.edge, .right)
         assertFrame(surface.frame, equals: ScreenHUD.dragSurfaceFrame(for: hud.geometry),
                     "The padded dashed bounds follow the drag preview, allowing AppKit's frame rounding")
-        XCTAssertEqual(settings.settings.screens[key], original, "Mouse movements must not persist intermediate positions")
+        XCTAssertEqual(settings.settings.screens[key], placement, "Mouse movements must not persist intermediate positions")
         hud.finishMoving()
-        hud.updateMoveHint(commandDown: false)
-        XCTAssertFalse(surface.isVisible, "Dropping and releasing Command must restore click-through")
-        XCTAssertTrue(hud.island.panel.ignoresMouseEvents)
+        XCTAssertTrue(surface.isVisible, "Dropping keeps visible logos draggable")
+        XCTAssertEqual(try XCTUnwrap(outline(in: surface)).opacity, 0)
         let stored = try XCTUnwrap(settings.settings.screens[key])
         XCTAssertEqual(stored.edge, .right)
-        XCTAssertFalse(stored.showsLogos)
+        XCTAssertTrue(stored.showsLogos)
         XCTAssertEqual(SettingsStore(defaults: defaults).settings.screens[key], stored)
+
+        settings.update { $0.screens[key]?.showsLogos = false }
+        hud.apply(animated: false)
+        XCTAssertFalse(surface.isVisible, "Hiding logos restores click-through")
+        XCTAssertTrue(hud.island.panel.ignoresMouseEvents)
     }
 
     @MainActor
@@ -233,7 +232,6 @@ final class DockDraggingTests: XCTestCase {
         settings.update { $0.screens[key]?.mode = .notch }
         hud.apply(animated: false)
         XCTAssertEqual(hud.geometry.mode, .notch)
-        hud.updateMoveHint(commandDown: false)
         let surface = try XCTUnwrap(visibleMoveSurface())
         let view = try XCTUnwrap(surface.contentView)
         let press = CGPoint(x: 15, y: 7)

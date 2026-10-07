@@ -14,6 +14,10 @@ struct HookInbox {
         folder = directory.appendingPathComponent(source)
     }
 
+    init(folder: URL) {
+        self.folder = folder
+    }
+
     /// Makes the folder, which only the user can open, so it can be watched before its first record.
     func create() throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])

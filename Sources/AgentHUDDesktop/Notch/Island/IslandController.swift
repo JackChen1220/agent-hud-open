@@ -25,7 +25,6 @@ final class IslandController {
     private var systemIsLight = SystemAppearance.isLight
     private var observers: [Any] = []
     private var pointerMonitors: [Any] = []
-    private var moveHintTimer: Timer?
 
     var onOpenStats: (() -> Void)? { didSet { huds.values.forEach { $0.onOpenStats = onOpenStats } } }
     var onOpenSettings: (() -> Void)? { didSet { huds.values.forEach { $0.onOpenSettings = onOpenSettings } } }
@@ -159,16 +158,6 @@ final class IslandController {
         }) {
             pointerMonitors.append(local)
         }
-        // Reading modifier flags does not monitor keystrokes or require Accessibility access. It also
-        // works when the pointer is stationary over a hidden-logo HUD.
-        let timer = Timer(timeInterval: 0.08, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                let commandDown = NSEvent.modifierFlags.contains(.command)
-                self?.huds.values.forEach { $0.updateMoveHint(commandDown: commandDown) }
-            }
-        }
-        moveHintTimer = timer
-        RunLoop.main.add(timer, forMode: .common)
     }
 
     // MARK: Forwarding
