@@ -2,6 +2,18 @@
 
 Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the three-part numeric version `X.Y.Z`. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
+## 0.4.36 — 2026-10-08
+
+- Completion reminders offer separate actions for returning to the agent and viewing token usage. In Active sessions, the title returns to the agent, the token count opens that session's usage, and the heading opens the session list.
+- Native return targets are captured for Codex Desktop, Claude Desktop Code and Cowork through exact session mapping, and Antigravity's running standalone app. Codex CLI, Claude Code CLI, Pi and OpenCode can return to their existing iTerm2 pane when a terminal destination is available.
+- New replies and permission requests share an event panel, separate from usage, with one card open and the remaining replies and requests available to select. Replies arriving during approval remain available without answering the waiting request.
+- A failed session return keeps the reminder available for retry or token usage. Missing destinations leave usage available, and newer source observations replace stale return targets.
+- Button hit areas include the space between icons and text; token bars stay inside their cards, and the Active sessions heading matches Tokens.
+- Holding Command no longer draws a dashed outline around the HUD; drag outlines appear during repositioning.
+- Host API:
+  - `SessionNavigationTarget` carries native client identities. `LiveSession.navigationTarget` and `SessionCompletion.navigationTarget` are optional, with initializer arguments defaulting to `nil`; they stay in local memory and are excluded from session reports, report caches and remote serialization.
+  - `CodexSessionOrigins` and `ClaudeSessionOrigins` expose local origin records and hook configuration. `SessionObservers.configure(executable:enabled:home:)` manages these hooks with the existing client-hook setting, and `HookEntry.handle(arguments:)` accepts `--session-origin-hook codex|claude`.
+
 ## 0.4.35 — 2026-10-07
 
 - Antigravity quota refreshes request a fresh summary as its native quota popover does, avoiding stale cached readings; older per-model readings do not replace an available summary.
