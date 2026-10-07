@@ -65,6 +65,10 @@ final class CompletionHooksTests: XCTestCase, @unchecked Sendable {
             .sorted { $0.completedAt < $1.completedAt }
         XCTAssertEqual(events.map(\.completedAt), [now, now.addingTimeInterval(5)])
         XCTAssertEqual(events[0].sessionID, "antigravity:s")
+        XCTAssertEqual(events[0].navigationTarget, .antigravityConversation(id: "s"))
+        let saved = try Data(contentsOf: directory.appendingPathComponent("antigravity/\(events[0].id).json"))
+        XCTAssertNil(try JSONDecoder().decode(SessionCompletion.self, from: saved).navigationTarget,
+                     "the local reader reconstructs the destination; completion reports never encode it")
         XCTAssertEqual(events[0].model, "gemini-test")
         XCTAssertEqual(events[0].task, "Antigravity · project")
         payload["fullyIdle"] = false

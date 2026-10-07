@@ -62,6 +62,7 @@ public enum PiSessionObserver {
         let state: SessionTurn.State
         let startedAtMs: Int64
         let observedAtMs: Int64
+        var navigationTarget: SessionNavigationTarget? = nil
 
         var turn: SessionTurn {
             .init(provider: "Pi", sessionID: sessionID, turnID: turnID, state: state,
@@ -72,10 +73,12 @@ public enum PiSessionObserver {
             var value = OpenAgentSession(id: sessionID, client: .pi, title: title, workspace: workspace,
                 path: sessionFile ?? "", start: RecordCoding.date(startedAtMs), end: RecordCoding.date(observedAtMs), turns: [turn])
             value.titleSource = .observer
+            value.navigation = .init(observedAt: RecordCoding.date(observedAtMs), target: navigationTarget)
             if let model, let providerID { value.setModel(model, provider: providerID) }
             if state == .completed {
                 value.completions = [.init(sessionID: sessionID, vendor: "Pi", turnID: turnID,
-                    task: title, model: model ?? "Unknown", startedAt: RecordCoding.date(startedAtMs), completedAt: RecordCoding.date(observedAtMs))]
+                    task: title, model: model ?? "Unknown", startedAt: RecordCoding.date(startedAtMs), completedAt: RecordCoding.date(observedAtMs),
+                    navigationTarget: navigationTarget)]
             }
             return value
         }
@@ -106,6 +109,12 @@ public enum PiSessionObserver {
       let heartbeat;
       let lastStopReason;
 
+      function navigationTarget() {
+        const id = process.env.ITERM_SESSION_ID;
+        return process.env.TERM_PROGRAM === "iTerm.app" && !process.env.TMUX && id
+          ? { kind: "iTermSession", id } : undefined;
+      }
+
       function publish(ctx, state = "running") {
         if (!active) return;
         const sessionID = "pi:" + ctx.sessionManager.getSessionId();
@@ -114,6 +123,7 @@ public enum PiSessionObserver {
           workspace: ctx.cwd, title: ctx.sessionManager.getSessionName() || "Pi",
           model: ctx.model?.id, providerID: ctx.model?.provider,
           turnID: active.id, state, startedAtMs: active.startedAtMs, observedAtMs: Date.now(),
+          navigationTarget: navigationTarget(),
         };
         try {
           mkdirSync(directory, { recursive: true, mode: 0o700 });

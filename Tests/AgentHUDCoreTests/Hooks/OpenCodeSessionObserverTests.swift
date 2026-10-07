@@ -60,7 +60,7 @@ final class OpenCodeSessionObserverTests: XCTestCase, @unchecked Sendable {
         let home = try temporaryHome(), paths = OpenAgentPaths(home: home, environment: [:])
         let reply = #"{"id":"msg_2","sessionID":"ses_1","role":"assistant","modelID":"kimi-k2","providerID":"moonshotai","time":{"created":\#(milliseconds(now) - 20000),"completed":\#(milliseconds(now) - 10000)},"tokens":{"input":10,"output":5,"cache":{"read":20,"write":2}},"path":{"root":"/work/app"}}"#
         try write(Data(reply.utf8), to: paths.openCode.appendingPathComponent("storage/message/ses_1/msg_2.json"))
-        let completion = #"{"version":1,"sessionID":"opencode:ses_1","workspace":"/work/app","title":"Fix the parser","model":"kimi-k2","providerID":"moonshotai","turnID":"msg_1","startedAtMs":\#(milliseconds(now) - 30000),"completedAtMs":\#(milliseconds(now) - 9000)}"#
+        let completion = #"{"version":1,"sessionID":"opencode:ses_1","workspace":"/work/app","title":"Fix the parser","model":"kimi-k2","providerID":"moonshotai","turnID":"msg_1","startedAtMs":\#(milliseconds(now) - 30000),"completedAtMs":\#(milliseconds(now) - 9000),"navigationTarget":{"kind":"iTermSession","id":"w0t0p0:exact-terminal"}}"#
         try write(Data(completion.utf8), to: paths.openCodeTurns.appendingPathComponent(String(repeating: "a", count: 64) + ".json"))
         let local = await OpenAgentLocalStore(paths: paths).index(since: now.addingTimeInterval(-86400))
         XCTAssertEqual(local.sessions.count, 1)
@@ -82,6 +82,31 @@ final class OpenCodeSessionObserverTests: XCTestCase, @unchecked Sendable {
                                                       model: "", startedAt: nil, completedAt: now).id)
         XCTAssertTrue(report.turns.isEmpty)
         XCTAssertEqual(report.sessions.first?.tokensIn, 12)
+        XCTAssertEqual(reported.navigationTarget, .iTermSession(id: "w0t0p0:exact-terminal"))
+        XCTAssertEqual(report.sessions.first?.navigationTarget, reported.navigationTarget)
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(completion.utf8)) as? [String: Any])
+        legacy.removeValue(forKey: "navigationTarget")
+        XCTAssertNil(try OpenCodeSessionObserver.read(JSONSerialization.data(withJSONObject: legacy)).navigationTarget)
+
+        let store = OpenAgentLocalStore(paths: paths)
+        for (index, target) in [SessionNavigationTarget.iTermSession(id: "w1t2p0:new-terminal"), nil].enumerated() {
+            var resumed = legacy
+            resumed["turnID"] = "resumed_\(index)"
+            resumed["completedAtMs"] = milliseconds(now) - Int64(1 - index) * 1000
+            if let target {
+                resumed["navigationTarget"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(target))
+            }
+            try write(JSONSerialization.data(withJSONObject: resumed),
+                      to: paths.openCodeTurns.appendingPathComponent("resumed_\(index).json"))
+            let merged = await store.index(since: now.addingTimeInterval(-86400))
+            let refreshedProvider = OpenAgentUsageProvider(credentials: { [] }, sessions: { _ in merged },
+                fetchQuota: { _, _ in throw ProviderFailure.format }, history: QuotaHistoryStore(), clock: { now }, ledger: .inMemory())
+            let refreshed = try await refreshedProvider.fetchUsage(agents: [], historyHours: 168)
+            XCTAssertEqual(refreshed.completions.count, index + 2)
+            XCTAssertEqual(refreshed.sessions.first?.navigationTarget, target)
+            XCTAssertTrue(refreshed.completions.allSatisfy { $0.navigationTarget == target },
+                          "the latest source replaces or clears destinations of every earlier completion")
+        }
 
         // A title OpenCode never replaced names nothing: the workspace folder stands in.
         let placeholder = try OpenCodeSessionObserver.read(Data(completion.replacingOccurrences(of: "Fix the parser",
@@ -105,6 +130,9 @@ final class OpenCodeSessionObserverTests: XCTestCase, @unchecked Sendable {
         import { join } from 'node:path';
         import { AgentHUDSessionObserver } from './observer.mjs';
         process.env.XDG_DATA_HOME = process.argv[2];
+        delete process.env.TMUX;
+        process.env.TERM_PROGRAM = 'Apple_Terminal';
+        process.env.ITERM_SESSION_ID = 'inherited-terminal';
         let clock = 1789000000000;
         Date.now = () => (clock += 1000);
         const directory = join(process.argv[2], 'opencode', 'agent-hud', 'turns');
@@ -205,6 +233,24 @@ final class OpenCodeSessionObserverTests: XCTestCase, @unchecked Sendable {
         const queued = rows().filter(r => r.sessionID === 'opencode:ses_b');
         assert.deepEqual(queued.map(r => [r.turnID, r.workspace]), [['msg_33', '/work/fallback']]);
         assert.equal(JSON.stringify(rows()).includes('private prompt'), false);
+
+        for (const [index, [program, id, tmux, expected]] of [
+          ['iTerm.app', 'w7t2p0:exact-terminal', '', { kind: 'iTermSession', id: 'w7t2p0:exact-terminal' }],
+          ['iTerm.app', 'w7t2p0:exact-terminal', '/tmp/tmux,123,0', undefined],
+          ['Apple_Terminal', 'w7t2p0:exact-terminal', '', undefined],
+          ['iTerm.app', '', '', undefined],
+        ].entries()) {
+          process.env.TERM_PROGRAM = program;
+          process.env.ITERM_SESSION_ID = id;
+          process.env.TMUX = tmux;
+          const sid = 'navigation_' + index;
+          await session(sid);
+          await user(sid, 'prompt_' + index, 40 + index * 2);
+          await status(sid, 'busy');
+          await reply(sid, 'reply_' + index, 'prompt_' + index, 41 + index * 2, { finish: 'stop', completed: 50 + index });
+          await idle(sid);
+          assert.deepEqual(rows().find(r => r.sessionID === 'opencode:' + sid)?.navigationTarget, expected);
+        }
 
         // An unwritable inbox cannot break a turn.
         process.env.XDG_DATA_HOME = join(process.argv[2], 'blocked');

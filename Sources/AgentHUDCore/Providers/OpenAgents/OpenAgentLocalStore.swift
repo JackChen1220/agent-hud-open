@@ -81,6 +81,9 @@ actor OpenAgentLocalStore {
                         prior.currentModel = item.currentModel ?? prior.currentModel
                         if !item.path.isEmpty { prior.path = item.path }
                     }
+                    if let navigation = item.navigation, navigation.observedAt > (prior.navigation?.observedAt ?? .distantPast) {
+                        prior.navigation = navigation
+                    }
                     prior.events = UsageAggregation.usageUnion([prior.events, item.events])
                     prior.models.merge(item.models, uniquingKeysWith: { old, _ in old })
                     prior.start = [prior.start, item.start].compactMap { $0 }.min()
