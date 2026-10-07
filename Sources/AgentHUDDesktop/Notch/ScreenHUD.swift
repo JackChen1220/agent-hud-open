@@ -20,6 +20,10 @@ final class ScreenHUD {
     let key: String
     private let store: UsageStore
     private let settings: SettingsStore
+    private let openSession: @MainActor (SessionNavigationTarget) async -> Bool
+    private var navigationTask: Task<Bool, Never>?
+    private var failedNavigationAlertID: String?
+    private var failedListedSessionID: String?
     private let mouseLocation: @MainActor () -> CGPoint
     private let additionalHUDControls: @MainActor (@escaping @MainActor () -> Void) -> AnyView
     private(set) var geometry: NotchGeometry
@@ -37,7 +41,19 @@ final class ScreenHUD {
     /// The island's own shape while an event is showing: wider than the silhouette by the two wings it grew.
     private var alertFrame: CGRect?
     private let alerts = IslandAlertQueue()
-    private var activeAlert: IslandAlert? { alerts.current?.alert }
+    private var activeAlert: IslandAlert? {
+        guard let alert = alerts.current?.alert else { return nil }
+        // A queued card keeps its reply, but the source's latest reading owns where its session now lives.
+        if case .completion(var event) = alert,
+           let current = store.report?.completions.first(where: { $0.id == event.id }) {
+            event.navigationTarget = current.navigationTarget
+            return .completion(event)
+        }
+        return alert
+    }
+    private var sessionNavigationFailed: Bool {
+        failedNavigationAlertID != nil && failedNavigationAlertID == activeAlert?.id
+    }
     private var showsAlertDetails: Bool { machine.isOpen && alerts.current?.inUsagePanel == false }
     private var pointerInside = false
     /// Whether the hover currently counts as one that opens the panel; see `reevaluateHover`.
@@ -72,6 +88,8 @@ final class ScreenHUD {
         let appearance: GlowAppearance
         let alertID: String?
         let alertDetails: Bool
+        let sessionNavigationFailed: Bool
+        let failedListedSessionID: String?
     }
 
     private struct OpeningPreparation {
@@ -87,7 +105,8 @@ final class ScreenHUD {
                       bucketSize: store.tokenBucketSize, dimensions: store.tokenDimensions,
                       requests: PermissionRequests.shared.pending, geometry: geometry, light: systemIsLight,
                       appearance: store.glowAppearance(light: systemIsLight, on: key),
-                      alertID: activeAlert?.id, alertDetails: alerts.current?.inUsagePanel == false)
+                      alertID: activeAlert?.id, alertDetails: alerts.current?.inUsagePanel == false,
+                      sessionNavigationFailed: sessionNavigationFailed, failedListedSessionID: failedListedSessionID)
     }
 
     var onOpenStats: (() -> Void)?
@@ -97,10 +116,12 @@ final class ScreenHUD {
 
     init(key: String, screen: NSScreen?, store: UsageStore, settings: SettingsStore,
          mouseLocation: @escaping @MainActor () -> CGPoint = { NSEvent.mouseLocation },
+         openSession: @escaping @MainActor (SessionNavigationTarget) async -> Bool = SessionNavigator.open,
          additionalHUDControls: @escaping @MainActor (@escaping @MainActor () -> Void) -> AnyView = { _ in AnyView(EmptyView()) }) {
         self.key = key
         self.store = store
         self.settings = settings
+        self.openSession = openSession
         self.mouseLocation = mouseLocation
         self.additionalHUDControls = additionalHUDControls
         // The stored placement decides notch or queue before the first frame, so the HUD never flashes
@@ -129,7 +150,7 @@ final class ScreenHUD {
         guard previewPlacement == nil else { return }
         if pointerInside != inside {
             pointerInside = inside
-            alerts.hold(inside)
+            alerts.hold(inside || navigationTask != nil)
             // Whether Option is down can change without the pointer moving, so while it is over the HUD the
             // modifier is watched. A global keyboard monitor would ask for accessibility; this does not.
             modifierWatch?.invalidate()
@@ -333,9 +354,75 @@ final class ScreenHUD {
         !wasInUsagePanel || !pointerInside
     }
 
-    /// Opens the statistics window on what the card was about: a finished turn's session, or a quota event's window.
-    private func openAlert() {
+    /// A compact reply opens its choices; quota events still open their usage page.
+    func openAlert() {
         guard let alert = activeAlert else { return }
+        if case .completion = alert {
+            forceOpen()
+        } else {
+            openAlertUsage()
+        }
+    }
+
+    /// The session action never changes destination to usage. A failed attempt leaves its choices available.
+    func openAlertSession() async {
+        guard case .completion(let event)? = activeAlert, let target = event.navigationTarget else { return }
+        cancelSessionNavigation()
+        alerts.hold(true)
+        forceCollapse()
+        let task = Task { await openSession(target) }
+        navigationTask = task
+        let opened = await task.value
+        guard !task.isCancelled else { return }
+        navigationTask = nil
+        alerts.hold(pointerInside)
+        guard activeAlert?.id == event.id else { return }
+        if opened {
+            dismissAlert()
+        } else {
+            failedNavigationAlertID = event.id
+            if machine.isOpen { apply(animated: true) } else { forceOpen() }
+        }
+    }
+
+    /// A listed session follows its source's current destination, independently of its token usage action.
+    func openListedSession(_ id: String) async {
+        guard let target = store.sessions.first(where: { $0.id == id })?.navigationTarget else { return }
+        cancelSessionNavigation()
+        alerts.hold(true)
+        forceCollapse()
+        let task = Task { await openSession(target) }
+        navigationTask = task
+        let opened = await task.value
+        guard !task.isCancelled else { return }
+        navigationTask = nil
+        alerts.hold(pointerInside)
+        if opened {
+            forceCollapse()
+        } else {
+            failedListedSessionID = id
+            if machine.isOpen { apply(animated: true) } else { forceOpen() }
+        }
+    }
+
+    private func cancelSessionNavigation() {
+        navigationTask?.cancel()
+        navigationTask = nil
+        failedNavigationAlertID = nil
+        failedListedSessionID = nil
+    }
+
+    /// Token usage is a distinct user choice, even when the agent's session cannot be located.
+    func openAlertUsage() {
+        guard let alert = activeAlert else { return }
+        cancelSessionNavigation()
+        dismissAlert()
+        alerts.hold(pointerInside)
+        forceCollapse()
+        showAlertUsage(alert)
+    }
+
+    private func showAlertUsage(_ alert: IslandAlert) {
         store.focusedSessionID = nil
         switch alert {
         case .quota(let event) where store.rows.contains(where: { $0.id == event.agent.id }):
@@ -344,14 +431,15 @@ final class ScreenHUD {
             store.focusedSessionID = event.sessionID
         default: store.statsTab = .tokens
         }
-        dismissAlert()
-        handOff { onOpenStats?() }
+        onOpenStats?()
     }
 
     /// A click that opens another window takes the HUD down first: the panel floats above every window and stays open
     /// while the pointer rests on it, so the window it opened would appear underneath it. The pointer has to leave and
     /// come back to open it again.
     private func handOff(_ open: () -> Void) {
+        cancelSessionNavigation()
+        alerts.hold(pointerInside)
         forceCollapse()
         open()
     }
@@ -550,6 +638,7 @@ final class ScreenHUD {
 
     /// Takes this HUD's windows off screen; the display it belonged to is gone.
     func close() {
+        cancelSessionNavigation()
         openingPreparation = nil
         modifierWatch?.invalidate()
         timer?.invalidate()
@@ -576,6 +665,9 @@ final class ScreenHUD {
             },
             alert: previewPlacement == nil ? activeAlert : nil,
             onOpenAlert: { [weak self] in self?.openAlert() },
+            onOpenAlertSession: { [weak self] in Task { await self?.openAlertSession() } },
+            onOpenAlertUsage: { [weak self] in self?.openAlertUsage() },
+            sessionNavigationFailed: sessionNavigationFailed,
             onDecideAlert: { [weak self] decision in self?.decideAlert(decision) },
             waitingRequests: PermissionRequests.shared.pending,
             onSelectRequest: { [weak self] id in self?.selectRequest(id) },
@@ -583,6 +675,8 @@ final class ScreenHUD {
             showsAlertDetails: open && alerts.current?.inUsagePanel == false,
             animatesGeometry: animated
         )
+        root.onOpenListedSession = { [weak self] id in Task { await self?.openListedSession(id) } }
+        root.failedListedSessionID = failedListedSessionID
         root.logoQueue = logoQueue
         root.edge = geometry.edge
         // The mode decides the silhouette, not whether there are marks to draw.

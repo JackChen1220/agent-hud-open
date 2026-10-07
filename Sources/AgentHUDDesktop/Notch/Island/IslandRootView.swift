@@ -14,6 +14,11 @@ struct IslandRootView: View {
     var additionalHUDControls: @MainActor () -> AnyView = { AnyView(EmptyView()) }
     var alert: IslandAlert? = nil
     var onOpenAlert: () -> Void = {}
+    var onOpenAlertSession: () -> Void = {}
+    var onOpenAlertUsage: () -> Void = {}
+    var sessionNavigationFailed = false
+    var onOpenListedSession: (String) -> Void = { _ in }
+    var failedListedSessionID: String? = nil
     /// The user's answer to a request waiting on the island; the alert's own id says which request it answers.
     var onDecideAlert: (PermissionDecision) -> Void = { _ in }
     /// Every request waiting for this user, oldest first and across screens: the expanded card stacks the rest under
@@ -134,6 +139,8 @@ struct IslandRootView: View {
     var content: some View {
         if isOpen, showsAlertDetails, let alert {
             IslandAlertDetailView(alert: alert, onOpen: onOpenAlert, onDecide: onDecideAlert,
+                                  onOpenSession: onOpenAlertSession, onOpenUsage: onOpenAlertUsage,
+                                  sessionNavigationFailed: sessionNavigationFailed,
                                   waitingRequests: waitingRequests, onSelectRequest: onSelectRequest)
                 .padding(hidesSilhouette ? dockInsets : alert.detailInsets.map {
                     // Never under the silhouette: a notch is 38 pt of hardware on some Macs, and a card narrower
@@ -151,7 +158,10 @@ struct IslandRootView: View {
             HoverPanelView(store: store, onOpenStats: onOpenStats, onOpenSettings: onOpenSettings,
                            additionalHUDControls: additionalHUDControls,
                            height: panelPresentationHeight,
-                           alert: alert, onOpenAlert: onOpenAlert, onDecideAlert: onDecideAlert,
+                           alert: alert, onOpenAlert: onOpenAlert, onOpenAlertSession: onOpenAlertSession,
+                           onOpenAlertUsage: onOpenAlertUsage, sessionNavigationFailed: sessionNavigationFailed,
+                           onOpenListedSession: onOpenListedSession, failedListedSessionID: failedListedSessionID,
+                           onDecideAlert: onDecideAlert,
                            waitingRequests: waitingRequests,
                            insets: hidesSilhouette ? dockInsets : HoverPanelView.notchInsets)
                 .frame(width: IslandController.expandedWidth, alignment: .top)

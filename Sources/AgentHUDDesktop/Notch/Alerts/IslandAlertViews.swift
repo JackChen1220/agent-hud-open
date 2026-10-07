@@ -38,6 +38,7 @@ struct IslandAlertCompactView: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("island-alert-sessionCompleted")
             .accessibilityLabel("\(event.vendor) · \(L10n.text("有新回复", "New reply")) · \(event.task)")
+            .accessibilityHint(L10n.text("展开会话与 Token 用量操作", "Show session and token usage actions"))
         }
     }
 }
@@ -46,6 +47,9 @@ struct IslandAlertDetailView: View {
     let alert: IslandAlert
     let onOpen: () -> Void
     let onDecide: (PermissionDecision) -> Void
+    var onOpenSession: () -> Void = {}
+    var onOpenUsage: () -> Void = {}
+    var sessionNavigationFailed = false
     var waitingRequests: [PermissionRequest] = []
     var onSelectRequest: (String) -> Void = { _ in }
     var body: some View {
@@ -83,12 +87,9 @@ struct IslandAlertDetailView: View {
                         Text(Countdown.compact(max(0, event.completedAt.timeIntervalSince(start))))
                     }
                 }.font(.tabular(11)).foregroundStyle(.white.opacity(0.5))
-                Button(action: onOpen) {
-                    Text(L10n.text("查看 Token 用量", "View token usage"))
-                        .font(.ui(12, .semibold)).foregroundStyle(.white.opacity(0.92))
-                        .frame(maxWidth: .infinity).frame(height: 32)
-                        .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
-                }.buttonStyle(.plain)
+                CompletionAlertActions(hasSession: event.navigationTarget != nil,
+                                       navigationFailed: sessionNavigationFailed,
+                                       onOpenSession: onOpenSession, onOpenUsage: onOpenUsage)
             }.foregroundStyle(.white)
         }
     }
@@ -98,6 +99,9 @@ struct IslandAlertInlineView: View {
     let alert: IslandAlert
     let onOpen: () -> Void
     let onDecide: (PermissionDecision) -> Void
+    var onOpenSession: () -> Void = {}
+    var onOpenUsage: () -> Void = {}
+    var sessionNavigationFailed = false
     var waitingRequests: [PermissionRequest] = []
     var body: some View {
         switch alert {
@@ -106,7 +110,7 @@ struct IslandAlertInlineView: View {
         case .quota(let event): QuotaAlertInlineView(alert: event, onOpen: onOpen)
         case .resetCredits(let event): ResetCreditAlertInlineView(grant: event, onOpen: onOpen)
         case .completion(let event):
-            Button(action: onOpen) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
                     TurnEndedSymbol()
                     VStack(alignment: .leading, spacing: 4) {
@@ -118,8 +122,63 @@ struct IslandAlertInlineView: View {
                         }
                     }
                     Spacer()
-                    Image(systemName: "arrow.up.right").font(.ui(10))
-                }.foregroundStyle(.white).padding(.vertical, 8).contentShape(Rectangle())
+                }
+                CompletionAlertActions(hasSession: event.navigationTarget != nil,
+                                       navigationFailed: sessionNavigationFailed,
+                                       onOpenSession: onOpenSession, onOpenUsage: onOpenUsage)
+            }.foregroundStyle(.white).padding(.vertical, 8)
+        }
+    }
+}
+
+/// The same destinations in the standalone reply card and the usage panel's inline reminder.
+private struct CompletionAlertActions: View {
+    let hasSession: Bool
+    let navigationFailed: Bool
+    let onOpenSession: () -> Void
+    let onOpenUsage: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if navigationFailed && hasSession {
+                Text(L10n.text("无法回到会话，请重试或查看 Token 用量", "Couldn't return to session. Retry or view token usage."))
+                    .font(.ui(10)).foregroundStyle(.white.opacity(0.65))
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if !hasSession {
+                Text(L10n.text("暂时无法回到原会话", "Session return unavailable"))
+                    .font(.ui(10)).foregroundStyle(.white.opacity(0.5))
+            }
+            HStack(spacing: 6) {
+                Button(action: onOpenUsage) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chart.bar.xaxis").font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Theme.island.secondary)
+                        Text(L10n.text("查看 Token 用量", "View token usage"))
+                            .font(.ui(11, .medium)).lineLimit(1)
+                    }
+                    .foregroundStyle(Theme.island.secondary)
+                    .padding(.horizontal, 9).frame(height: 22)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.island.cardBorder, lineWidth: 1))
+                    .contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("island-alert-openTokenUsage")
+                Spacer(minLength: 8)
+                if hasSession {
+                    Button(action: onOpenSession) {
+                        HStack(spacing: 4) {
+                            Image(systemName: navigationFailed ? "arrow.clockwise" : "arrow.up.right")
+                                .font(.system(size: 9, weight: .bold))
+                            Text(navigationFailed ? L10n.text("重试会话跳转", "Retry session")
+                                 : L10n.text("回到会话", "Return to session"))
+                                .font(.ui(11, .medium)).lineLimit(1)
+                        }
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 9).frame(height: 22)
+                        .background(Color(IslandAlert.turnAccent), in: RoundedRectangle(cornerRadius: 6))
+                        .contentShape(Rectangle())
+                    }
+                    .accessibilityIdentifier("island-alert-openSession")
+                }
             }.buttonStyle(.plain)
         }
     }
