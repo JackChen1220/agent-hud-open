@@ -62,7 +62,6 @@ final class ScreenHUD {
     private var typing = false
     private var modifierWatch: Timer?
     private let dragSurface = HUDDragWindowController()
-    private var moveHintVisible = false
     /// A drag is previewed without writing preferences on every mouse movement; mouse-up commits once.
     private var previewPlacement: ScreenPlacement?
     /// The grip along the strip, kept when the queue turns onto another edge.
@@ -167,9 +166,8 @@ final class ScreenHUD {
         reevaluateHover()
     }
 
-    /// The bare island canvas passes clicks through. A visible strip has its own small grab surface;
-    /// hidden logos expose that surface only with Command. Hover is followed by the coordinator, while
-    /// an open island takes events for its controls.
+    /// The bare island canvas passes clicks through. A visible strip has its own small grab surface.
+    /// Hover is followed by the coordinator, while an open island takes events for its controls.
     private func updateClickThrough(_ passes: Bool) {
         guard island.panel.ignoresMouseEvents != passes else { return }
         island.panel.ignoresMouseEvents = passes
@@ -210,7 +208,7 @@ final class ScreenHUD {
 
     /// Hovering opens the panel, unless the user asked for Option as well. Typing keeps it open either way.
     private func reevaluateHover() {
-        guard !moveHintVisible, !dragSurface.isPressed, previewPlacement == nil else { return }
+        guard !dragSurface.isPressed, previewPlacement == nil else { return }
         let opens = ScreenHUD.opensOnHover(counted: hoverOpens, open: machine.isOpen, pointerInside: pointerInside,
                                            typing: typing, requiresOption: settings.settings.requiresOptionToOpen,
                                            optionDown: NSEvent.modifierFlags.contains(.option))
@@ -530,28 +528,14 @@ final class ScreenHUD {
 
     // MARK: Repositioning
 
-    func updateMoveHint(commandDown: Bool) {
-        guard !dragSurface.isDragging else { return }
-        let shows = commandDown && !typing
-        guard shows != moveHintVisible else { return }
-        moveHintVisible = shows
-        if shows {
-            openingPreparation = nil
-            timer?.invalidate()
-            timer = nil
-            if !machine.isOpen { machine = HoverMachine(); hoverOpens = false }
-        }
-        updateDragSurface()
-    }
-
     private func updateDragSurface() {
         let visibleHUD = geometry.mode == .notch || logoQueue != nil
-        guard !typing, visibleHUD || moveHintVisible || previewPlacement != nil || dragSurface.isPressed else {
+        guard !typing, visibleHUD || previewPlacement != nil || dragSurface.isPressed else {
             dragSurface.hide()
             return
         }
         dragSurface.show(frame: Self.dragSurfaceFrame(for: geometry),
-                         outlined: moveHintVisible || previewPlacement != nil || dragSurface.isPressed)
+                         outlined: previewPlacement != nil || dragSurface.isPressed)
     }
 
     /// The dashed bounds leave room at both ends of the queue without moving its marks or backdrop.
@@ -610,7 +594,6 @@ final class ScreenHUD {
         guard let next = previewPlacement else { return }
         settings.update { $0.screens[key] = next }
         previewPlacement = nil
-        moveHintVisible = NSEvent.modifierFlags.contains(.command) && !typing
         // Dropping the HUD is an explicit repositioning, not a request to open its panel under the pointer.
         hoverOpens = true
         apply(animated: false)

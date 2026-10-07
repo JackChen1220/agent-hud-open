@@ -22,7 +22,7 @@ Each display has its own HUD and settings. Notch mode uses the physical notch or
 - Either mode can be chosen for any display; notch mode stays at the physical notch or the screen's top centre.
 - A display keeps its own placement under its UUID; display settings can reset its position to top centre, or top left for a dock on a notched display, keeping its mode and logo settings.
 - The dock can sit anywhere along the top, right, bottom or left edge, running horizontally on the top and bottom and vertically on the sides; logo size is 12–24 pt and spacing is 0.1–0.6 of the logo.
-- Drag a visible HUD directly to any edge; dragging a notch switches it to Dynamic Dock. With logos hidden, hold Command to reveal the dashed drag area.
+- Drag a visible HUD directly to any edge; dragging a notch switches it to Dynamic Dock. Its bounds appear while it is grabbed or dragged.
 - The marks can be hidden, which leaves the backdrop alone, still where they would have been and as wide.
 
 ### What the queue shows
@@ -36,7 +36,7 @@ Each display has its own HUD and settings. Notch mode uses the physical notch or
 
 ### Hovering and events
 
-- A visible dock accepts dragging; with logos hidden, clicks pass through until Command reveals its drag area.
+- A visible dock accepts dragging; with logos hidden, clicks pass through.
 - Hovering opens inward, optionally requiring Option, with the same opening and closing timing on all four edges. During the delay, content height, glow and shadow are prepared without retaining a hidden panel; leaving cancels preparation.
 - Events appear once, on the pointer's display.
 - A successfully ended turn shows its conversation title and, for Codex, the last paragraph of its final reply when available, with a blue outlined speech bubble. Replies and permission requests share an event panel, separate from the usage panel, with one card open and the rest selectable. A reply offers session return when an exact target is available and a separate token-usage action; a failed return retains it for retry. See [session navigation](session-navigation.md) for coverage.

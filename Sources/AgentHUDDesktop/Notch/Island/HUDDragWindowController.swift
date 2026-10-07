@@ -2,8 +2,8 @@ import AppKit
 import AgentHUDCore
 import QuartzCore
 
-/// A grab surface over the visible HUD. Its bounds appear only when grabbed or Command is held;
-/// Command also exposes the target when the logos are hidden. This surface owns the mouse gesture.
+/// A grab surface over the visible HUD. Its bounds appear only when grabbed or dragged.
+/// This surface owns the mouse gesture.
 @MainActor
 final class HUDDragWindowController {
     let panel: OverlayPanel

@@ -58,8 +58,8 @@ struct ScreensPane: View {
                     SegmentOption(value: HUDMode.logos, label: L10n.text("动态 Dock", "Dynamic Dock")),
                 ], selection: binding(\.mode), theme: theme)
             }
-            Text(L10n.text("直接拖动可见的 HUD；隐藏 Logo 时，按住 ⌘ 显示虚线范围后拖动。拖动刘海会切换为动态 Dock。",
-                           "Drag the visible HUD directly. With logos hidden, hold ⌘ to reveal the dashed drag area. Dragging the notch switches to Dynamic Dock."))
+            Text(L10n.text("直接拖动可见的 HUD。拖动刘海会切换为动态 Dock。",
+                           "Drag the visible HUD directly. Dragging the notch switches to Dynamic Dock."))
                 .font(.ui(11)).foregroundStyle(theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
