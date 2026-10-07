@@ -21,6 +21,13 @@ public enum HookEntry {
         guard arguments.count == 3 else { return nil }
         let name = arguments[2]
         switch arguments[1] {
+        case "--session-origin-hook":
+            switch name {
+            case "codex": try? CodexSessionOrigins.record(data: input())
+            default: return nil
+            }
+            print("{}")
+            return 0
         case "--completion-hook":
             guard let source = CompletionHooks.Source(rawValue: name) else { return nil }
             // Local status tracking must not affect the agent's execution.
