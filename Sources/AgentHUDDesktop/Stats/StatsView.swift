@@ -128,11 +128,13 @@ struct StatsView: View {
                     store.focusedSessionID = nil
                 } label: {
                     Label(L10n.text("全部会话", "All sessions"), systemImage: "chevron.left")
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .font(.ui(12, .semibold))
                 .keyboardShortcut("[", modifiers: .command)
                 .help(L10n.text("回到会话列表", "Back to the session list"))
+                .accessibilityIdentifier("session-list-back")
                 Spacer(minLength: 12)
             case .sessions:
                 Picker(L10n.text("排列", "Arrange"), selection: $arrangement.animation(.easeOut(duration: 0.15))) {

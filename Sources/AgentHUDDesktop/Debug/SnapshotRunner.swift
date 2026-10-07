@@ -566,11 +566,12 @@ public enum SnapshotRunner {
         }
 
         let originalAgents = store.settings.agents
-        store.settings.updateAgents { agents in
-            agents + (0..<40).map {
-                AgentDescriptor(id: "sizing-\($0)", vendor: "Preview \($0)", model: "Quota", source: "Snapshot", enabled: true)
-            }
+        let originalPickedAgents = store.pickedAgents
+        let sizingAgents = (0..<40).map {
+            AgentDescriptor(id: "sizing-\($0)", vendor: "Preview \($0)", model: "Quota", source: "Snapshot", enabled: true)
         }
+        store.settings.updateAgents { $0 + sizingAgents }
+        store.pickedAgents = store.shownAgents.union(sizingAgents.map(\.vendor))
         for _ in 0..<6 {
             try? await Task.sleep(for: .milliseconds(50))
             hosting.layoutSubtreeIfNeeded()
@@ -581,6 +582,7 @@ public enum SnapshotRunner {
             print("snapshot adaptive \(capped && overflow > 0 ? "PASS" : "FAILED"): screen cap height=\(window.frame.height) overflow=\(overflow)")
         }
         store.settings.updateAgents { _ in originalAgents }
+        store.pickedAgents = originalPickedAgents
         for _ in 0..<6 {
             try? await Task.sleep(for: .milliseconds(50))
             hosting.layoutSubtreeIfNeeded()

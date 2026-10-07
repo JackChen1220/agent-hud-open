@@ -255,6 +255,7 @@ private struct QuestionButton: View {
             .padding(.horizontal, 9).frame(height: 22)
             .background(fill, in: RoundedRectangle(cornerRadius: 6))
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(stroke, lineWidth: 1))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(identifier)

@@ -30,10 +30,12 @@ struct AgentCards: View {
                         Text(L10n.text("显示 \(cards.count) 个", "\(cards.count) shown"))
                         Image(systemName: "chevron.down").font(.ui(9, .semibold))
                     }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .font(.ui(11))
                 .foregroundStyle(theme.secondary)
+                .accessibilityIdentifier("agent-card-picker")
                 .popover(isPresented: $picking, arrowEdge: .bottom) { picker(vendors, usage: byVendor) }
             }
             // Each card keeps its place by agent, so picking one fades it in or out and slides the rest into their rows.
@@ -333,7 +335,7 @@ private struct AgentCard: View {
                             Text(value(tokens)).font(.tabular(12))
                         }
                         GeometryReader { proxy in
-                            Capsule().fill(accent).frame(width: proxy.size.width * CGFloat(tokens) / CGFloat(max(1, count)))
+                            Capsule().fill(accent).frame(width: proxy.size.width * min(1, CGFloat(tokens) / CGFloat(max(1, count))))
                         }
                         .frame(height: 2)
                         .background(Capsule().fill(theme.track))
