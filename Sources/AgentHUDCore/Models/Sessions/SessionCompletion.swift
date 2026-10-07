@@ -12,13 +12,16 @@ public struct SessionCompletion: Codable, Hashable, Sendable, Identifiable {
     public let completedAt: Date
     /// The final reply's last paragraph, kept only in memory for the local completion reminder.
     public let message: String?
+    /// Source-owned destination on this Mac; never encoded with completion reports.
+    public var navigationTarget: SessionNavigationTarget?
 
     public init(sessionID: String, vendor: String, turnID: String, task: String, model: String,
-                startedAt: Date?, completedAt: Date, message: String? = nil) {
+                startedAt: Date?, completedAt: Date, message: String? = nil, navigationTarget: SessionNavigationTarget? = nil) {
         id = RecordCoding.hash([vendor, sessionID, turnID])
         self.sessionID = sessionID; self.vendor = vendor; self.task = task; self.model = model
         self.startedAt = startedAt; self.completedAt = completedAt
         self.message = Self.lastParagraph(message)
+        self.navigationTarget = navigationTarget
     }
 
     static func lastParagraph(_ message: String?) -> String? {
@@ -50,5 +53,6 @@ public struct SessionCompletion: Codable, Hashable, Sendable, Identifiable {
         startedAt = try values.decodeIfPresent(Date.self, forKey: .startedAt)
         completedAt = try values.decode(Date.self, forKey: .completedAt)
         message = nil
+        navigationTarget = nil
     }
 }

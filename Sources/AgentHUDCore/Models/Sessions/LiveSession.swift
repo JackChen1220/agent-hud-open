@@ -25,6 +25,8 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
     /// When the session's source last recorded anything for it, a log's last line or newest event, where the provider
     /// reads that. Unlike `observedAt`, reading the log again does not move it.
     public let lastActivityAt: Date?
+    /// Source-owned destination for returning to this session on this Mac; never encoded in a session report.
+    public let navigationTarget: SessionNavigationTarget?
 
     public init(
         id: String,
@@ -43,7 +45,8 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
         observedAt: Date? = nil,
         workingDirectory: String? = nil,
         subagentTranscripts: [String]? = nil,
-        lastActivityAt: Date? = nil
+        lastActivityAt: Date? = nil,
+        navigationTarget: SessionNavigationTarget? = nil
     ) {
         self.id = id
         self.agentId = agentId
@@ -62,6 +65,7 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
         self.workingDirectory = workingDirectory
         self.subagentTranscripts = subagentTranscripts.flatMap { $0.isEmpty ? nil : $0 }
         self.lastActivityAt = lastActivityAt
+        self.navigationTarget = navigationTarget
     }
 
     /// Whether the source that read this session said a turn was still in flight. The log's own silence does not end
