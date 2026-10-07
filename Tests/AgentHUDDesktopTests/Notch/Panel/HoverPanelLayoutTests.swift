@@ -6,6 +6,28 @@ import AgentHUDCore
 
 final class HoverPanelLayoutTests: XCTestCase {
     @MainActor
+    func testNativeSessionBoundsIgnoreHeaderTextStatusDotsAndFooterIcons() {
+        let hosting = PanelActionFrameView(frame: CGRect(x: 0, y: 0, width: 420, height: 220))
+        let group = PanelActionFrameView(frame: hosting.bounds)
+        hosting.addSubview(group)
+        let title = CGRect(x: 18, y: 94, width: 332, height: 15)
+        let tokens = [CGRect(x: 358, y: 94, width: 44, height: 15),
+                      CGRect(x: 358, y: 115, width: 44, height: 15)]
+        // Drawing views can share a button's row without being that button. The disabled title has no proxy here.
+        let frames = [CGRect(x: 18, y: 72, width: 52, height: 16),
+                      CGRect(x: 343, y: 73, width: 59, height: 15),
+                      CGRect(x: 18, y: 72, width: 384, height: 16),
+                      CGRect(x: 18, y: 99, width: 6, height: 6),
+                      CGRect(x: 32, y: 94, width: 91, height: 15), title, tokens[0],
+                      CGRect(x: 18, y: 120, width: 6, height: 6), tokens[1],
+                      CGRect(x: 25, y: 153, width: 15, height: 15),
+                      CGRect(x: 380, y: 154, width: 16, height: 14)]
+        for frame in frames { group.addSubview(NSView(frame: frame)) }
+        XCTAssertEqual(rowTitleFrames(in: hosting), [title])
+        XCTAssertEqual(rowTokenFrames(in: hosting), tokens)
+    }
+
+    @MainActor
     func testSessionTitleHitAreaReturnsToAgentWhileTokensOpenOnlyThatSessionsUsage() async throws {
         _ = NSApplication.shared
         let domain = "app.agenthud.tests.panel-actions.\(UUID().uuidString)"
@@ -220,7 +242,16 @@ final class HoverPanelLayoutTests: XCTestCase {
 
     @MainActor
     private func rowTokenFrames(in hosting: NSView) -> [CGRect] {
-        nativeButtonFrames(in: hosting).filter { $0.height < 22 && $0.width < 100 }
+        guard let title = rowTitleFrames(in: hosting).first else { return [] }
+        let candidates = nativeButtonFrames(in: hosting).filter {
+            $0.height < 22 && $0.width < 100 && $0.minX > title.maxX
+        }
+        guard let first = candidates.first(where: { abs($0.midY - title.midY) < 1 }) else { return [] }
+        // Both token controls share the trailing column. Header text and footer icons may be equally small.
+        return candidates.filter {
+            abs($0.maxX - first.maxX) < 1
+                && (hosting.isFlipped ? $0.minY >= title.minY : $0.maxY <= title.maxY)
+        }.sorted { hosting.isFlipped ? $0.minY < $1.minY : $0.maxY > $1.maxY }
     }
 
     @MainActor
@@ -270,6 +301,10 @@ final class HoverPanelLayoutTests: XCTestCase {
         window.sendEvent(down)
         window.sendEvent(up)
     }
+}
+
+private final class PanelActionFrameView: NSView {
+    override var isFlipped: Bool { true }
 }
 
 /// The real HUD accepts the first mouse event even when its floating window is not active.
