@@ -135,7 +135,7 @@ private struct PermissionOpenRow: View {
 }
 
 /// One line of the queue: enough to decide whether to open it, and a click to do so.
-private struct PermissionClosedRow: View {
+struct PermissionClosedRow: View {
     let request: PermissionRequest
     let onSelect: () -> Void
     @State private var hovering = false

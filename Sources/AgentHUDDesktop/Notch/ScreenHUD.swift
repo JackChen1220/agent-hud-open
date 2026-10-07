@@ -88,6 +88,7 @@ final class ScreenHUD {
         let appearance: GlowAppearance
         let alertID: String?
         let alertDetails: Bool
+        let pendingIDs: [String]
         let sessionNavigationFailed: Bool
         let failedListedSessionID: String?
     }
@@ -106,6 +107,7 @@ final class ScreenHUD {
                       requests: PermissionRequests.shared.pending, geometry: geometry, light: systemIsLight,
                       appearance: store.glowAppearance(light: systemIsLight, on: key),
                       alertID: activeAlert?.id, alertDetails: alerts.current?.inUsagePanel == false,
+                      pendingIDs: alerts.pendingIDs,
                       sessionNavigationFailed: sessionNavigationFailed, failedListedSessionID: failedListedSessionID)
     }
 
@@ -257,7 +259,14 @@ final class ScreenHUD {
         // A hidden or paused glow silences news. A client waiting for an answer is not news: it is a question that
         // was asked of this user, and hiding it would leave the session stuck with nobody knowing why.
         let silenced = (store.glowHidden || store.isPaused) && !alert.isPersistent
-        guard !silenced, alerts.show(alert, inUsagePanel: inUsagePanel ?? machine.isOpen) else { return }
+        guard !silenced else { return }
+        guard alerts.show(alert, inUsagePanel: inUsagePanel ?? machine.isOpen) else {
+            if alerts.contains(id: alert.id) {
+                openingPreparation = nil
+                apply(animated: true)
+            }
+            return
+        }
         // An event owns the brief expansion; a pending hover must not open the full panel underneath it.
         timer?.invalidate()
         timer = nil
@@ -290,6 +299,7 @@ final class ScreenHUD {
     func selectRequest(_ id: String) {
         if !alerts.contains(id: id) { onClaimRequest?(id) }
         guard alerts.promote(id: id) else { return }
+        stopTyping()
         openingPreparation = nil
         apply(animated: true)
     }
@@ -677,6 +687,7 @@ final class ScreenHUD {
         )
         root.onOpenListedSession = { [weak self] id in Task { await self?.openListedSession(id) } }
         root.failedListedSessionID = failedListedSessionID
+        root.sessionEvents = alerts.sessionEvents
         root.logoQueue = logoQueue
         root.edge = geometry.edge
         // The mode decides the silhouette, not whether there are marks to draw.

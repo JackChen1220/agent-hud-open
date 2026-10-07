@@ -45,6 +45,51 @@ final class SessionNavigationTests: XCTestCase {
     }
 
     @MainActor
+    func testAReplyArrivingDuringUsageOpensInTheEventPanel() throws {
+        let fixture = try NavigationFixture { _ in XCTFail("Presenting a reply does not navigate"); return true }
+        defer { fixture.close() }
+        fixture.hud.forceOpen()
+        let reply = fixture.completion(target: .codexThread(id: UUID().uuidString))
+        fixture.hud.present(reply)
+        XCTAssertTrue(fixture.hud.island.rootView.isOpen)
+        XCTAssertTrue(fixture.hud.island.rootView.showsAlertDetails)
+        XCTAssertEqual(fixture.hud.island.rootView.sessionEvents.map(\.id), [reply.id])
+        XCTAssertEqual(fixture.statsOpens, 0)
+    }
+
+    @MainActor
+    func testAQueuedReplyRefreshesTheEventPanelAndCanBeSelectedWithoutAnsweringPermission() throws {
+        let fixture = try NavigationFixture { _ in XCTFail("Selecting an event does not navigate"); return true }
+        defer { fixture.close() }
+        fixture.hud.forceOpen()
+        let question = PermissionQuestion(question: "Continue?", options: [.init(label: "Continue")])
+        let request = PermissionRequest(id: "waiting-permission-" + UUID().uuidString,
+                                        source: .claude, sessionID: "session", toolName: "AskUserQuestion",
+                                        summary: "Choose the next step", detail: nil,
+                                        cwd: "/tmp/agenthud-tests", questions: [question], at: Date())
+        fixture.hud.present(.permission(request))
+        let draft = QuestionDraft.draft(for: request.id)
+        draft.type("Continue after review", of: 0, in: question)
+        fixture.hud.island.panel.takeKeyboard()
+        fixture.hud.island.rootView.onTyping(true)
+        let reply = fixture.completion(target: .codexThread(id: UUID().uuidString))
+        fixture.hud.present(reply)
+        XCTAssertTrue(fixture.hud.island.rootView.showsAlertDetails)
+        XCTAssertEqual(fixture.hud.island.rootView.alert?.id, request.id)
+        XCTAssertEqual(fixture.hud.island.rootView.sessionEvents.map(\.id), [request.id, reply.id],
+                       "Joining the queue must refresh its visible rows immediately")
+        fixture.hud.island.rootView.onSelectRequest(reply.id)
+        XCTAssertEqual(fixture.hud.island.rootView.alert?.id, reply.id)
+        XCTAssertTrue(fixture.hud.island.rootView.showsAlertDetails)
+        XCTAssertTrue(fixture.hud.holds(request.id), "The request is still unanswered after selecting a reply")
+        XCTAssertEqual(fixture.hud.questions.map(\.id), [request.id])
+        XCTAssertFalse(fixture.hud.island.panel.canBecomeKey, "Selecting a reply releases the old request's keyboard")
+        XCTAssertTrue(QuestionDraft.draft(for: request.id) === draft)
+        XCTAssertEqual(draft.answer(0, of: question), "Continue after review", "Switching cards preserves its answer draft")
+        XCTAssertEqual(fixture.statsOpens, 0)
+    }
+
+    @MainActor
     func testCompletionReturnsToTheClientEvenWithoutAUsageSession() async throws {
         var opened: [SessionNavigationTarget] = []
         let fixture = try NavigationFixture { target in opened.append(target); return true }

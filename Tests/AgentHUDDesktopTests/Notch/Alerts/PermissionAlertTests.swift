@@ -15,23 +15,67 @@ final class PermissionAlertTests: XCTestCase {
                                       model: "opus", startedAt: nil, completedAt: Date()))
     }
 
-    func testARequestHoldsTheIslandAndNewsDoesNotWaitBehindIt() async throws {
+    func testARequestHoldsTheIslandAndKeepsRepliesBesideIt() async throws {
         let queue = IslandAlertQueue()
         var expired = 0
         queue.onExpire = { expired += 1 }
+        let reply = completion()
 
         XCTAssertTrue(queue.show(.permission(request("a")), inUsagePanel: false))
-        XCTAssertFalse(queue.show(completion(), inUsagePanel: false), "news never takes a question's place")
+        XCTAssertFalse(queue.show(reply, inUsagePanel: false), "a reply joins the list without replacing the question")
         XCTAssertFalse(queue.show(.permission(request("b")), inUsagePanel: false), "a second request waits its turn")
+        XCTAssertEqual(queue.sessionEvents.map(\.id), ["a", reply.id, "b"])
+        let quota = IslandAlert.quota(QuotaAlert.preview(.reset, agent: DemoData.agents[0]))
+        XCTAssertFalse(queue.show(quota, inUsagePanel: false))
+        XCTAssertFalse(queue.contains(id: quota.id), "quota news still stays out of an approval queue")
 
         try await Task.sleep(for: IslandAlertQueue.visibleDuration + .milliseconds(200))
         XCTAssertEqual(expired, 0, "a request is not news: it stays until it is answered or withdrawn")
         XCTAssertEqual(queue.current?.alert.id, "a")
 
-        // Answering the first hands over to the one that was waiting; the completion was dropped, not queued.
+        // The oldest unanswered request comes next, with the reply still waiting in the list.
         let next = queue.remove(id: "a")
         XCTAssertTrue(next.removed)
         XCTAssertEqual(next.next?.id, "b")
+        XCTAssertTrue(queue.contains(id: reply.id))
+        let second = try XCTUnwrap(next.next)
+        XCTAssertTrue(queue.show(second, inUsagePanel: true))
+        XCTAssertFalse(try XCTUnwrap(queue.current).inUsagePanel)
+        XCTAssertEqual(queue.remove(id: "b").next?.id, reply.id)
+    }
+
+    func testSessionEventsShareAStandaloneSurfaceWithoutSharingPersistence() throws {
+        let permission = IslandAlert.permission(request("a"))
+        let reply = completion()
+        XCTAssertTrue(permission.isPersistent)
+        XCTAssertFalse(reply.isPersistent, "A finished reply must not become an unresolved approval")
+        for event in [permission, reply] {
+            let queue = IslandAlertQueue()
+            XCTAssertTrue(event.isSessionEvent)
+            XCTAssertEqual(event.detailWidth, 470)
+            XCTAssertEqual(try XCTUnwrap(event.detailInsets).top, 32)
+            XCTAssertTrue(queue.show(event, inUsagePanel: true))
+            XCTAssertFalse(try XCTUnwrap(queue.current).inUsagePanel,
+                           "An open usage panel cannot turn a session event into an inline message")
+        }
+    }
+
+    func testSelectingAReplyKeepsThePermissionWaitingAndUsesTheEventSurface() throws {
+        let queue = IslandAlertQueue()
+        let quota = IslandAlert.quota(QuotaAlert.preview(.reset, agent: DemoData.agents[0]))
+        let permission = IslandAlert.permission(request("a"))
+        let reply = completion()
+        XCTAssertTrue(queue.show(quota, inUsagePanel: true))
+        XCTAssertFalse(queue.show(permission, inUsagePanel: true))
+        XCTAssertFalse(queue.show(reply, inUsagePanel: true))
+        XCTAssertEqual(queue.pendingIDs, [permission.id, reply.id])
+        XCTAssertTrue(queue.promote(id: reply.id))
+        XCTAssertEqual(queue.current?.alert.id, reply.id)
+        XCTAssertFalse(try XCTUnwrap(queue.current).inUsagePanel,
+                       "Selecting an event must not inherit the previous quota card's inline surface")
+        XCTAssertEqual(queue.questions.map(\.id), [permission.id])
+        XCTAssertEqual(queue.sessionEvents.map(\.id), [reply.id, permission.id])
+        XCTAssertEqual(queue.dismiss()?.id, permission.id)
     }
 
     func testAWithdrawnRequestIsTakenOutOfTheQueueWhereverItIs() {

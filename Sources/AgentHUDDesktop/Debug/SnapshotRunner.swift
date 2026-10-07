@@ -47,7 +47,6 @@ public enum SnapshotRunner {
             let alert = IslandAlert.completion(completion)
             save("alert-completion-\(vendor)-compact", IslandScene(store: store, settings: settings, open: false, light: false, alert: alert), folder: folder, scheme: .dark)
             save("alert-completion-\(vendor)-detail", IslandScene(store: store, settings: settings, open: true, light: false, alert: alert, showsAlertDetails: true), folder: folder, scheme: .dark)
-            save("alert-completion-\(vendor)-inline", IslandScene(store: store, settings: settings, open: true, light: false, alert: alert), folder: folder, scheme: .dark)
         }
 
         // A tool call waiting for its user: the reminder that holds, and what hovering turns it into.
@@ -75,13 +74,29 @@ public enum SnapshotRunner {
             let alert = IslandAlert.permission(request)
             save("alert-permission-\(name)-compact", IslandScene(store: store, settings: settings, open: false, light: false, alert: alert), folder: folder, scheme: .dark)
             save("alert-permission-\(name)-detail", IslandScene(store: store, settings: settings, open: true, light: false, alert: alert, showsAlertDetails: true), folder: folder, scheme: .dark)
-            save("alert-permission-\(name)-inline", IslandScene(store: store, settings: settings, open: true, light: false, alert: alert), folder: folder, scheme: .dark)
             guard name == "bash" else { continue }
             let queue = DemoData.permissionRequests()
             let queued = IslandAlert.permission(queue[0])
             save("alert-permission-queued-compact", IslandScene(store: store, settings: settings, open: false, light: false, alert: queued, waitingRequests: queue), folder: folder, scheme: .dark)
             save("alert-permission-queued-detail", IslandScene(store: store, settings: settings, open: true, light: false, alert: queued, showsAlertDetails: true, waitingRequests: queue), folder: folder, scheme: .dark)
         }
+
+        let waiting = DemoData.permissionRequests()
+        let reply = IslandAlert.completion(SessionCompletion(
+            sessionID: "snapshot", vendor: "Codex", turnID: "shared-panel",
+            task: L10n.text("修复会话跳转", "Fix session navigation"), model: "gpt-6.1-sol",
+            startedAt: Date().addingTimeInterval(-60), completedAt: Date(),
+            message: L10n.text("标题返回 agent，token 数字打开会话用量。", "Titles return to the agent; token counts open session usage."),
+            navigationTarget: .codexThread(id: "00000000-0000-0000-0000-000000000001")))
+        let sessionEvents: [IslandAlert] = [.permission(waiting[0]), reply]
+        save("alert-events-permission-selected", IslandScene(store: store, settings: settings, open: true, light: false,
+                                                            alert: sessionEvents[0], showsAlertDetails: true,
+                                                            waitingRequests: waiting, sessionEvents: sessionEvents),
+             folder: folder, scheme: .dark)
+        save("alert-events-reply-selected", IslandScene(store: store, settings: settings, open: true, light: false,
+                                                       alert: reply, showsAlertDetails: true,
+                                                       waitingRequests: waiting, sessionEvents: sessionEvents),
+             folder: folder, scheme: .dark)
 
         save("island-collapsed", IslandScene(store: store, settings: settings, open: false, light: false), folder: folder, scheme: .dark)
         for style in GlowStyle.allCases where style != .blur {
@@ -678,14 +693,22 @@ struct IslandScene: View {
     var alert: IslandAlert? = nil
     var showsAlertDetails = false
     var waitingRequests: [PermissionRequest] = []
+    var sessionEvents: [IslandAlert] = []
     var failedListedSessionID: String? = nil
     /// A fixed effect time for the dot and ASCII glow styles.
     var glowTime: Double? = nil
 
     private var panelHeight: CGFloat {
         if showsAlertDetails, let alert {
-            let hosting = NSHostingView(rootView: IslandAlertDetailView(alert: alert, onOpen: {}, onDecide: { _ in },
-                                                                         waitingRequests: waitingRequests)
+            let detail: AnyView
+            if alert.isSessionEvent {
+                detail = AnyView(IslandEventPanelView(alert: alert, onOpen: {}, onDecide: { _ in },
+                                                     events: sessionEvents, waitingRequests: waitingRequests))
+            } else {
+                detail = AnyView(IslandAlertDetailView(alert: alert, onOpen: {}, onDecide: { _ in },
+                                                      waitingRequests: waitingRequests))
+            }
+            let hosting = NSHostingView(rootView: detail
                             .padding(alert.detailInsets.map {
                     EdgeInsets(top: max($0.top, 38), leading: $0.leading, bottom: $0.bottom, trailing: $0.trailing)
                 } ?? EdgeInsets(top: 38 + alert.detailTopInset, leading: 24, bottom: 22, trailing: 24))
@@ -747,7 +770,7 @@ struct IslandScene: View {
                 collapsedSize: CGSize(width: cameraWidth + NotchGeometry.collapsedTopRadius * 2, height: closedHeight),
                 collapsedTopRadius: NotchGeometry.collapsedTopRadius, collapsedBottomRadius: 14,
                 lightBorder: light, onOpenStats: {}, alert: alert, failedListedSessionID: failedListedSessionID,
-                waitingRequests: waitingRequests,
+                waitingRequests: waitingRequests, sessionEvents: sessionEvents,
                 showsAlertDetails: showsAlertDetails, presentationSize: islandSize
             )
                 .frame(width: islandSize.width + flare * 2, height: islandSize.height)

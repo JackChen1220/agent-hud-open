@@ -95,6 +95,117 @@ struct IslandAlertDetailView: View {
     }
 }
 
+/// Session events share one panel: the selected card is open and the other events remain selectable rows.
+struct IslandEventPanelView: View {
+    let alert: IslandAlert
+    let onOpen: () -> Void
+    let onDecide: (PermissionDecision) -> Void
+    var onOpenSession: () -> Void = {}
+    var onOpenUsage: () -> Void = {}
+    var sessionNavigationFailed = false
+    var events: [IslandAlert] = []
+    var waitingRequests: [PermissionRequest] = []
+    var onSelectRequest: (String) -> Void = { _ in }
+
+    private var requests: [PermissionRequest] {
+        if !waitingRequests.isEmpty { return waitingRequests }
+        var values = events.compactMap { event -> PermissionRequest? in
+            guard case .permission(let request) = event else { return nil }
+            return request
+        }
+        if case .permission(let request) = alert, !values.contains(where: { $0.id == request.id }) {
+            values.insert(request, at: 0)
+        }
+        var seen = Set<String>()
+        return values.filter { seen.insert($0.id).inserted }
+    }
+
+    private var replies: [SessionCompletion] {
+        events.compactMap { event in
+            guard case .completion(let reply) = event, reply.id != alert.id else { return nil }
+            return reply
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            IslandAlertDetailView(alert: alert, onOpen: onOpen, onDecide: onDecide,
+                                  onOpenSession: onOpenSession, onOpenUsage: onOpenUsage,
+                                  sessionNavigationFailed: sessionNavigationFailed,
+                                  waitingRequests: requests, onSelectRequest: onSelectRequest)
+                .accessibilityIdentifier("island-event-selected-\(alert.id)")
+
+            if case .completion = alert, !requests.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 8) {
+                        Text(L10n.text("待审批", "Waiting"))
+                            .font(.ui(11, .semibold)).foregroundStyle(PermissionColor.secondary)
+                        Spacer()
+                        Text("\(requests.count)")
+                            .font(.tabular(10, .semibold)).foregroundStyle(PermissionColor.signal)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(PermissionColor.signal.opacity(0.16), in: Capsule())
+                    }.padding(.horizontal, 4).padding(.bottom, 8)
+                    VStack(spacing: 2) {
+                        ForEach(requests) { request in
+                            PermissionClosedRow(request: request, onSelect: { onSelectRequest(request.id) })
+                                .accessibilityIdentifier("island-event-permission-\(request.id)")
+                                .help(L10n.text("展开请求详情", "Show request details"))
+                        }
+                    }
+                }
+            }
+
+            if !replies.isEmpty {
+                VStack(spacing: 2) {
+                    ForEach(replies) { reply in
+                        CompletionClosedRow(event: reply, onSelect: { onSelectRequest(reply.id) })
+                    }
+                }
+            }
+        }
+        .foregroundStyle(Theme.island.text)
+        .accessibilityIdentifier("island-event-panel")
+    }
+}
+
+private struct CompletionClosedRow: View {
+    let event: SessionCompletion
+    let onSelect: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 8) {
+                AgentLogo(vendor: event.vendor, size: 13).opacity(0.8)
+                Text(event.vendor).font(.ui(12, .medium)).lineLimit(1).minimumScaleFactor(0.8)
+                HStack(spacing: 3) {
+                    Image(systemName: "text.bubble").font(.system(size: 8, weight: .bold))
+                    Text(L10n.text("有新回复", "New reply")).font(.ui(10, .bold))
+                }
+                .foregroundStyle(Color(IslandAlert.turnAccent))
+                .padding(.horizontal, 4).padding(.vertical, 1)
+                .background(Color(IslandAlert.turnAccent).opacity(0.14), in: RoundedRectangle(cornerRadius: 3))
+                .fixedSize()
+                Text(event.task).font(.ui(11)).foregroundStyle(Theme.island.secondary).lineLimit(1)
+                Spacer(minLength: 6)
+                Text(event.completedAt.formatted(date: .omitted, time: .shortened))
+                    .font(.tabular(11)).foregroundStyle(Theme.island.tertiary)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(hovering ? Theme.island.segmentBackground : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityIdentifier("island-event-reply-\(event.id)")
+        .accessibilityLabel(L10n.text("打开 \(event.vendor) 的回复：\(event.task)",
+                                      "Open \(event.vendor) reply: \(event.task)"))
+        .help(L10n.text("展开回复与会话操作", "Show reply and session actions"))
+    }
+}
+
 struct IslandAlertInlineView: View {
     let alert: IslandAlert
     let onOpen: () -> Void

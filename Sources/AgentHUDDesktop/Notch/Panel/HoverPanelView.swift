@@ -68,7 +68,7 @@ struct HoverPanelView: View {
                     .font(.ui(11)).foregroundStyle(theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if let alert {
+            if let alert, !alert.isSessionEvent {
                 IslandAlertInlineView(alert: alert, onOpen: onOpenAlert, onDecide: onDecideAlert,
                                       onOpenSession: onOpenAlertSession, onOpenUsage: onOpenAlertUsage,
                                       sessionNavigationFailed: sessionNavigationFailed,

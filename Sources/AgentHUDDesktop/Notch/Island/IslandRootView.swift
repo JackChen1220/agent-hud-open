@@ -24,6 +24,8 @@ struct IslandRootView: View {
     /// Every request waiting for this user, oldest first and across screens: the expanded card stacks the rest under
     /// the one being decided, and the collapsed island only counts them.
     var waitingRequests: [PermissionRequest] = []
+    /// Replies and requests share the event surface while quota and tokens keep their own panel.
+    var sessionEvents: [IslandAlert] = []
     /// Brings one of the stacked requests to the front.
     var onSelectRequest: (String) -> Void = { _ in }
     /// The user started or stopped typing an answer on the island.
@@ -138,10 +140,20 @@ struct IslandRootView: View {
     @ViewBuilder
     var content: some View {
         if isOpen, showsAlertDetails, let alert {
-            IslandAlertDetailView(alert: alert, onOpen: onOpenAlert, onDecide: onDecideAlert,
-                                  onOpenSession: onOpenAlertSession, onOpenUsage: onOpenAlertUsage,
-                                  sessionNavigationFailed: sessionNavigationFailed,
-                                  waitingRequests: waitingRequests, onSelectRequest: onSelectRequest)
+            Group {
+                if alert.isSessionEvent {
+                    IslandEventPanelView(alert: alert, onOpen: onOpenAlert, onDecide: onDecideAlert,
+                                         onOpenSession: onOpenAlertSession, onOpenUsage: onOpenAlertUsage,
+                                         sessionNavigationFailed: sessionNavigationFailed,
+                                         events: sessionEvents, waitingRequests: waitingRequests,
+                                         onSelectRequest: onSelectRequest)
+                } else {
+                    IslandAlertDetailView(alert: alert, onOpen: onOpenAlert, onDecide: onDecideAlert,
+                                          onOpenSession: onOpenAlertSession, onOpenUsage: onOpenAlertUsage,
+                                          sessionNavigationFailed: sessionNavigationFailed,
+                                          waitingRequests: waitingRequests, onSelectRequest: onSelectRequest)
+                }
+            }
                 .padding(hidesSilhouette ? dockInsets : alert.detailInsets.map {
                     // Never under the silhouette: a notch is 38 pt of hardware on some Macs, and a card narrower
                     // than the usage panel sits squarely in its shadow rather than beside it. A screenshot cannot
