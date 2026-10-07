@@ -35,6 +35,8 @@ final class ClientHooksTests: XCTestCase, @unchecked Sendable {
         let claude = home.appendingPathComponent(".claude/settings.json")
         try JSONSerialization.data(withJSONObject: ["model": "opus", "hooks": [
             "PreToolUse": [["matcher": "Bash", "hooks": [["type": "command", "command": "~/bin/lint"]]]],
+            "SessionStart": [["matcher": "startup|resume", "hooks": [["type": "command", "command": "~/bin/session-log"]]]],
+            "UserPromptSubmit": [["hooks": [["type": "command", "command": "~/bin/prompt-log"]]]],
             "Notification": [["matcher": "permission_prompt", "hooks": [["type": "command",
                 "command": "'/Applications/Agent HUD Open.app/Contents/MacOS/Agent HUD Open' --attention-hook claude"]]]]]]).write(to: claude)
 
@@ -42,14 +44,24 @@ final class ClientHooksTests: XCTestCase, @unchecked Sendable {
         SessionObservers.configure(executable: executable, enabled: true, home: home)
         let qwen = home.appendingPathComponent(".qwen/settings.json")
         XCTAssertEqual(try commands(claude), ["'\(executable.path)' --attention-hook claude", "'\(executable.path)' --permission-hook claude",
-                                              "~/bin/lint"], "approval and notification hooks beside the user's own, all the running copy's")
+                                              "'\(executable.path)' --session-origin-hook claude", "'\(executable.path)' --session-origin-hook claude",
+                                              "~/bin/lint", "~/bin/prompt-log", "~/bin/session-log"],
+                       "approval, notification and both origin callbacks beside the user's hooks, all the running copy's")
+        let installed = try ProviderJSON.read(Data(contentsOf: claude))
+        for event in ClaudeSessionOrigins.events {
+            XCTAssertEqual((installed["hooks"][event].arrayValue ?? []).flatMap { $0["hooks"].arrayValue ?? [] }
+                .compactMap { $0["command"].stringValue }.filter { $0.hasSuffix(" --session-origin-hook claude") },
+                           ["'\(executable.path)' --session-origin-hook claude"], "one origin callback under each event")
+        }
         XCTAssertEqual(try ProviderJSON.read(Data(contentsOf: claude))["hooks"]["Notification"].arrayValue?.first?["matcher"].stringValue,
                        "permission_prompt", "the handler taken over keeps its matcher")
         XCTAssertEqual(try commands(qwen).count, 2, "approval and stop hooks")
 
         SessionObservers.configure(executable: executable, enabled: false, home: home)
-        XCTAssertEqual(try commands(claude), ["~/bin/lint"])
-        XCTAssertEqual(try ProviderJSON.read(Data(contentsOf: claude))["model"].stringValue, "opus")
+        XCTAssertEqual(try commands(claude), ["~/bin/lint", "~/bin/prompt-log", "~/bin/session-log"])
+        let removed = try ProviderJSON.read(Data(contentsOf: claude))
+        XCTAssertEqual(removed["model"].stringValue, "opus")
+        XCTAssertEqual(removed["hooks"]["SessionStart"].arrayValue?.first?["matcher"].stringValue, "startup|resume")
         XCTAssertEqual(try commands(qwen), [])
     }
 

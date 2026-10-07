@@ -24,6 +24,7 @@ public enum HookEntry {
         case "--session-origin-hook":
             switch name {
             case "codex": try? CodexSessionOrigins.record(data: input())
+            case "claude": try? ClaudeSessionOrigins.record(data: input())
             default: return nil
             }
             print("{}")

@@ -25,6 +25,10 @@ public enum SessionObservers {
             do { try CodexSessionOrigins.configure(enabled: enabled, executable: executable, home: home) }
             catch { NSLog("[AgentHUD] Codex origin hook setup failed: %@", error.localizedDescription) }
         }
+        if PermissionHooks.Source.claude.isInstalled(home: home) {
+            do { try ClaudeSessionOrigins.configure(enabled: enabled, executable: executable, home: home) }
+            catch { NSLog("[AgentHUD] Claude origin hook setup failed: %@", error.localizedDescription) }
+        }
         for source in CompletionHooks.Source.allCases {
             guard AdditionalSource(rawValue: source.rawValue)?.isInstalled(home: home) == true else { continue }
             do { try CompletionHooks.configure(source, enabled: enabled, executable: executable, home: home) }
