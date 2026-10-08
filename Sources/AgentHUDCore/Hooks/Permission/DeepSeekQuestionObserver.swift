@@ -181,7 +181,7 @@ public final class DeepSeekQuestionObserver {
         for line in output.split(separator: "\n") {
             let command = line.split(maxSplits: 1, whereSeparator: \.isWhitespace).last.map(String.init) ?? ""
             guard isHarness(command) else { continue }
-            if let port = flag("port", command: command).flatMap(Int.init), (1...65535).contains(port) {
+            if let port = portFlag(command: command).flatMap(Int.init), (1...65535).contains(port) {
                 ports.insert(port)
             } else {
                 ports.insert(defaultPort)
@@ -193,16 +193,18 @@ public final class DeepSeekQuestionObserver {
     /// The Harness entry — `dsh` or the package's `bin.js` — running its web profile, the only profile whose
     /// host asks questions. Which home a process serves its files under its environment keeps to itself; the
     /// describe call is what confirms the port.
+    nonisolated private static let harnessPattern = try! NSRegularExpression(pattern: #"(?:^|/)(?:dsh|bin\.js)(?:\s|$)"#)
+    nonisolated private static let portPattern = try! NSRegularExpression(pattern: #"(?:^|\s)--port(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))"#)
+
     nonisolated static func isHarness(_ command: String) -> Bool {
         let lower = command.lowercased()
-        guard lower.range(of: #"(?:^|/)(?:dsh|bin\.js)(?:\s|$)"#, options: .regularExpression) != nil else { return false }
-        return lower.contains("--profile web") || lower.contains("--profile=web")
+        guard lower.contains("--profile web") || lower.contains("--profile=web") else { return false }
+        return harnessPattern.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)) != nil
     }
 
-    nonisolated private static func flag(_ name: String, command: String) -> String? {
-        let pattern = #"(?:^|\s)--"# + NSRegularExpression.escapedPattern(for: name) + #"(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(in: command, range: NSRange(command.startIndex..., in: command)) else { return nil }
+    nonisolated private static func portFlag(command: String) -> String? {
+        guard command.contains("--port"),
+              let match = portPattern.firstMatch(in: command, range: NSRange(command.startIndex..., in: command)) else { return nil }
         for index in 1..<match.numberOfRanges {
             if let range = Range(match.range(at: index), in: command) { return String(command[range]) }
         }

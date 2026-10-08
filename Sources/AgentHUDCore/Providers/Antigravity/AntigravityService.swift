@@ -55,13 +55,22 @@ enum AntigravityService {
         }
     }
 
+    private static let agyPattern = try! NSRegularExpression(pattern: #"(?:^|/)agy(?:\s|$)"#)
+    private static let flagPatterns: [String: NSRegularExpression] = Dictionary(uniqueKeysWithValues:
+        ["app_data_dir", "csrf_token", "extension_server_port", "extension_server_csrf_token"].map { name in
+            let pattern = #"(?:^|\s)--"# + name + #"(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))"#
+            return (name, try! NSRegularExpression(pattern: pattern))
+        })
+
     static func candidates(_ output: String) -> [Candidate] {
         output.split(separator: "\n").compactMap { line in
             let pieces = line.split(maxSplits: 1, whereSeparator: \.isWhitespace)
             guard pieces.count == 2, let pid = Int(pieces[0]) else { return nil }
             let command = String(pieces[1]), lower = command.lowercased()
+            // Every accepted CLI or server names one of these; unrelated processes need no regex search.
+            guard lower.contains("antigravity") || lower.contains("agy") else { return nil }
             let cli = lower.contains("/antigravity-cli/") || lower.contains("/antigravity_cli/")
-                || lower.range(of: #"(?:^|/)agy(?:\s|$)"#, options: .regularExpression) != nil
+                || (lower.contains("agy") && agyPattern.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)) != nil)
             let server = (lower.contains("language_server") || lower.contains("language-server"))
                 && (lower.contains("antigravity.app/") || lower.contains("antigravity ide.app/")
                     || lower.contains("/antigravity/") || flag("app_data_dir", command: command)?.hasPrefix("antigravity") == true)
@@ -76,8 +85,7 @@ enum AntigravityService {
     }
 
     private static func flag(_ name: String, command: String) -> String? {
-        let pattern = #"(?:^|\s)--"# + NSRegularExpression.escapedPattern(for: name) + #"(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
+        guard command.contains("--" + name), let regex = flagPatterns[name],
               let match = regex.firstMatch(in: command, range: NSRange(command.startIndex..., in: command)) else { return nil }
         for index in 1..<match.numberOfRanges {
             if let range = Range(match.range(at: index), in: command) { return String(command[range]) }
