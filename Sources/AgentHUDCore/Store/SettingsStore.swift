@@ -40,6 +40,11 @@ public final class SettingsStore {
             agents = defaultAgents.groupedAgentOrder
         }
         hasCompletedOnboarding = defaults.bool(forKey: Keys.onboarding)
+        let normalized = applyingAccountVisibility(to: agents)
+        if normalized != agents {
+            agents = normalized
+            persist(normalized, key: Keys.agents)
+        }
     }
 
     public var enabledAgents: [AgentDescriptor] { agents.filter(\.enabled) }
@@ -72,9 +77,21 @@ public final class SettingsStore {
         updateAgents { list in list.map { $0.id == id ? $0.with(enabled: enabled) : $0 } }
     }
 
-    /// Hides an account's readings without changing its individual windows or their order.
+    /// Sets every window of the account to the same display switch, preserving other accounts and window order.
+    /// Both persisted values are current before observers hear about this one preference change.
     public func setAccount(id: String, visible: Bool) {
-        update { $0.setAccountVisibility(id: id, visible: visible) }
+        let next = settings.with { $0.setAccountVisibility(id: id, visible: visible) }
+        let windows = agents.map { $0.displayAccountID == id ? $0.with(enabled: visible) : $0 }
+        guard next != settings || windows != agents else { return }
+        if next != settings {
+            settings = next
+            persist(next, key: Keys.settings)
+        }
+        if windows != agents {
+            agents = windows
+            persist(windows, key: Keys.agents)
+        }
+        onChange?(.settings)
     }
 
     public func moveAgent(id: String, to index: Int) {
@@ -92,6 +109,7 @@ public final class SettingsStore {
     /// Account rows: the first identified account takes over an unscoped row's position and switch, a further account's
     /// window inherits the switch of the same window on another account, and rows that are no longer present, as
     /// `ReportView.isPresent(_:in:)` decides without the sighting times, are removed.
+    /// Windows belonging to a hidden account stay switched off, including newly discovered and identified windows.
     /// With `replaceQuotaWindows`, a Codex read that lists an account's complete window inventory retires the windows it left
     /// out; judged on the accounts alone, since these fields carry no notices. Incremental discovery keeps existing
     /// preferences.
@@ -182,7 +200,12 @@ public final class SettingsStore {
             list.insert(contentsOf: arriving, at: 0)
             return list
         }()
-        saveAgents(merged, change: .discovery)
+        saveAgents(applyingAccountVisibility(to: merged), change: .discovery)
+    }
+
+    /// Hidden accounts keep every window off; visible accounts retain their individual display switches.
+    private func applyingAccountVisibility(to windows: [AgentDescriptor]) -> [AgentDescriptor] {
+        windows.map { settings.accountVisible($0.displayAccountID) ? $0 : $0.with(enabled: false) }
     }
 
     public func markOnboardingComplete() {

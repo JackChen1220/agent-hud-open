@@ -4,7 +4,7 @@ import XCTest
 import AgentHUDCore
 @testable import AgentHUDDesktop
 
-/// Native pointer interactions on the Agents settings page, located from its rendered AppKit controls.
+/// Native control actions and provider pointer interactions, located from the rendered AppKit controls.
 final class AgentSettingsInteractionTests: XCTestCase {
     override func tearDown() {
         L10n.setLanguage(.system)
@@ -12,7 +12,7 @@ final class AgentSettingsInteractionTests: XCTestCase {
     }
 
     @MainActor
-    func testProviderSelectionKeepsWindowsEditableAndPreservesTheirSettings() async throws {
+    func testProviderSelectionAndAccountSwitchesKeepRelatedSettingsConsistent() async throws {
         _ = NSApplication.shared
         let domain = "app.agenthud.tests.agents.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
@@ -126,7 +126,8 @@ final class AgentSettingsInteractionTests: XCTestCase {
         }
         func clickFirstSwitch() throws {
             let control = try XCTUnwrap(switches().first, "Missing native switch\n\(hierarchy())")
-            try click(control.convert(control.bounds, to: hosting))
+            // AppKit routes the native action even when the test window is outside the display's hit-test bounds.
+            control.performClick(nil)
         }
         func selectProvider(_ index: Int) throws {
             let buttons = providerButtons()
@@ -177,6 +178,48 @@ final class AgentSettingsInteractionTests: XCTestCase {
         XCTAssertEqual(settings.agents.first { $0.id == "settings-claude-5h" }?.enabled, true,
                        "The window remains editable after selecting the current provider again")
         XCTAssertEqual(settings.agents.first { $0.id == "settings-codex" }?.enabled, false)
+
+        // A provider without a local installation has an editable, initially Off live-status switch.
+        let cursorIndex = try XCTUnwrap(AgentSettingsGroup.make(sources: sources, agents: settings.agents, report: store.report)
+            .firstIndex { $0.id == "Cursor" })
+        try selectProvider(cursorIndex)
+        await settle(until: { switches().count == 1 && switches().first?.state == .off })
+        XCTAssertFalse(settings.settings.liveStatusEnabled(for: "Cursor"))
+        XCTAssertEqual(switches().first?.state, .off)
+        XCTAssertEqual(switches().first?.isEnabled, true)
+        try clickFirstSwitch()
+        await settle(until: { settings.settings.liveStatusEnabled(for: "Cursor") && switches().first?.state == .on })
+        XCTAssertTrue(settings.settings.liveStatusEnabled(for: "Cursor"), "An undetected client can still be enabled manually")
+        XCTAssertEqual(switches().first?.state, .on)
+
+        let work = try XCTUnwrap(ProviderAccount.identified(provider: "Codex", user: "work@example.com", workspace: nil))
+        let personal = try XCTUnwrap(ProviderAccount.identified(provider: "Codex", user: "personal@example.com", workspace: nil))
+        let accountWindows = [
+            AgentDescriptor(id: work.windowID("5h"), vendor: "Codex", model: "5h", source: "", enabled: true, account: work),
+            AgentDescriptor(id: work.windowID("weekly"), vendor: "Codex", model: "Weekly", source: "", enabled: false, account: work),
+            AgentDescriptor(id: personal.windowID("5h"), vendor: "Codex", model: "5h", source: "", enabled: true, account: personal),
+        ]
+        settings.updateAgents { _ in accountWindows }
+        store.replace(report: UsageReport(generatedAt: Date(), snapshots: [], sessions: []))
+        hosting.rootView = AnyView(SettingsView(settings: settings, store: store, initialTab: .sources,
+            sourceStatuses: sources, initialProviderID: "Codex")
+            .frame(width: size.width, height: size.height).id("account-windows"))
+        await settle(until: { switches().count == 6 })
+        XCTAssertEqual(switches().count, 6, "Two account switches, three windows and Live status")
+        XCTAssertTrue(settings.settings.liveStatusEnabled(for: "Cursor"), "Rendering another provider preserves the manual On choice")
+        try clickFirstSwitch()
+        await settle(until: { !settings.settings.accountVisible(work.id) && switches().map(\.state) == [.off, .on, .off, .off, .on, .on] })
+        XCTAssertFalse(settings.settings.accountVisible(work.id))
+        XCTAssertEqual(settings.agents.map(\.enabled), [false, false, true], "Account Off changes only its own windows")
+        XCTAssertEqual(switches().map(\.state), [.off, .on, .off, .off, .on, .on], "Rendered window switches follow Account Off")
+        XCTAssertEqual(switches().map(\.isEnabled), [true, true, false, false, true, true], "Hidden windows wait for their account to be shown")
+        try clickFirstSwitch()
+        await settle(until: { settings.settings.accountVisible(work.id) && switches().allSatisfy { $0.state == .on } })
+        XCTAssertTrue(settings.settings.accountVisible(work.id))
+        XCTAssertEqual(settings.agents.map(\.enabled), [true, true, true], "Account On enables every corresponding window")
+        XCTAssertTrue(switches().allSatisfy { $0.state == .on }, "Rendered window switches follow Account On")
+        XCTAssertTrue(switches().allSatisfy(\.isEnabled), "Showing the account makes each window editable again")
+        XCTAssertEqual(settings.agents.map(\.id), accountWindows.map(\.id), "Account toggles preserve manual window order")
     }
 }
 

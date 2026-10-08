@@ -6,6 +6,7 @@ struct AgentOrderRow: View {
     let agent: AgentDescriptor
     let theme: Theme
     var accountName: String? = nil
+    var accountVisible = true
     let onToggle: (Bool) -> Void
 
     var body: some View {
@@ -22,6 +23,7 @@ struct AgentOrderRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             Toggle(L10n.text("显示", "Show") + " " + agent.displayName, isOn: Binding(get: { agent.enabled }, set: { onToggle($0) }))
                 .labelsHidden().toggleStyle(.switch).controlSize(.small)
+                .disabled(!accountVisible)
                 .accessibilityIdentifier("agent-display-\(agent.id)")
         }
         .font(.ui(13))

@@ -64,6 +64,9 @@ struct SourcesPane: View {
         .onChange(of: groups.map(\.id), initial: true) { _, ids in
             if selectedProviderID.map({ ids.contains($0) }) != true { selectedProviderID = ids.first }
         }
+        .onChange(of: detected, initial: true) { _, sources in
+            settings.update { $0.applyLiveStatusDefaults(sources: sources) }
+        }
     }
 }
 
@@ -180,7 +183,8 @@ private struct AgentProviderDetail: View {
                 SettingsSection(title: L10n.text("显示窗口", "Visible windows"),
                                 subtitle: L10n.text("拖动窗口，调整光晕和面板中的顺序。", "Drag windows to reorder the glow and panel."), theme: theme) {
                     ForEach(group.agents) { agent in
-                        AgentOrderRow(agent: agent, theme: theme, accountName: group.accountName(for: agent)) {
+                        AgentOrderRow(agent: agent, theme: theme, accountName: group.accountName(for: agent),
+                                      accountVisible: settings.settings.accountVisible(agent.displayAccountID)) {
                             settings.setAgent(id: agent.id, enabled: $0)
                         }
                         .onDrag {
