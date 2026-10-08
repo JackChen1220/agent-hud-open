@@ -1,0 +1,205 @@
+import AgentHUDSupport
+import Foundation
+import XCTest
+@testable import AgentHUDCore
+
+/// The questions DeepSeek Harness's web host asks, read from captured frames and answered the way its
+/// `/api/respond` files them.
+final class DeepSeekQuestionsTests: XCTestCase, @unchecked Sendable {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+    private let port = 3080
+
+    /// A frame exactly as the host pushed it during a live session.
+    private func frame(rpcID: String = "afbc4073-a9cb-44bf-9e0e-ec41948f8505",
+                       session: String = "session-85d81a47-8249-4078-9d52-8f085746740a",
+                       method: String = "question/requested",
+                       payload: ProviderJSON? = nil) -> ProviderJSON {
+        .object([
+            "type": .string("server-request"), "rpcId": .string(rpcID),
+            "method": .string(method),
+            "payload": payload ?? .object([
+                "type": .string("question/requested"), "sessionId": .string(session),
+                "questions": .array([
+                    .object([
+                        "id": .string("choice"),
+                        "question": .string("请选择一个选项：您希望如何继续？"),
+                        "header": .string("选择"),
+                        "options": .array([
+                            .object(["description": .string("选择此项表示确认或继续。"), "label": .string("选项 A")]),
+                            .object(["description": .string("选择此项表示跳过或取消。"), "label": .string("选项 B")]),
+                        ]),
+                    ]),
+                ]),
+            ]),
+        ])
+    }
+
+    private func describe(version: String = "0.0.1") -> ProviderJSON {
+        .object(["type": .string("server-response"), "rpcId": .string("probe"),
+                 "result": .object(["ok": .bool(true), "value": .object([
+                    "version": .string(version), "provider": .string("glmtest"), "model": .string("glm-4.7"),
+                    "cwd": .string("/Users/me/work"), "home": .string("/Users/me"),
+                 ])])])
+    }
+
+    private func pending(rpcID: String = "afbc4073-a9cb-44bf-9e0e-ec41948f8505") throws -> DeepSeekQuestions.Pending {
+        let frame = try XCTUnwrap(DeepSeekQuestions.Frame.read(frame(rpcID: rpcID)))
+        return DeepSeekQuestions.pending(frame, port: port, now: now)
+    }
+
+    func testFrameReadsAQuestionAndRefusesWhatItCannotAnswerInFull() throws {
+        let read = try XCTUnwrap(DeepSeekQuestions.Frame.read(frame()))
+        XCTAssertEqual(read.rpcID, "afbc4073-a9cb-44bf-9e0e-ec41948f8505")
+        XCTAssertEqual(read.sessionID, "session-85d81a47-8249-4078-9d52-8f085746740a")
+        XCTAssertEqual(read.questions.count, 1)
+        XCTAssertEqual(read.questions[0].question, "请选择一个选项：您希望如何继续？")
+        XCTAssertEqual(read.questions[0].options.map(\.label), ["选项 A", "选项 B"])
+        XCTAssertFalse(read.questions[0].multiSelect)
+
+        // Not a question frame, no session, or an entry the HUD cannot read in full — each is left whole to the
+        // host's own surface rather than half-read.
+        XCTAssertNil(DeepSeekQuestions.Frame.read(frame(method: "session/prompt")))
+        XCTAssertNil(DeepSeekQuestions.Frame.read(frame(payload: .object(["questions": .array([])]))))
+        XCTAssertNil(DeepSeekQuestions.Frame.read(frame(session: "", payload: .object([
+            "sessionId": .string(""), "questions": .array([.object(["question": .string("Q")])]),
+        ]))))
+        XCTAssertNil(DeepSeekQuestions.Frame.read(frame(payload: .object([
+            "sessionId": .string("session-x"), "questions": .array([.object(["question": .string("Q")])]),
+        ]))))
+    }
+
+    func testPendingCarriesTheHarnessContextOnTheRequest() throws {
+        let waiting = try pending()
+        XCTAssertEqual(waiting.request.source, .deepseek)
+        XCTAssertEqual(waiting.request.vendor, "DeepSeek")
+        XCTAssertEqual(waiting.request.sessionID, "deepseek:session-85d81a47-8249-4078-9d52-8f085746740a")
+        XCTAssertEqual(waiting.request.toolName, "AskUserQuestion")
+        XCTAssertEqual(waiting.request.badge, "ASK")
+        XCTAssertEqual(waiting.request.summary, "请选择一个选项：您希望如何继续？")
+        XCTAssertEqual(waiting.request.id, "deepseek:\(port):afbc4073-a9cb-44bf-9e0e-ec41948f8505")
+        XCTAssertEqual(waiting.rpcID, "afbc4073-a9cb-44bf-9e0e-ec41948f8505")
+        XCTAssertEqual(waiting.port, port)
+        XCTAssertEqual(waiting.request.at, now)
+        XCTAssertNil(waiting.request.alwaysAllow, "Harness offers no rule suggestion, so there is no invented one")
+    }
+
+    /// An offered label goes back under `selected`, the user's own words under `custom`, a skip as an empty
+    /// `selected` — the shapes the host accepted live — with every question in the batch covered.
+    func testAnswerMapsChoicesCustomWordsAndSkips() throws {
+        let waiting = try pending()
+        let question = waiting.request.questions[0].question
+        func entry(_ decision: PermissionDecision) throws -> (selected: [String], custom: String?) {
+            let body = try DeepSeekQuestions.answer(decision, for: waiting)
+            XCTAssertEqual(body["type"].stringValue, "client-response")
+            XCTAssertEqual(body["rpcId"].stringValue, waiting.rpcID)
+            let value = try XCTUnwrap(body["result"]["value"].objectValue)
+            XCTAssertEqual(value["sessionId"]?.stringValue, "session-85d81a47-8249-4078-9d52-8f085746740a")
+            let answer = try XCTUnwrap(value["answer"]?.objectValue)
+            let answers = try XCTUnwrap(answer["answers"]?.arrayValue)
+            XCTAssertEqual(answers.count, 1, "every question in the batch is covered")
+            let entry = try XCTUnwrap(answers[0].objectValue)
+            XCTAssertEqual(entry["id"]?.stringValue, question)
+            return (entry["selected"]?.arrayValue?.compactMap { $0.stringValue } ?? [],
+                    entry["custom"]?.stringValue)
+        }
+        XCTAssertEqual(try entry(.answer([question: "选项 A"])).selected, ["选项 A"])
+        XCTAssertEqual(try entry(.answer([question: "自己想想"])).custom, "自己想想")
+        XCTAssertEqual(try entry(.answer([question: "选项 A"])).custom, nil)
+        XCTAssertEqual(try entry(.answer([:])).selected, [], "a question left open is skipped")
+    }
+
+    func testMultiSelectSplitsLabelsAndKeepsTheSupplement() throws {
+        let json = frame(payload: .object([
+            "sessionId": .string("session-multi"),
+            "questions": .array([
+                .object([
+                    "id": .string("both"), "question": .string("选哪些？"), "multiSelect": .bool(true),
+                    "options": .array([
+                        .object(["label": .string("甲")]), .object(["label": .string("乙")]),
+                    ]),
+                ]),
+            ]),
+        ]))
+        let frame = try XCTUnwrap(DeepSeekQuestions.Frame.read(json))
+        let waiting = DeepSeekQuestions.pending(frame, port: port, now: now)
+        let question = waiting.request.questions[0].question
+        let body = try DeepSeekQuestions.answer(.answer([question: "甲, 乙, 再想想"]), for: waiting)
+        let answer = try XCTUnwrap(body["result"]["value"]["answer"].objectValue)
+        let entry = try XCTUnwrap(try XCTUnwrap(answer["answers"]?.arrayValue)[0].objectValue)
+        XCTAssertEqual(entry["selected"]?.arrayValue?.compactMap { $0.stringValue }, ["甲", "乙"])
+        XCTAssertEqual(entry["custom"]?.stringValue, "再想想")
+    }
+
+    func testAnswerRefusesWhatIsNotAnAnswer() throws {
+        let waiting = try pending()
+        XCTAssertThrowsError(try DeepSeekQuestions.answer(.allow, for: waiting))
+        XCTAssertThrowsError(try DeepSeekQuestions.answer(.deny, for: waiting))
+    }
+
+    func testReceiptsAcceptedAndRefused() throws {
+        XCTAssertTrue(DeepSeekQuestions.accepted(.object([
+            "type": .string("server-response"), "rpcId": .string("x"),
+            "result": .object(["ok": .bool(true), "value": .object(["accepted": .bool(true)])]),
+        ])))
+        XCTAssertFalse(DeepSeekQuestions.accepted(.object([
+            "type": .string("server-response"), "rpcId": .string("x"),
+            "result": .object(["ok": .bool(true), "value": .object(["accepted": .bool(false), "reason": .string("not-pending")])]),
+        ])))
+    }
+
+    /// A describe call decides the port is a Harness web host by its fields; a failure result or a foreign
+    /// server is not.
+    func testDescribeReadsTheHostAndRefusesTheRest() throws {
+        XCTAssertTrue(try DeepSeekQuestions.Endpoint.describe(describe()))
+        XCTAssertThrowsError(try DeepSeekQuestions.Endpoint.describe(.object([
+            "type": .string("server-response"), "rpcId": .string("probe"),
+            "result": .object(["ok": .bool(false), "error": .string("NO_HANDLER")]),
+        ])))
+        // A server that answers but carries none of the host's fields is alive, and still not a question host.
+        XCTAssertFalse(try DeepSeekQuestions.Endpoint.describe(.object([
+            "type": .string("server-response"), "rpcId": .string("probe"),
+            "result": .object(["ok": .bool(true), "value": .object(["detail": .string("a foreign server")])]),
+        ])))
+    }
+
+    /// Discovery takes the web-profile processes, their named port or the default, and nothing else.
+    @MainActor
+    func testDiscoveryReadsWebProfileProcessesOnly() async throws {
+        let command = "node /opt/homebrew/Cellar/node/26.0.0/bin/dsh --profile web --port 4599 --no-open"
+        let inspector: @Sendable (String, [String]) async throws -> String = { _, _ in
+            """
+              101 /Applications/Safari.app/Contents/MacOS/Safari
+              202 \(command)
+              303 sh -c 'dsh --profile headless'
+            """
+        }
+        let ports = await DeepSeekQuestionObserver.discoverPorts(inspect: inspector)
+        XCTAssertEqual(ports, [4599])
+        let withDefault = await DeepSeekQuestionObserver.discoverPorts(inspect: { _, _ in
+            "  404 /usr/local/bin/dsh --profile web --no-open"
+        })
+        XCTAssertEqual(withDefault, [DeepSeekQuestionObserver.defaultPort])
+        let nothing = await DeepSeekQuestionObserver.discoverPorts(inspect: { _, _ in "" })
+        XCTAssertTrue(nothing.isEmpty)
+        XCTAssertTrue(DeepSeekQuestionObserver.isHarness(command))
+        XCTAssertFalse(DeepSeekQuestionObserver.isHarness("sh -c 'dsh --profile headless'"))
+        XCTAssertFalse(DeepSeekQuestionObserver.isHarness("/Applications/Safari.app/Contents/MacOS/Safari"))
+    }
+
+    /// A source the HUD can name everywhere it names clients: its vendor, its home under `$DSH_HOME`, and no hook.
+    func testTheDeepseekSourceNamesTheClientWithoutInstallingAnything() throws {
+        let source = PermissionHooks.Source.deepseek
+        XCTAssertEqual(source.vendor, "DeepSeek")
+        XCTAssertFalse(source.usesHook)
+        XCTAssertFalse(source.supportsPermissionUpdates)
+        XCTAssertEqual(source.sessionID("session-1"), "deepseek:session-1")
+        XCTAssertTrue(source.unanswerableTools.isEmpty)
+        XCTAssertTrue(PermissionHooks.commands(in: [:], source: source).isEmpty)
+        // A native source has no hook file to read and never counts as one the hook channel serves.
+        XCTAssertFalse(PermissionHooks.isActive(source, home: URL(fileURLWithPath: "/tmp/nowhere-at-all")))
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("dsh-source-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: home) }
+        try FileManager.default.createDirectory(at: home.appendingPathComponent(".dsh/sessions"), withIntermediateDirectories: true)
+        XCTAssertTrue(source.isInstalled(home: home))
+    }
+}

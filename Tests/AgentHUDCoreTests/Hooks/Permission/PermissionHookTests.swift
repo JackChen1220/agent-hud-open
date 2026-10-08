@@ -382,11 +382,30 @@ final class PermissionHookTests: XCTestCase, @unchecked Sendable {
         }
     }
 
-    func testZCodeQuestionsAndPlansStayInItsOwnDialog() throws {
-        for tool in ["AskUserQuestion", "ExitPlanMode"] {
-            XCTAssertNil(try PermissionRequest.parse(JSONSerialization.data(withJSONObject: payload(tool: tool, input: [:])),
-                                                     source: .zcode, id: tool, now: now))
-        }
+    func testZCodeQuestionsAreAnsweredOnTheHUDAndItsPlanStaysInItsOwnDialog() throws {
+        XCTAssertNil(try PermissionRequest.parse(JSONSerialization.data(withJSONObject: payload(tool: "ExitPlanMode", input: ["plan": "## Ship"])),
+                                                 source: .zcode, id: "ExitPlanMode", now: now),
+                     "an answer to a plan approves it unread, so ZCode reads plans itself")
+
+        let data = try JSONSerialization.data(withJSONObject: payload(tool: "AskUserQuestion",
+                                                                      input: ["questions": questions, "metadata": ["source": "x"]]))
+        let request = try XCTUnwrap(try PermissionRequest.parse(data, source: .zcode, id: "q", now: now))
+        XCTAssertTrue(request.isQuestion)
+        XCTAssertEqual([request.vendor, request.sessionID], ["ZCode", "zcode:s"])
+        XCTAssertEqual(request.questions.map(\.question), ["Push the 40 commits now?", "Which pages report it?"])
+        XCTAssertEqual([request.badge, request.summary], ["ASK", "Push the 40 commits now?"])
+
+        // ZCode reads the answers back inside the question's own input, the same shape Claude Code reads them in.
+        let answers = ["Push the 40 commits now?": "Push", "Which pages report it?": "Channels, Documents"]
+        let decision = try ProviderJSON.read(PermissionDecision.answer(answers).response(for: request))["hookSpecificOutput"]["decision"]
+        XCTAssertEqual(decision["behavior"].stringValue, "allow")
+        XCTAssertEqual(decision["updatedInput"]["questions"], try ProviderJSON.read(JSONSerialization.data(withJSONObject: questions)),
+                       "ZCode reads the questions back beside their answers")
+        XCTAssertEqual(decision["updatedInput"]["metadata"]["source"].stringValue, "x", "the rest of the call is left as it was")
+        XCTAssertEqual(decision["updatedInput"]["answers"], .object(answers.mapValues { .string($0) }))
+        let skipped = try ProviderJSON.read(PermissionDecision.answer([:]).response(for: request))["hookSpecificOutput"]["decision"]
+        XCTAssertEqual(skipped["updatedInput"]["answers"], .object([:]), "ZCode reads it as the questions left open")
+
         let shell = try XCTUnwrap(try PermissionRequest.parse(JSONSerialization.data(withJSONObject: payload()),
                                                              source: .zcode, id: "shell", now: now))
         XCTAssertEqual(shell.vendor, "ZCode")
