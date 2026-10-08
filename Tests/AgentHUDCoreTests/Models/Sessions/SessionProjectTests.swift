@@ -48,6 +48,18 @@ final class SessionProjectTests: XCTestCase {
         XCTAssertEqual(SessionProject(session("")), .unassigned)
     }
 
+    func testRootPathsTerminateAndKeepTheRecordedDirectory() {
+        for path in ["/", "//", "/./", "/../"] {
+            XCTAssertEqual(SessionProject(session(path)), .directory(path), "root spellings keep their original fallback path")
+        }
+    }
+
+    func testMissingNonGitDirectoryKeepsItsOriginalPathAfterWalkingToRoot() {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("HUD Unassigned \(UUID())")
+            .appendingPathComponent("missing/../nested").path
+        XCTAssertEqual(SessionProject(session(path)), .directory(path), "an unresolved execution path is not replaced by an ancestor")
+    }
+
     private func session(_ path: String?) -> LiveSession {
         LiveSession(id: "session", agentId: "codex", task: "task", terminal: nil, startedAt: Date(),
                     endedAt: nil, pctOfWindow: nil, tokensIn: 0, tokensOut: 0, workingDirectory: path)

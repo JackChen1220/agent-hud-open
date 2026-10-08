@@ -40,6 +40,8 @@ public enum SessionProject: Hashable, Sendable {
                 guard let commonDirectory = resolve(common, relativeTo: gitDirectory) else { return path }
                 return commonDirectory.lastPathComponent == ".git" ? commonDirectory.deletingLastPathComponent().path : commonDirectory.path
             }
+            // Legacy Foundation appends ".." when deleting the root's last component.
+            if directory.path == "/" { return path }
             let parent = directory.deletingLastPathComponent()
             if parent.path == directory.path { return path }
             directory = parent
