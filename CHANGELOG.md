@@ -17,6 +17,8 @@ Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` o
 - Host API: `LiveSession.agentName` and `subagentSessions` represent the child-session tree. `ReportView.session(_:)` resolves descendants, and `parentSession(of:)` finds a direct parent. `SessionProject` groups a repository and its worktrees.
 - ZCode questions can be answered on the HUD. Compatible DeepSeek Harness web hosts expose questions through their local event API; other hosts keep questions in Harness.
 - The hover panel prioritizes waiting and running sessions, shows client marks and keeps a short recently ended list. Session titles without a client destination open their details, and question badges offer inline answers.
+- The HUD shows quota and balances, then Tokens, then local sessions. Tokens always show the latest 24 hours in 96 quarter-hour columns with every token kind, independently of Dashboard filters; account-wide billing receipts no longer displace local sessions or inflate the hidden-running count.
+- Hover glow and shadow preparation runs in the background and reuses matching installed materials. The distributed Mac app also prepares shared readings in the background and combines redundant refreshes, preserving responsive window interactions during synchronization.
 - Host API: `PermissionDecision.answer` carries `[String: PermissionQuestion.Answer]`, separating selected labels from custom text. `PermissionQuestion.id` is optional; `answerKey` uses that identity when present. Hook responses still serialize answers under the original question text.
 
 ## 0.4.36 — 2026-10-08

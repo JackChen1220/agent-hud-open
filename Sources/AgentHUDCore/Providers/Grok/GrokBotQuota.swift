@@ -38,7 +38,7 @@ enum GrokBotQuota {
         // A Bot slot may be an auth id or an email fallback. It cannot establish equality with a CLI user id.
         var quota = ProviderQuota(windows: [.init(id: "grok", label: trial ? L10n.text("试用额度", "Trial usage limit")
             : L10n.text("每周用量额度", "Weekly usage limit"), remaining: QuotaMath.remaining(usedPercent: used), reset: reset,
-            duration: trial ? nil : 7 * 86400, shortLabel: trial ? L10n.text("试用", "Trial") : WindowNames.Period.week.shortName)],
+            duration: trial ? nil : TimeInterval(7 * 86400), shortLabel: trial ? L10n.text("试用", "Trial") : WindowNames.Period.week.shortName)],
             plan: usage["grokPlanLabel"].stringValue,
             displayNotice: L10n.text("额度来自 Grok Bot 缓存；在 Bot 中刷新可更新读数", "Quota from Grok Bot cache; refresh in Bot to update"),
             account: .unresolved(provider: "Grok", home: "grok-bot:" + RecordCoding.hash([accountSlot])),

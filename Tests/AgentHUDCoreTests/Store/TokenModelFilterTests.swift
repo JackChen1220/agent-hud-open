@@ -76,6 +76,27 @@ final class TokenModelFilterTests: XCTestCase {
         XCTAssertEqual(store.tokenDimensions, .cacheRead, "Clearing models leaves the other chart controls alone")
     }
 
+    func testHUDHistoryKeeps96QuartersAndAllKindsAcrossDashboardSelections() throws {
+        let store = try makeStore()
+        let columns = store.hudTokenColumns, interval = store.hudTokenInterval
+        XCTAssertEqual(columns.count, 96)
+        XCTAssertTrue(columns.allSatisfy { $0.interval.duration == 900 && $0.tokens.count == consumers.count })
+        XCTAssertEqual(interval.duration, 86400)
+        XCTAssertEqual(columns.first?.interval.start, interval.start)
+        XCTAssertEqual(columns.last?.interval.end, interval.end)
+        XCTAssertEqual(columns.reduce(0) { $0 + $1.total }, 4733)
+        for range in StatsRange.allCases {
+            store.setStatsRange(range)
+            for size in range.bucketSizes {
+                store.tokenBucketSize = size
+                store.tokenDimensions = .output
+                store.pickedAgents = []
+                XCTAssertEqual(store.hudTokenColumns, columns)
+                XCTAssertEqual(store.hudTokenInterval, interval)
+            }
+        }
+    }
+
     private func makeStore() throws -> UsageStore {
         let suite = "TokenModelFilterTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

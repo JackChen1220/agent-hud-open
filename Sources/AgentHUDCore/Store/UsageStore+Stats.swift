@@ -70,7 +70,7 @@ public extension UsageStore {
     /// Token spend is independent of which remaining-quota windows the user monitors.
     var consumers: [AgentDescriptor] { report?.consumers ?? [] }
 
-    /// Both surfaces show every model's token spend.
+    /// Dashboard columns follow its own range and token-kind controls.
     var tokenColumns: [TokenColumn] {
         tokenColumns(consumerIDs: nil)
     }
@@ -80,6 +80,19 @@ public extension UsageStore {
         let selected = consumers.filter { consumerIDs?.contains($0.id) ?? true }
         return ChartData.tokenBars(usage: report?.usage ?? [], agentIds: selected.map(\.id), range: statsRange, bucketSize: tokenBucketSize,
                             now: dataDate, dimensions: tokenDimensions)
+    }
+
+    /// The latest 96 ledger quarters, including the quarter containing this reading.
+    /// HUD history never reads Dashboard selections, and includes every recorded token kind.
+    var hudTokenInterval: DateInterval {
+        let quarter = TokenBucketSize.minutes15.duration
+        let end = Date(timeIntervalSince1970: ceil(dataDate.timeIntervalSince1970 / quarter) * quarter)
+        return DateInterval(start: end.addingTimeInterval(-24 * 3600), end: end)
+    }
+
+    var hudTokenColumns: [TokenColumn] {
+        ChartData.tokenBars(usage: report?.usage ?? [], agentIds: consumers.map(\.id), interval: hudTokenInterval,
+                            bucketSize: .minutes15, dimensions: .all)
     }
 
     var statsActivity: ActivityGrid {

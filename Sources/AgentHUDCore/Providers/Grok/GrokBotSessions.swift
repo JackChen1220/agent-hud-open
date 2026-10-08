@@ -5,8 +5,6 @@ import Foundation
 /// The desktop client's account-scoped roster. Runtime turn state is deliberately absent from its persisted rows.
 enum GrokBotSessions: LocalSessionLayout {
     static let installPaths = ["Library/Application Support/Grok Bot"]
-    static let cacheNotice = L10n.text("Grok Bot 可读取本地对话缓存，历史可能有缺口；不包含实时状态或 Token 用量",
-                                       "Grok Bot can read local conversation caches with possible gaps; live status and token usage are unavailable")
 
     static func roots(home: URL, environment: [String: String]) -> [URL] {
         [home.appendingPathComponent("Library/Application Support/Grok Bot/sand-client-persistence", isDirectory: true)]
@@ -51,7 +49,7 @@ enum GrokBotSessions: LocalSessionLayout {
         }
         // A switched account never inherits a roster being read from the previous account's partition.
         guard GrokBotCache.currentAccount(in: directory) == account else { return .init() }
-        return .init(sessions: sessions, notice: sessions.isEmpty ? nil : cacheNotice)
+        return .init(sessions: sessions)
     }
 }
 

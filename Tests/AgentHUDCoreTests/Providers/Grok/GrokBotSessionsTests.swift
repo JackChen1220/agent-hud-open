@@ -21,7 +21,7 @@ final class GrokBotSessionsTests: XCTestCase {
         XCTAssertTrue(session.events.isEmpty)
         XCTAssertTrue(session.turns.isEmpty)
         XCTAssertTrue(session.completions.isEmpty)
-        XCTAssertNotNil(report.notice)
+        XCTAssertNil(report.notice)
     }
 
     func testSwitchingOrSigningOutDoesNotReadPreviousAccountsRoster() throws {
