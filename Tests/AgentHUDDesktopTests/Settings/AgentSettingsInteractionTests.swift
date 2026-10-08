@@ -115,7 +115,7 @@ final class AgentSettingsInteractionTests: XCTestCase {
         XCTAssertEqual(toggled, ["settings-claude-5h"],
                        "The display switch at y \(Int(windowSwitchY)) must change the stored window selection; compare settings-agents-expanded-dark.png")
         let group = AgentSettingsGroup.make(sources: sources, agents: settings.agents).first { $0.id == "Claude" }
-        XCTAssertEqual(group?.displayedCount, 1)
+        XCTAssertEqual(group?.displayedCount(settings: settings.settings), 1)
         XCTAssertEqual(group?.agents.count, 3)
 
         if let scroll = scrollView(hosting) {

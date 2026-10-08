@@ -49,6 +49,24 @@ struct AgentSettingsCard: View {
         VStack(spacing: 0) {
             header
                 .onDrop(of: [UTType.text], delegate: dropDelegate(.group(group.id)))
+            if !group.accounts.isEmpty || !group.billingAccounts.isEmpty || !group.unobservedAccounts.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(group.accounts) { account in
+                        AccountSummary(account: account, label: accountLabel(account), settings: settings, theme: theme)
+                    }
+                    ForEach(group.billingAccounts.filter { billing in !group.accounts.contains { $0.account.id == billing.id } }) { billing in
+                        AccountVisibilitySummary(id: billing.id, name: billing.displayName, detail: billing.billingPool?.label,
+                                                 settings: settings, theme: theme)
+                    }
+                    ForEach(group.unobservedAccounts) { account in
+                        AccountVisibilitySummary(id: account.id, name: account.displayName, detail: account.detail,
+                                                 settings: settings, theme: theme)
+                    }
+                }
+                .padding(.leading, 62)
+                .padding(.trailing, 14)
+                .padding(.bottom, 12)
+            }
             if isExpanded && group.hasLiveStatus {
                 SettingsDivider(theme: theme)
                 AgentLiveStatusSettings(vendor: group.id, settings: settings)
@@ -109,9 +127,6 @@ struct AgentSettingsCard: View {
                         ForEach(group.plans, id: \.self) { plan in
                             PlanBadge(plan: plan, theme: theme)
                         }
-                        ForEach(group.accounts) { account in
-                            AccountSummary(account: account, label: accountLabel(account), theme: theme)
-                        }
                         if !group.apiProviders.isEmpty {
                             Text("API · " + group.apiProviders.joined(separator: ", "))
                                 .font(.ui(10)).foregroundStyle(theme.secondary)
@@ -120,7 +135,7 @@ struct AgentSettingsCard: View {
                     }
                     Spacer(minLength: 4)
                     if !group.agents.isEmpty {
-                        Text(L10n.text("显示 \(group.displayedCount)/\(group.agents.count)", "Showing \(group.displayedCount)/\(group.agents.count)"))
+                        Text(L10n.text("显示 \(group.displayedCount(settings: settings.settings))/\(group.agents.count)", "Showing \(group.displayedCount(settings: settings.settings))/\(group.agents.count)"))
                             .font(.tabular(11)).foregroundStyle(theme.secondary)
                             .fixedSize()
                     }
@@ -152,6 +167,7 @@ struct AgentSettingsCard: View {
 private struct AccountSummary: View {
     let account: AccountObservation
     let label: String
+    let settings: SettingsStore
     let theme: Theme
 
     var body: some View {
@@ -165,8 +181,48 @@ private struct AccountSummary: View {
             Text(label)
                 .font(.ui(10)).foregroundStyle(theme.tertiary)
                 .fixedSize()
+            Spacer(minLength: 8)
+            AccountVisibilityToggle(id: account.account.id, name: account.displayName, settings: settings)
         }
-        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct AccountVisibilitySummary: View {
+    let id: String
+    let name: String
+    let detail: String?
+    let settings: SettingsStore
+    let theme: Theme
+
+    var body: some View {
+        HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(name).font(.ui(11)).foregroundStyle(theme.secondary)
+                if let detail {
+                    Text(detail).font(.ui(10)).foregroundStyle(theme.tertiary)
+                }
+            }
+            Spacer(minLength: 8)
+            AccountVisibilityToggle(id: id, name: name, settings: settings)
+        }
+    }
+}
+
+private struct AccountVisibilityToggle: View {
+    let id: String
+    let name: String
+    let settings: SettingsStore
+
+    var body: some View {
+        Toggle(L10n.text("在 HUD 中显示", "Show in HUD"), isOn: Binding(
+            get: { settings.settings.accountVisible(id) },
+            set: { settings.setAccount(id: id, visible: $0) }
+        ))
+        .labelsHidden().toggleStyle(.switch).controlSize(.small)
+        .accessibilityLabel(L10n.text("在 HUD 中显示 \(name)", "Show \(name) in HUD"))
+        .accessibilityIdentifier("account-visibility-\(id)")
+        .help(L10n.text("显示此账户的额度和余额。历史会话和 Token 统计持续更新。",
+                       "Show this account's quotas and balances. Session history and token usage keep updating."))
     }
 }
 

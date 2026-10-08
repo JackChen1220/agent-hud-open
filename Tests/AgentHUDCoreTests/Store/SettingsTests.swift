@@ -209,12 +209,12 @@ final class AgentSettingsTests: XCTestCase {
         let groups = AgentSettingsGroup.make(sources: sources, agents: agents)
         XCTAssertEqual(groups.map(\.id), ["Codex", "Claude", "Grok"], "a client neither installed nor reporting has no group")
         XCTAssertEqual(groups[1].agents.map(\.id), ["c1", "c2"])
-        XCTAssertEqual(groups[1].displayedCount, 1)
+        XCTAssertEqual(groups[1].displayedCount(settings: Settings()), 1)
         XCTAssertEqual(groups[1].agents.count, 2)
-        XCTAssertEqual(groups[2].displayedCount, 0)
+        XCTAssertEqual(groups[2].displayedCount(settings: Settings()), 0)
         XCTAssertTrue(groups[2].agents.isEmpty)
         let hidden = AgentSettingsGroup.make(sources: sources, agents: agents.map { $0.with(enabled: false) })
-        XCTAssertEqual(hidden.map(\.displayedCount), [0, 0, 0])
+        XCTAssertEqual(hidden.map { $0.displayedCount(settings: Settings()) }, [0, 0, 0])
         XCTAssertEqual(hidden[1].agents.count, 2)
     }
 

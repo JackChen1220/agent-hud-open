@@ -90,6 +90,8 @@ public struct Settings: Hashable, Codable, Sendable {
     public var showIslandQuota: Bool = true
     public var showIslandTokens: Bool = true
     public var showIslandSessions: Bool = true
+    /// Accounts hidden from quota, balance and glow presentation. Their window selections and recorded usage stay intact.
+    public private(set) var hiddenAccountIDs: Set<String> = []
     /// Agent vendors whose live status is excluded from presentation, relay and completion reminders.
     /// Collection, session history and token accounting are independent of this preference.
     public private(set) var disabledLiveStatusSources: Set<String> = []
@@ -121,7 +123,7 @@ public struct Settings: Hashable, Codable, Sendable {
         case breathSeconds, idleBreathSeconds, breathAmplitude, glowRange, glowBlur, glowBrightness, glowOutwardOnly
         case glowStyle, glowGridPitch, glowGridSpread, glowGridCore, glowGridFade, glowGridDensity, glowEffect
         case requiresOptionToOpen, openImmediatelyAtTop, hoverDelayMs, collapseDelayMs, showResetCountdown
-        case showIslandQuota, showIslandTokens, showIslandSessions
+        case showIslandQuota, showIslandTokens, showIslandSessions, hiddenAccountIDs
         case disabledLiveStatusSources, readCopilotQuota, clientHooks, approvalWaitMinutes
         case launchAtLogin, showMenuBarIcon, appearance, language, screens, screenGlow
     }
@@ -155,6 +157,7 @@ public struct Settings: Hashable, Codable, Sendable {
         showIslandQuota = try c.decodeIfPresent(Bool.self, forKey: .showIslandQuota) ?? d.showIslandQuota
         showIslandTokens = try c.decodeIfPresent(Bool.self, forKey: .showIslandTokens) ?? d.showIslandTokens
         showIslandSessions = try c.decodeIfPresent(Bool.self, forKey: .showIslandSessions) ?? d.showIslandSessions
+        hiddenAccountIDs = Set(try c.decodeIfPresent([String].self, forKey: .hiddenAccountIDs) ?? [])
         disabledLiveStatusSources = Set((try c.decodeIfPresent([String].self, forKey: .disabledLiveStatusSources) ?? []).map { $0.lowercased() })
         readCopilotQuota = try c.decodeIfPresent(Bool.self, forKey: .readCopilotQuota) ?? d.readCopilotQuota
         clientHooks = try c.decodeIfPresent(Bool.self, forKey: .clientHooks) ?? d.clientHooks
@@ -191,6 +194,7 @@ public struct Settings: Hashable, Codable, Sendable {
         try c.encode(showIslandQuota, forKey: .showIslandQuota)
         try c.encode(showIslandTokens, forKey: .showIslandTokens)
         try c.encode(showIslandSessions, forKey: .showIslandSessions)
+        try c.encode(hiddenAccountIDs.sorted(), forKey: .hiddenAccountIDs)
         try c.encode(disabledLiveStatusSources.sorted(), forKey: .disabledLiveStatusSources)
         try c.encode(readCopilotQuota, forKey: .readCopilotQuota)
         try c.encode(clientHooks, forKey: .clientHooks)
@@ -221,6 +225,16 @@ public struct Settings: Hashable, Codable, Sendable {
 
     public var hoverDelay: TimeInterval { Double(hoverDelayMs) / 1000 }
     public var collapseDelay: TimeInterval { Double(collapseDelayMs) / 1000 }
+
+    /// Rows without an account retain their existing window switch.
+    public func accountVisible(_ id: String?) -> Bool {
+        id.map { !hiddenAccountIDs.contains($0) } ?? true
+    }
+
+    public mutating func setAccountVisibility(id: String, visible: Bool) {
+        if visible { hiddenAccountIDs.remove(id) }
+        else { hiddenAccountIDs.insert(id) }
+    }
 
     public func liveStatusEnabled(for vendor: String) -> Bool {
         !disabledLiveStatusSources.contains(vendor.lowercased())

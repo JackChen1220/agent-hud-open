@@ -222,6 +222,11 @@ public enum SnapshotRunner {
         store.statsTab = .sessions
         save("stats-sessions-dark", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .dark)
         save("stats-sessions-light", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .light)
+        let project = SessionProject.directory(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("work/api-gateway").path)
+        save("stats-sessions-project-search-dark", StatsView(store: store, scrollable: false, project: project, search: "middleware")
+            .frame(width: 760), folder: folder, scheme: .dark)
+        save("stats-sessions-project-small-dark", StatsView(store: store, scrollable: false, project: project)
+            .frame(width: 640), folder: folder, scheme: .dark)
         store.focusedSessionID = "s1"
         save("stats-session-dark", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .dark)
         save("stats-session-light", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .light)

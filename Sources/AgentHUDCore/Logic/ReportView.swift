@@ -36,7 +36,7 @@ public struct ReportView: Sendable {
     public let visibleAgents: [AgentDescriptor]
     /// The visible rows switched on.
     public let enabledAgents: [AgentDescriptor]
-    /// A quota row for each enabled row that is not billed through an API account.
+    /// A quota row for each enabled row of a shown account that is not billed through an API account.
     public let rows: [AgentRow]
     /// Rows grouped by displayed vendor, in row order.
     public let rowGroups: [(vendor: String, rows: [AgentRow])]
@@ -73,7 +73,9 @@ public struct ReportView: Sendable {
                 hookTurns: [String: SessionPhase.HookTurn] = [:], now: Date, failure: String? = nil) {
         let visible = agents.filter { Self.isPresent($0, in: report) }
         let enabled = visible.filter(\.enabled)
-        let rows = enabled.filter { !$0.isAPIBilled }.enumerated().map { index, agent in
+        let shown = enabled.filter { settings.accountVisible($0.displayAccountID) }
+        let rows = enabled.filter { !$0.isAPIBilled }.enumerated()
+            .filter { settings.accountVisible($0.element.displayAccountID) }.map { index, agent in
             let snapshot = report?.snapshot(for: agent.id)
             // Without a report, a row has no reading and counts as its account's current one.
             let reading = report?.assess(.window(agent), now: now)
@@ -90,13 +92,14 @@ public struct ReportView: Sendable {
                 assessment: assessment
             )
         }
-        let vendors = Set(enabled.map(\.vendor))
+        let vendors = Set(shown.map(\.vendor))
         let billing = (report?.billing ?? []).filter { billing in
-            billing.billingPool.map { pool in enabled.contains { $0.billingPool?.id == pool.id } } ?? vendors.contains(billing.vendor)
+            settings.accountVisible(billing.id)
+                && (billing.billingPool.map { pool in shown.contains { $0.billingPool?.id == pool.id } } ?? vendors.contains(billing.vendor))
         }
         let quota = Dictionary(uniqueKeysWithValues: rows.compactMap { row in row.level.map { (row.id, $0) } })
         var seenAccounts: Set<String> = []
-        let segments = enabled.flatMap { model -> [GlowSegment] in
+        let segments = shown.flatMap { model -> [GlowSegment] in
             if !model.isAPIBilled { return quota[model.id].map { [GlowSegment(vendor: model.vendor, level: $0)] } ?? [] }
             return billing.filter { $0.contains(model) && seenAccounts.insert($0.id).inserted }.compactMap {
                 Self.level(of: $0, assessment: Self.assessment(of: $0, in: report, failure: failure, now: now))

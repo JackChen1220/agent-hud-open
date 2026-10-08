@@ -72,6 +72,11 @@ public final class SettingsStore {
         updateAgents { list in list.map { $0.id == id ? $0.with(enabled: enabled) : $0 } }
     }
 
+    /// Hides an account's readings without changing its individual windows or their order.
+    public func setAccount(id: String, visible: Bool) {
+        update { $0.setAccountVisibility(id: id, visible: visible) }
+    }
+
     public func moveAgent(id: String, to index: Int) {
         updateAgents { $0.moving(id: id, to: index) }
     }
@@ -108,6 +113,17 @@ public final class SettingsStore {
     private func merge(_ discovered: [AgentDescriptor], activeQuotaPoolIDs: [String: Set<String>]?,
                        accounts: [String: [AccountObservation]]?, completeInventory: ((AccountObservation) -> Bool)?) {
         guard !discovered.isEmpty || activeQuotaPoolIDs != nil || accounts != nil else { return }
+        let resolved = (accounts ?? [:]).values.flatMap { $0 }.filter {
+            $0.aliases?.contains(where: settings.hiddenAccountIDs.contains) == true
+        }
+        if !resolved.isEmpty {
+            update { preferences in
+                for observation in resolved {
+                    for alias in observation.aliases ?? [] { preferences.setAccountVisibility(id: alias, visible: true) }
+                    preferences.setAccountVisibility(id: observation.account.id, visible: false)
+                }
+            }
+        }
         func isPresent(_ agent: AgentDescriptor) -> Bool {
             ReportView.isPresent(agent, seenAt: nil, accounts: accounts, activePools: activeQuotaPoolIDs)
         }
