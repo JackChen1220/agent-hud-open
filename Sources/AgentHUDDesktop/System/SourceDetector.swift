@@ -32,7 +32,8 @@ enum SourceDetector {
             }
             let hasSessions = report.consumers.contains { $0.vendor == vendor }
             let plan = report.subscriptions[vendor]
-            if let notice = report.sourceNotices[vendor] ?? (vendor == "OpenCode" ? report.sourceNotices["OpenCode Go"] : nil) {
+            if let notice = report.quotaNotice(vendor: vendor) ?? report.sourceNotices[vendor]
+                ?? (vendor == "OpenCode" ? report.sourceNotices["OpenCode Go"] : nil) {
                 return SourceStatus(id: source.id, name: source.name, detail: notice,
                     state: hasQuota || hasSessions || plan != nil ? .ready(plan: plan) : .unavailable,
                     provider: source.provider, supportsLiveStatus: source.supportsLiveStatus)
@@ -82,7 +83,7 @@ enum SourceDetector {
                                      provider: source.vendor)
             guard source == .grok else { return [status] }
             return [status, SourceStatus(id: "grok-bot", name: "Grok Bot",
-                detail: L10n.text("本机缓存会话与跳转；用量和实时状态暂不可读", "Cached local sessions and navigation; usage and live status unavailable"),
+                detail: L10n.text("本机缓存会话、额度与跳转；Token 用量和实时状态暂不可读", "Cached sessions, quota and navigation; token usage and live status unavailable"),
                 state: GrokBotLocator.isInstalled(home: home) ? .installed : .notDetected,
                 provider: "Grok", supportsLiveStatus: false)]
         } + OpenAgentSource.allCases.map {

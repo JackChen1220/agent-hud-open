@@ -226,13 +226,18 @@ public struct ReportView: Sendable {
     public func accountNotice(for section: AccountSection) -> String? {
         guard let account = section.account else { return nil }
         let reason = assessment(of: account).status.reason
-        let client = account.account.isBillingPool ? nil :
-            report?.sourceNotices[ClientHome.sourceKey(provider: account.account.provider, home: account.home)]
-                ?? (account.isCurrent ? report?.sourceNotices[account.account.provider] : nil)
+        let client = accountSourceNotice(for: section)
         var parts: [String] = []
         if let reason, !(client?.contains(reason) ?? false) { parts.append(reason) }
         if let client { parts.append(client) }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// Source details are independent of the account's failed quota reading and can be displayed with their own style.
+    public func accountSourceNotice(for section: AccountSection) -> String? {
+        guard let account = section.account, !account.account.isBillingPool else { return nil }
+        return report?.sourceNotices[ClientHome.sourceKey(provider: account.account.provider, home: account.home)]
+            ?? (account.isCurrent ? report?.sourceNotices[account.account.provider] : nil)
     }
 
     /// Tokens per hour over the observed part of this quota window's current cycle. Token history before the local ledger

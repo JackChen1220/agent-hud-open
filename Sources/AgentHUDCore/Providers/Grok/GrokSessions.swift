@@ -41,8 +41,13 @@ enum GrokSessions: LocalSessionLayout {
     }
 
     static func notice(merging sessions: [ProviderSession]) -> String? {
-        let updates = updateLogs(sessions)
-        guard sessions.contains(where: { isInference($0) && updates[$0.id]?.events.isEmpty == false }) else { return nil }
+        let inferenceStarts = Dictionary(sessions.filter(isInference).compactMap { session in
+            session.events.map(\.timestamp).min().map { (session.id, $0) }
+        }, uniquingKeysWith: min)
+        guard sessions.contains(where: { session in
+            guard session.path?.hasSuffix("/updates.jsonl") == true, let start = inferenceStarts[session.id] else { return false }
+            return session.events.contains { $0.timestamp < start }
+        }) else { return nil }
         return L10n.text("Grok 新旧日志并存：采用新版请求记录，旧历史可能不完整", "Grok log formats overlap: using inference records; older history may be incomplete")
     }
 

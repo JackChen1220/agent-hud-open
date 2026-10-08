@@ -63,6 +63,7 @@ enum GrokBotCache {
     private static let alphabet = Array("abcdefghijklmnopqrstuvwxyz234567".utf8)
 
     static func rosterKey(account: String) -> String { accountPrefix + component(account) + ".roster.last-roster" }
+    static func quotaKey(account: String) -> String { accountPrefix + component(account) + ".weekly-usage.cache" }
     static func transcriptKey(account: String, agent: String) -> String { accountPrefix + component(account) + ".transcript.replicas." + component(agent) }
     static func sessionID(account: String, agent: String) -> String { "grok-bot:\(RecordCoding.hash([account])):\(agent)" }
 

@@ -594,7 +594,8 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
         let localUsage = await unavailable.usage(since: .distantPast)
         XCTAssertEqual(localUsage.count, 1, "a signed-out source still records local usage")
         XCTAssertTrue(local.snapshots.isEmpty)
-        XCTAssertNotNil(local.sourceNotices["Grok"])
+        XCTAssertNotNil(local.quotaNotices?["Grok"])
+        XCTAssertNil(local.sourceNotices["Grok"], "quota failures are separate from local-data details")
     }
 
     @MainActor
