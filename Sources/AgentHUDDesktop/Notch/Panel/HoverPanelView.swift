@@ -32,7 +32,8 @@ struct HoverPanelView: View {
     static let notchInsets = EdgeInsets(top: 32, leading: 18, bottom: 14, trailing: 18)
 
     /// The row whose questions are open for answering here rather than in the agent.
-    @State private var answeringSessionID: String?
+    var answeringSessionID: String? = nil
+    var onAnswerSession: (String?) -> Void = { _ in }
 
     private let theme = Theme.island
     private let spacing: CGFloat = 10
@@ -94,7 +95,7 @@ struct HoverPanelView: View {
                 }
             }
             if store.settings.settings.showIslandTokens, store.isLoading || store.isIndexing || !store.consumers.isEmpty {
-                TokenConsumptionChart(store: store, theme: theme, context: .island, compact: true)
+                TokenConsumptionChart(store: store, theme: theme, context: .island, compact: true, onOpenStats: onOpenStats)
                     .padding(.top, 8)
                     .topDivider(theme.divider)
             }
@@ -117,8 +118,8 @@ struct HoverPanelView: View {
     }
 
     /// What is waiting, running and recently ended: the sessions with work in flight first — those waiting for the
-    /// user ahead of those still running — and the recently ended after them, newest created first in each group, up
-    /// to `sessionRowLimit` of them, and the rest as a count. The statistics window's range never applies here — that
+    /// user ahead of those still running — up to five, then at most three recently ended sessions, and the rest as a
+    /// count. The statistics window's range never applies here — that
     /// range belongs to the session card, which answers a different question. The header opens the session list; each
     /// row's title returns to its agent, or opens its session page where the client names no destination, and its
     /// token count opens usage.
@@ -249,7 +250,7 @@ struct HoverPanelView: View {
     /// How many questions this session waits on, and where answering them opens.
     private func questionBadge(_ asks: [PermissionRequest], session: LiveSession, expanded: Bool) -> some View {
         Button {
-            answeringSessionID = expanded ? nil : session.id
+            onAnswerSession(expanded ? nil : session.id)
         } label: {
             HStack(spacing: 3) {
                 Image(systemName: "questionmark.bubble.fill")
@@ -279,13 +280,13 @@ struct HoverPanelView: View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(asks) { request in
                 PermissionQuestionCard(request: request) { decision in
-                    if case .answer = decision { answeringSessionID = nil }
+                    if case .answer = decision { onAnswerSession(nil) }
                     PermissionRequests.shared.resolve(request.id, decision)
                 }
             }
             HStack(spacing: 6) {
                 Button {
-                    answeringSessionID = nil
+                    onAnswerSession(nil)
                     open(session)
                 } label: {
                     HStack(spacing: 4) {
@@ -296,7 +297,7 @@ struct HoverPanelView: View {
                     }
                 }
                 Spacer(minLength: 8)
-                Button { answeringSessionID = nil } label: {
+                Button { onAnswerSession(nil) } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.up").font(.system(size: 8, weight: .bold))
                         Text(L10n.text("收起", "Hide"))
@@ -321,21 +322,21 @@ struct HoverPanelView: View {
         onOpenStats()
     }
 
-    /// The island's rows: the sessions with work in flight first — those waiting for the user ahead of those still
-    /// running — and the recently ended after them, newest created first within each group, up to `sessionRowLimit`;
-    /// and how many of the last week's sessions the rows leave out.
+    /// The island's summary: waiting before running, newest created first, then the most recently ended.
+    /// The full session list holds everything beyond those limits.
     static func sessionRows(_ store: UsageStore) -> (running: [LiveSession], shown: [LiveSession], more: Int) {
         let running = store.liveSessions
-        let candidates = store.view.recentSessions.map(\.session)
-        let rank = { (session: LiveSession) -> Int in
-            switch sessionDot(session, store: store) {
-            case .waiting: return 0
-            case .running: return 1
-            case .ended: return 2
-            }
+        let candidates = store.view.recentSessions
+        let active = candidates.filter(\.phase.isInFlight).sorted {
+            let lhsWaiting = $0.phase.state == .waitingForApproval
+            let rhsWaiting = $1.phase.state == .waitingForApproval
+            if lhsWaiting != rhsWaiting { return lhsWaiting }
+            return $0.session.startedAt > $1.session.startedAt
         }
-        let shown = Array(candidates.sorted { rank($0) == rank($1) ? $0.startedAt > $1.startedAt : rank($0) < rank($1) }
-            .prefix(sessionRowLimit))
+        // recentSessions already orders by the last event, so ended rows reflect recent work rather than creation.
+        let ended = candidates.filter { !$0.phase.isInFlight }
+        let shown = (Array(active.prefix(activeSessionRowLimit)) + Array(ended.prefix(endedSessionRowLimit)))
+            .map(\.session)
         return (running, shown, max(0, candidates.count - shown.count))
     }
 
@@ -388,8 +389,8 @@ struct HoverPanelView: View {
     }
 
     /// "fix auth bug in middleware" → "fix auth bug"
-    /// How many session rows the island shows before the rest become a count: a day's worth of work at a glance.
-    static let sessionRowLimit = 24
+    static let activeSessionRowLimit = 5
+    static let endedSessionRowLimit = 3
 
     static func shortTask(_ task: String) -> String {
         let words = task.split(separator: " ")

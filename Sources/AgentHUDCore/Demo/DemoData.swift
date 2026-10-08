@@ -12,11 +12,38 @@ public enum DemoData {
         AgentDescriptor(id: "deepseek", vendor: "DeepSeek", model: "Harness", source: L10n.sourceNotConnected, enabled: false),
     ]
 
+    public static let currentCodexAccount = ProviderAccount.identified(provider: "Codex", user: "work@example.com", workspace: "team")!
+    public static let previousCodexAccount = ProviderAccount.identified(provider: "Codex", user: "me@example.com", workspace: "personal")!
+
+    /// Two quota readings the interactive demo can hide independently of its token consumers.
+    public static let codexAccountRows: [AgentDescriptor] = [currentCodexAccount, previousCodexAccount].map { account in
+        AgentDescriptor(id: account.windowID("codex"), vendor: "Codex", model: L10n.windowWeekly,
+                        shortModel: WindowNames.Period.week.shortName, source: L10n.sourceCodexAppServer,
+                        enabled: true, account: account)
+    }
+
+    public static func codexAccounts(now: Date) -> [AccountObservation] {
+        [
+            AccountObservation(account: currentCodexAccount, label: "work@example.com", plan: "pro", observedAt: now,
+                               resetCredits: codexResetCredits(now: now)),
+            AccountObservation(account: previousCodexAccount, label: "me@example.com", plan: "prolite",
+                               observedAt: now.addingTimeInterval(-3 * 3600), isCurrent: false),
+        ]
+    }
+
+    public static func codexAccountSnapshots(now: Date) -> [UsageSnapshot] {
+        codexAccounts(now: now).map { observation in
+            UsageSnapshot(agentId: observation.account.windowID("codex"), remainingPct: observation.isCurrent ? 58 : 100,
+                          resetAt: now.addingTimeInterval(4 * 86400), windowDuration: 7 * 86400, updatedAt: observation.observedAt)
+        }
+    }
+
     /// Every vendor the app ships artwork for, all switched on. `agents` is the small set the tests and
     /// snapshots are written against; this is what the running demo uses, so the HUD is shown carrying a
     /// full queue rather than the three marks a minimal set produces.
-    public static let everyAgent: [AgentDescriptor] = agents.map {
-        AgentDescriptor(id: $0.id, vendor: $0.vendor, model: $0.model, source: $0.source, enabled: true)
+    public static let everyAgent: [AgentDescriptor] = agents.flatMap { agent -> [AgentDescriptor] in
+        if agent.id == "codex" { return codexAccountRows }
+        return [AgentDescriptor(id: agent.id, vendor: agent.vendor, model: agent.model, source: agent.source, enabled: true)]
     } + [
         AgentDescriptor(id: "cursor", vendor: "Cursor", model: "Agent", source: L10n.sourceNotConnected, enabled: true),
         AgentDescriptor(id: "copilot", vendor: "GitHub Copilot", model: "Agent", source: L10n.sourceNotConnected, enabled: true),
@@ -107,11 +134,11 @@ public enum DemoData {
                         cacheReadTokens: s1.cacheReadTokens, observedAt: now, workingDirectory: home + "/work/api-gateway"),
             LiveSession(id: "s2", agentId: "codex", task: "backend server endpoints", terminal: "billing-service",
                         startedAt: now.addingTimeInterval(-64 * 60), pctOfWindow: 3.8, tokensIn: s2.tokensIn, tokensOut: s2.tokensOut,
-                        cacheReadTokens: s2.cacheReadTokens, observedAt: now, workingDirectory: home + "/work/billing-service"),
+                        cacheReadTokens: s2.cacheReadTokens, observedAt: now, workingDirectory: home + "/work/api-gateway"),
             LiveSession(id: "s3", agentId: "claude-sonnet", task: "optimize db queries", terminal: "etl",
                         startedAt: now.addingTimeInterval(-140 * 60), endedAt: now.addingTimeInterval(-51 * 60),
                         pctOfWindow: 2.1, tokensIn: s3.tokensIn, tokensOut: s3.tokensOut, cacheReadTokens: s3.cacheReadTokens,
-                        workingDirectory: home + "/data/etl"),
+                        workingDirectory: home + "/clients/api-gateway"),
             LiveSession(id: "s4", agentId: "chatgpt", task: L10n.text("桌面版 · 3 段对话", "Desktop · 3 conversations"), terminal: nil,
                         startedAt: now.addingTimeInterval(-200 * 60), endedAt: now.addingTimeInterval(-120 * 60),
                         pctOfWindow: 4.5, tokensIn: 0, tokensOut: 0, observedAt: now),

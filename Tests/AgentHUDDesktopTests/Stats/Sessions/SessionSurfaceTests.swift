@@ -111,8 +111,8 @@ final class SessionSurfaceTests: XCTestCase {
             cardSince: now.addingTimeInterval(-2 * hour + 10), headerLabel: "ended 1h 59m ago"))
     }
 
-    /// The island lists every recent session — those with work in flight first, the ones waiting for the user ahead
-    /// of the ones still running, and the ended after them — and counts every running one for the header. One still
+    /// The island summarizes recent sessions — those with work in flight first, the ones waiting for the user ahead
+    /// of the ones still running, and up to three ended after them — and counts every running one for the header. One still
     /// in flight that the Mac can no longer vouch for sits with the ended.
     @MainActor
     func testTheIslandListsWaitingThenRunningThenTheRecentlyEnded() throws {
@@ -124,14 +124,14 @@ final class SessionSurfaceTests: XCTestCase {
         // The sessions shown; the running ones, which the header counts; the rows' dots; how many are left out.
         let cases: [(String, [LiveSession], shown: [String], running: Int, dots: [SessionDot], more: Int)] = [
             ("nothing running", ended + [unvouched],
-             ["unvouched", "ended-1", "ended-2", "ended-3", "ended-4"], 0,
-             [.ended, .ended, .ended, .ended, .ended], 0),
+             ["unvouched", "ended-1", "ended-2"], 0,
+             [.ended, .ended, .ended], 2),
             ("four running", ended + [unvouched] + running,
-             ["running-2", "running-1", "running-3", "running-4", "unvouched", "ended-1", "ended-2", "ended-3", "ended-4"], 4,
-             [.waiting, .running, .running, .running, .ended, .ended, .ended, .ended, .ended], 0),
+             ["running-2", "running-1", "running-3", "running-4", "unvouched", "ended-1", "ended-2"], 4,
+             [.waiting, .running, .running, .running, .ended, .ended, .ended], 2),
             ("two running", ended + Array(running.prefix(2)),
-             ["running-2", "running-1", "ended-1", "ended-2", "ended-3", "ended-4"], 2,
-             [.waiting, .running, .ended, .ended, .ended, .ended], 0),
+             ["running-2", "running-1", "ended-1", "ended-2", "ended-3"], 2,
+             [.waiting, .running, .ended, .ended, .ended], 1),
         ]
         for (name, sessions, shown, count, dots, more) in cases {
             show(sessions, turns: [waiting], in: store)
@@ -143,36 +143,43 @@ final class SessionSurfaceTests: XCTestCase {
         }
     }
 
-    /// Within each group — waiting, running, ended — the newest created takes the row above the older.
+    /// Active groups use creation order; ended rows follow the last event so resumed conversations stay recent.
     @MainActor
-    func testTheIslandOrdersEachGroupByCreationNewestFirst() throws {
+    func testTheIslandOrdersActiveByCreationAndEndedByLastEvent() throws {
         let store = try makeStore()
         show([
             session("running-old", started: -10 * hour, observed: -60),
             session("ended-new", started: -2 * hour, ended: -hour, observed: -hour),
             session("running-new", started: -hour, observed: -120),
-            session("ended-old", started: -20 * hour, ended: -19 * hour, observed: -19 * hour),
+            session("ended-old", started: -20 * hour, ended: -1800, observed: -1800),
             session("waiting-new", started: -30 * 60.0, observed: -100),
         ], turns: [turn("waiting-new", .waitingForApproval, started: -600, observed: -100)], in: store)
         let rows = HoverPanelView.sessionRows(store)
-        XCTAssertEqual(rows.shown.map(\.id), ["waiting-new", "running-new", "running-old", "ended-new", "ended-old"])
+        XCTAssertEqual(rows.shown.map(\.id), ["waiting-new", "running-new", "running-old", "ended-old", "ended-new"])
         XCTAssertEqual(rows.running.count, 3)
         XCTAssertEqual(rows.more, 0)
     }
 
-    /// `sessionRowLimit` rows are the panel's fill; a week's sessions beyond them become a count under the rows.
+    /// Five active rows and three ended rows leave room for the account picture; the full list holds the rest.
     @MainActor
-    func testTheIslandShowsTwoDozenSessionsAndCountsTheRest() throws {
+    func testTheIslandKeepsActiveAndEndedSummariesSmallAndCountsTheRest() throws {
         let store = try makeStore()
-        show((0..<30).map {
-            session("s-\($0)", started: -Double($0 + 1) * 60, ended: -Double($0 + 1) * 60,
-                    observed: -Double($0 + 1) * 60)
-        }, in: store)
+        let ended: [LiveSession] = (0..<30).map { index in
+            let offset = -Double(index + 1) * 60
+            return session("ended-\(index)", started: offset, ended: offset, observed: offset)
+        }
+        let running: [LiveSession] = (0..<8).map { index in
+            let offset = -Double(index + 1) * 60
+            return session("running-\(index)", started: offset, observed: -60)
+        }
+        show(running + ended,
+             turns: [turn("running-7", .waitingForApproval, started: -600, observed: -100)], in: store)
         let rows = HoverPanelView.sessionRows(store)
-        XCTAssertEqual(rows.shown.count, HoverPanelView.sessionRowLimit)
-        XCTAssertEqual(rows.shown.map(\.id), (0..<HoverPanelView.sessionRowLimit).map { "s-\($0)" })
-        XCTAssertEqual(rows.more, 30 - HoverPanelView.sessionRowLimit)
-        XCTAssertEqual(rows.running.count, 0)
+        XCTAssertEqual(rows.shown.count, HoverPanelView.activeSessionRowLimit + HoverPanelView.endedSessionRowLimit)
+        XCTAssertEqual(rows.shown.map(\.id), ["running-7", "running-0", "running-1", "running-2", "running-3",
+                                             "ended-0", "ended-1", "ended-2"])
+        XCTAssertEqual(rows.more, 30)
+        XCTAssertEqual(rows.running.count, 8)
     }
 
     /// A row's badge counts only the questions put to that exact session: another session's questions and a plain

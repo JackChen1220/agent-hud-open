@@ -47,7 +47,7 @@ Each display has its own HUD and settings. Notch mode uses the physical notch or
 
 ### Usage panel
 
-- The panel opens on its session list: the sessions with work in flight first — those waiting for the user ahead of those still running — and the recently ended after them, newest created first in each group, up to 24 rows, each with its agent's mark and its state on the mark's corner. The header opens the full Sessions page.
+- The panel opens on a session summary: up to five sessions with work in flight, those waiting for the user ahead of those still running and newest created first within each group, then up to three recently ended sessions by their last event. Each row shows its agent's mark and its state on the mark's corner; the remaining count and header open the full Sessions page.
 - A session waiting on a question shows a badge on its row. It opens the question right there, answered the same way the island's own card answers it, beside a way back to the agent for answering it in its own dialog instead. A row's title returns to its agent, or opens that session's page where the client names no destination; its token count opens that session's usage.
 - Quota and balances follow as the smaller account picture, and the token chart becomes a compact strip — its legend, axis and peak mark belong to the statistics window. Height follows content up to the display's height minus 80 pt; overflow scrolls above fixed settings, statistics and host controls, clear of the notch and dock.
 

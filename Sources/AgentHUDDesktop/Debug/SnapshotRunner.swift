@@ -218,10 +218,16 @@ public enum SnapshotRunner {
         save("onboarding-light", OnboardingView(settings: settings, store: store, sources: DemoData.sources, onFinish: {}), folder: folder, scheme: .light)
         save("stats-dark", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .dark)
         save("stats-light", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .light)
+        saveTokenCharts(settings: settings, folder: folder)
         // The Sessions page, and a session's own page as a completion or a session row opens it.
         store.statsTab = .sessions
         save("stats-sessions-dark", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .dark)
         save("stats-sessions-light", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .light)
+        let project = SessionProject.directory(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("work/api-gateway").path)
+        save("stats-sessions-project-search-dark", StatsView(store: store, scrollable: false, project: project, search: "middleware")
+            .frame(width: 760), folder: folder, scheme: .dark)
+        save("stats-sessions-project-small-dark", StatsView(store: store, scrollable: false, project: project)
+            .frame(width: 640), folder: folder, scheme: .dark)
         store.focusedSessionID = "s1"
         save("stats-session-dark", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .dark)
         save("stats-session-light", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .light)
@@ -445,8 +451,8 @@ public enum SnapshotRunner {
             ]]))
         save("island-provider-accounts-dark", IslandScene(store: store, settings: settings, open: true, light: false), folder: folder, scheme: .dark)
         save("settings-agents-provider-accounts-dark", SettingsView(settings: settings, store: store, initialTab: .sources,
-            sourceStatuses: [.init(id: "codex-cli", name: "Codex", detail: "", state: .ready(plan: "pro"))], initiallyExpandedAgents: ["Codex"])
-            .frame(width: 760, height: 800), folder: folder, scheme: .dark)
+            sourceStatuses: [.init(id: "codex-cli", name: "Codex", detail: "", state: .ready(plan: "pro"))], initialProviderID: "Codex")
+            .frame(width: SettingsWindowLayout.size.width, height: SettingsWindowLayout.size.height), folder: folder, scheme: .dark)
     }
 
     /// A question half answered: the first of two, one option picked, so the card shows what choosing looks like.
@@ -470,8 +476,54 @@ public enum SnapshotRunner {
         return request
     }
 
+    /// Many recorded models: the folded filter, a model subset and the HUD's ten-label limit use the same full data.
+    private static func saveTokenCharts(settings: SettingsStore, folder: URL) {
+        let now = Date()
+        let models = [
+            ("Claude", "claude-opus-4-5"), ("Claude", "claude-sonnet-4-5"), ("Claude", "claude-haiku-4-5"),
+            ("Codex", "gpt-5"), ("Codex", "gpt-5.4"), ("Codex", "gpt-5.5"), ("Codex", "gpt-5.6-sol"), ("Codex", "gpt-6.1-sol"),
+            ("Antigravity", "gemini-2.5-pro"), ("Cursor", "composer-1"), ("OpenCode", "muse-spark-1.3-contributor"),
+            ("Pi", "gpt-5"), ("DeepSeek", "deepseek-v4-flash"),
+        ]
+        let consumers = models.map { vendor, model in
+            let id = vendor.lowercased() + "-model:" + model
+            return AgentDescriptor(id: id, vendor: vendor, model: ModelCatalog.consumerName(of: id), source: "Snapshot", enabled: true)
+        }
+        let usage = consumers.enumerated().map { index, consumer in
+            UsageBucket(start: now.addingTimeInterval(-Double(index % 5 + 1) * 3600), agentId: consumer.id,
+                        tokensIn: (consumers.count - index) * 18_000, tokensOut: (consumers.count - index) * 2000,
+                        cacheReadTokens: (index + 1) * 5000)
+        }
+        let store = UsageStore(provider: DemoUsageProvider(), settings: settings)
+        store.replace(report: UsageReport(generatedAt: now, snapshots: [], sessions: [], consumers: consumers, usage: usage))
+        let picked = TokenModelFilter(consumerIDs: [consumers[0].id, consumers[12].id])
+        for scheme in [ColorScheme.dark, .light] {
+            let theme = Theme.forScheme(scheme), suffix = scheme == .dark ? "dark" : "light"
+            save("stats-token-models-collapsed-\(suffix)",
+                 TokenConsumptionChart(store: store, theme: theme, context: .stats)
+                    .padding(16).frame(width: 760).background(theme.windowBackground), folder: folder, scheme: scheme)
+            save("stats-token-models-expanded-\(suffix)",
+                 TokenConsumptionChart(store: store, theme: theme, context: .stats, modelsExpanded: true)
+                    .padding(16).frame(width: 760).background(theme.windowBackground), folder: folder, scheme: scheme)
+            save("stats-token-models-filtered-\(suffix)",
+                 TokenConsumptionChart(store: store, theme: theme, context: .stats, modelsExpanded: true, modelFilter: picked)
+                    .padding(16).frame(width: 760).background(theme.windowBackground), folder: folder, scheme: scheme)
+        }
+        let hover = store.tokenColumns(consumerIDs: picked.consumerIDs).max { $0.total < $1.total }?.id
+        save("stats-token-models-filtered-hover-dark",
+             TokenConsumptionChart(store: store, theme: .dark, context: .stats, modelFilter: picked, inspectedColumnID: hover)
+                .padding(16).frame(width: 760).background(Theme.dark.windowBackground), folder: folder, scheme: .dark)
+        save("island-token-models-top10-dark", TokenConsumptionChart(store: store, theme: .island, context: .island)
+            .padding(18).frame(width: 480).background(Color.black), folder: folder, scheme: .dark)
+        store.setStatsRange(.days7)
+        store.tokenBucketSize = .day1
+        save("stats-token-dates-daily-dark", TokenConsumptionChart(store: store, theme: .dark, context: .stats)
+            .padding(16).frame(width: 760).background(Theme.dark.windowBackground), folder: folder, scheme: .dark)
+    }
+
     private static func saveAgentSettings(settings: SettingsStore, store: UsageStore, folder: URL) {
-        if let prefix = ProcessInfo.processInfo.environment["AGENTHUD_SNAPSHOT_PREFIX"], !"settings-agents".hasPrefix(prefix) { return }
+        if let prefix = ProcessInfo.processInfo.environment["AGENTHUD_SNAPSHOT_PREFIX"],
+           !"settings-agents".hasPrefix(prefix) && !prefix.hasPrefix("settings-agents") { return }
         let original = settings.agents
         let preferences = settings.settings
         let originalReport = store.report
@@ -488,7 +540,7 @@ public enum SnapshotRunner {
             AgentDescriptor(id: "settings-deepseek-chat", vendor: "DeepSeek", model: "deepseek-chat", source: L10n.sourceDeepSeekSessions, enabled: true),
             AgentDescriptor(id: "settings-deepseek-reasoner", vendor: "DeepSeek", model: "deepseek-reasoner", source: L10n.sourceDeepSeekSessions, enabled: true),
         ] }
-        let sources: [SourceStatus] = [
+        let configuredSources: [SourceStatus] = [
             .init(id: "claude-code", name: "Claude", detail: L10n.text("额度、会话与用量统计", "Quota, sessions and usage"), state: .ready(plan: "max_20x")),
             .init(id: "codex-cli", name: "Codex", detail: L10n.text("额度、会话与用量统计", "Quota, sessions and usage"), state: .ready(plan: "prolite")),
             .init(id: "deepseek", name: "DeepSeek", detail: L10n.text("Harness 会话、API 余额与费用", "Harness sessions, API balance and costs"), state: .ready(plan: nil)),
@@ -498,8 +550,14 @@ public enum SnapshotRunner {
             .init(id: "opencode", name: "OpenCode", detail: "", state: .installed),
             .init(id: "pi", name: "Pi", detail: "", state: .installed),
             .init(id: "kimi", name: "Kimi", detail: "", state: .ready(plan: "Allegretto")),
-            .init(id: "glm", name: "GLM", detail: "", state: .notDetected),
+            .init(id: "glm", name: "GLM", detail: OpenAgentSource.glm.detail, state: .notDetected),
         ]
+        let otherSources = AdditionalSource.allCases.map {
+            SourceStatus(id: $0.rawValue, name: $0.vendor, detail: $0.detail, state: .notDetected)
+        } + OpenAgentSource.allCases.map {
+            SourceStatus(id: $0.rawValue, name: $0.name, detail: $0.detail, state: .notDetected)
+        }
+        let sources = configuredSources + otherSources.filter { source in !configuredSources.contains { $0.id == source.id } }
         store.replace(report: UsageReport(generatedAt: Date(), snapshots: [], sessions: [],
             subscriptions: ["kimi-plan": "Allegretto"], billing: [DemoData.deepSeekBilling(now: Date())], services: [
                 .init(client: "OpenCode", provider: "Anthropic", product: .api),
@@ -509,23 +567,50 @@ public enum SnapshotRunner {
             ]))
         for scheme in [ColorScheme.dark, .light] {
             let appearance = scheme == .dark ? "dark" : "light"
-            for (state, expanded) in [("collapsed", Set<String>()), ("expanded", ["Claude"]), ("prepaid", ["DeepSeek"]), ("empty", ["Antigravity"])] {
+            for (state, providerID) in [("overview", nil), ("claude", "Claude"), ("prepaid", "DeepSeek"), ("unavailable", "Antigravity"), ("unconfigured", "GLM")] as [(String, String?)] {
                 let displayOrder = settings.agents
                 if state == "prepaid" { settings.moveAgentGroup(id: "DeepSeek", to: "Claude") }
                 defer { settings.updateAgents { _ in displayOrder } }
                 let view = SettingsView(settings: settings, store: store, initialTab: .sources,
-                                        sourceStatuses: sources, initiallyExpandedAgents: expanded)
-                save("settings-agents-\(state)-\(appearance)", view.frame(width: 760, height: 800), folder: folder, scheme: scheme)
-                if state == "collapsed" {
-                    save("settings-agents-accounts-\(appearance)", view.frame(width: 760, height: 800),
-                         folder: folder, scheme: scheme, scrollOffset: 420)
-                }
-                if state == "expanded" || state == "prepaid" {
-                    save("settings-agents-\(state)-small-\(appearance)", view.frame(width: 680, height: 720), folder: folder, scheme: scheme)
-                    save("settings-agents-\(state)-models-small-\(appearance)", view.frame(width: 680, height: 720),
-                         folder: folder, scheme: scheme, scrollOffset: state == "prepaid" ? 400 : 240)
+                                        sourceStatuses: sources, initialProviderID: providerID)
+                save("settings-agents-\(state)-\(appearance)",
+                     view.frame(width: SettingsWindowLayout.size.width, height: SettingsWindowLayout.size.height), folder: folder, scheme: scheme)
+                if state == "claude" || state == "prepaid" {
+                    save("settings-agents-\(state)-small-\(appearance)",
+                         view.frame(width: SettingsWindowLayout.minimum.width, height: SettingsWindowLayout.minimum.height), folder: folder, scheme: scheme)
                 }
             }
+        }
+        saveAntigravitySettings(settings: settings, store: store, sources: sources, folder: folder)
+    }
+
+    private static func saveAntigravitySettings(settings: SettingsStore, store: UsageStore, sources: [SourceStatus], folder: URL) {
+        let now = Date()
+        let current = ProviderAccount.identified(provider: "Antigravity", user: "work@example.com", workspace: nil)!
+        let previous = ProviderAccount.identified(provider: "Antigravity", user: "personal@example.com", workspace: nil)!
+        func row(_ account: ProviderAccount, _ key: String, _ short: String, _ name: String) -> AgentDescriptor {
+            .init(id: account.windowID("antigravity:" + key), vendor: "Antigravity", model: name,
+                  shortModel: short, source: "", enabled: account == current, account: account, allModels: false)
+        }
+        let rows = [
+            row(previous, "gemini-weekly", "Gemini 7d", "Gemini Models · Weekly Limit Remaining"),
+            row(current, "gemini-weekly", "Gemini 7d", "Gemini Models · Weekly Limit Remaining"),
+            row(previous, "3p-weekly", "3rd-party 7d", "Claude and GPT models · Weekly Limit Remaining"),
+            row(current, "gemini-5h", "Gemini 5h", "Gemini Models · Five Hour Limit Remaining"),
+            row(current, "3p-weekly", "3rd-party 7d", "Claude and GPT models · Weekly Limit Remaining"),
+        ]
+        settings.updateAgents { _ in rows }
+        settings.setAccount(id: previous.id, visible: false)
+        store.replace(report: UsageReport(generatedAt: now, snapshots: [], sessions: [], accounts: ["Antigravity": [
+            .init(account: current, label: "work@example.com", observedAt: now),
+            .init(account: previous, label: "personal@example.com", observedAt: now.addingTimeInterval(-86400), isCurrent: false),
+        ]]))
+        for scheme in [ColorScheme.dark, .light] {
+            let view = SettingsView(settings: settings, store: store, initialTab: .sources,
+                                    sourceStatuses: sources, initialProviderID: "Antigravity")
+            let appearance = scheme == .dark ? "dark" : "light"
+            save("settings-agents-antigravity-accounts-\(appearance)",
+                 view.frame(width: SettingsWindowLayout.size.width, height: SettingsWindowLayout.size.height), folder: folder, scheme: scheme)
         }
     }
 

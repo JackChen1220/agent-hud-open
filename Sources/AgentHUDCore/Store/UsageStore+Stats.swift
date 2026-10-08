@@ -70,7 +70,13 @@ public extension UsageStore {
 
     /// Both surfaces show every model's token spend.
     var tokenColumns: [TokenColumn] {
-        ChartData.tokenBars(usage: report?.usage ?? [], agentIds: consumers.map(\.id), range: statsRange, bucketSize: tokenBucketSize,
+        tokenColumns(consumerIDs: nil)
+    }
+
+    /// A chart can narrow its own models without changing the range, token kinds or other statistics.
+    func tokenColumns(consumerIDs: Set<String>?) -> [TokenColumn] {
+        let selected = consumers.filter { consumerIDs?.contains($0.id) ?? true }
+        return ChartData.tokenBars(usage: report?.usage ?? [], agentIds: selected.map(\.id), range: statsRange, bucketSize: tokenBucketSize,
                             now: dataDate, dimensions: tokenDimensions)
     }
 
@@ -118,7 +124,12 @@ public extension UsageStore {
     /// What the charted tokens of the selected kinds would cost at list price, counted as the chart counts them, each
     /// model on its client's platform and DeepSeek's peak hours at its peak rates.
     var statsListCost: ModelCatalog.ListCost? {
-        let interval = statsInterval, ids = Set(consumers.map(\.id)), dimensions = tokenDimensions
+        statsListCost(consumerIDs: nil)
+    }
+
+    /// The same list-price estimate for just the models a chart selected.
+    func statsListCost(consumerIDs: Set<String>?) -> ModelCatalog.ListCost? {
+        let interval = statsInterval, ids = Set(consumers.filter { consumerIDs?.contains($0.id) ?? true }.map(\.id)), dimensions = tokenDimensions
         var tokens: [String: TokenKinds] = [:], peak: [String: TokenKinds] = [:], peakRated: [String: Bool] = [:]
         for bucket in report?.usage ?? [] where ids.contains(bucket.agentId) && bucket.overlaps(interval) {
             let kinds = dimensions.masking(bucket.kinds)

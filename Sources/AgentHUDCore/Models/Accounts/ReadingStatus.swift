@@ -146,10 +146,17 @@ public extension UsageReport {
         }
     }
 
-    /// Whether an account's reading lists every window of the account, so that a window it leaves out has ended: the client
-    /// is signed in to the account and neither its read nor its vendor's has an issue.
+    /// Only an explicit complete inventory from a current account with a sound reading can retire omitted windows.
     func confirmsCompleteInventory(_ account: AccountObservation) -> Bool {
-        account.isCurrent && status(of: .account(account)).isNormal
+        account.quotaWindowIDs != nil && account.isCurrent && status(of: .account(account)).isNormal
+    }
+
+    /// Complete inventories whose readings can replace earlier windows; health alone never asserts completeness.
+    var completeQuotaWindowInventories: [String: Set<String>] {
+        Set(accountObservations.map(\.account.id)).reduce(into: [:]) { inventory, id in
+            guard let account = observation(accountID: id), confirmsCompleteInventory(account) else { return }
+            inventory[id] = account.quotaWindowIDs
+        }
     }
 
     /// A vendor's status: its issue with a quota or balance reading. A report that does not type its issues gives its

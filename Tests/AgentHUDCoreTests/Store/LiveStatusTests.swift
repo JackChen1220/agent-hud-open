@@ -70,6 +70,51 @@ final class LiveStatusTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(value)), value)
     }
 
+    @MainActor
+    func testDetectionDefaultsPersistWithoutOverridingManualChoices() throws {
+        let suite = "LiveStatusDefaultsTests.\(UUID())", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        let sources = [
+            SourceStatus(id: "claude-code", name: "Claude", detail: "", state: .ready(plan: nil)),
+            SourceStatus(id: "cursor", name: "Cursor", detail: "", state: .notDetected),
+            SourceStatus(id: "pi", name: "Pi", detail: "", state: .installed),
+            SourceStatus(id: "kimi", name: "Kimi", detail: "", state: .unavailable),
+            SourceStatus(id: "glm", name: "GLM", detail: "", state: .notDetected),
+        ]
+        settings.update { $0.setLiveStatus(for: "Pi", enabled: false) }
+        settings.update { $0.applyLiveStatusDefaults(sources: sources) }
+        XCTAssertTrue(settings.settings.liveStatusEnabled(for: "Claude"))
+        XCTAssertFalse(settings.settings.liveStatusEnabled(for: "Cursor"))
+        XCTAssertFalse(settings.settings.liveStatusEnabled(for: "Pi"), "A saved Off choice survives detection")
+        XCTAssertTrue(settings.settings.liveStatusEnabled(for: "Kimi"), "Unavailable is different from not detected")
+        XCTAssertNil(settings.settings.liveStatusPreferences["glm"], "Billing-only services have no Live status setting")
+
+        settings.update { $0.setLiveStatus(for: "Cursor", enabled: true) }
+        let reloaded = SettingsStore(defaults: defaults)
+        reloaded.update { $0.applyLiveStatusDefaults(sources: sources) }
+        XCTAssertTrue(reloaded.settings.liveStatusEnabled(for: "CURSOR"), "A manual On choice survives relaunch while undetected")
+        XCTAssertFalse(reloaded.settings.liveStatusEnabled(for: "Pi"))
+        reloaded.update { $0.applyLiveStatusDefaults(sources: [
+            SourceStatus(id: "pi", name: "Pi", detail: "", state: .notDetected)
+        ]) }
+        XCTAssertFalse(reloaded.settings.liveStatusEnabled(for: "Pi"))
+    }
+
+    func testLegacyDisabledChoicesMigrateToOnePreferenceMap() throws {
+        var value = try JSONDecoder().decode(Settings.self, from: Data(#"{"disabledLiveStatusSources":["Pi","CODEX"]}"#.utf8))
+        value.applyLiveStatusDefaults(sources: [
+            SourceStatus(id: "pi", name: "Pi", detail: "", state: .installed),
+            SourceStatus(id: "cursor", name: "Cursor", detail: "", state: .notDetected)
+        ])
+        value.setLiveStatus(for: "Codex", enabled: true)
+        let encoded = try JSONEncoder().encode(value)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertNil(object["disabledLiveStatusSources"], "Only the authoritative map is written")
+        XCTAssertEqual(value.disabledLiveStatusSources, ["pi", "cursor"])
+        XCTAssertEqual(try JSONDecoder().decode(Settings.self, from: encoded), value)
+    }
+
     func testLiveStatusBelongsToClientsRegardlessOfQuotaWindows() {
         let names = SessionSource.agentVendors + ["GLM", "Anthropic", "ChatGPT"]
         let sources = names.map { SourceStatus(id: $0.lowercased(), name: $0, detail: "", state: .installed) }

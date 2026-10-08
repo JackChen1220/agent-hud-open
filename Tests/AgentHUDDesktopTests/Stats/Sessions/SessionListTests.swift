@@ -3,6 +3,52 @@ import XCTest
 @testable import AgentHUDDesktop
 
 final class SessionListTests: XCTestCase {
+    /// The project is the recorded path, shared across clients. Every list surface uses the same combined filter.
+    @MainActor
+    func testProjectSearchAndSourceFiltersAgreeWithCountsAndKeepLocalUsage() throws {
+        let suite = "SessionListTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = UsageStore(provider: DemoUsageProvider(), settings: SettingsStore(defaults: defaults, defaultAgents: []))
+        let now = store.now, home = FileManager.default.homeDirectoryForCurrentUser.path
+        let personal = home + "/Projects/web", client = home + "/Clients/web"
+        func session(_ id: String, agent: String = "codex", task: String, path: String?, tokens: Int, endedHoursAgo: Double? = nil) -> LiveSession {
+            LiveSession(id: id, agentId: agent, task: task, terminal: "web", startedAt: now.addingTimeInterval(-40 * 3600),
+                        endedAt: endedHoursAgo.map { now.addingTimeInterval(-$0 * 3600) }, pctOfWindow: nil,
+                        tokensIn: tokens, tokensOut: 0, observedAt: now, workingDirectory: path)
+        }
+        store.replace(report: UsageReport(generatedAt: now, snapshots: [], sessions: [
+            session("personal-codex", task: "Review cache attribution", path: personal, tokens: 12),
+            session("personal-claude", agent: "claude", task: "Implement search", path: personal, tokens: 23),
+            session("client", task: "Review cache attribution", path: client, tokens: 34),
+            session("unknown", task: "Local draft", path: nil, tokens: 45),
+            session("older", task: "Previous change", path: personal, tokens: 56, endedHoursAgo: 30),
+        ]))
+        store.now = now
+        let range = store.statsRange, dimensions = store.tokenDimensions, bucket = store.tokenBucketSize
+        func listed(project: SessionProject? = nil, search: String = "", source: SessionSource? = nil, activeOnly: Bool = false) -> [LiveSession] {
+            store.listedSessions(source: source, activeOnly: activeOnly, project: project, search: search)
+        }
+        let codex = SessionSource(vendor: "Codex", client: nil)
+        XCTAssertEqual(Set(listed(project: .directory(personal)).map(\.id)), ["personal-codex", "personal-claude", "older"])
+        XCTAssertEqual(listed(project: .directory(client)).map(\.id), ["client"], "same folder name, different physical path")
+        XCTAssertEqual(listed(project: .unassigned).map(\.id), ["unknown"], "the terminal's folder name does not invent a project path")
+        XCTAssertEqual(listed(project: .directory(personal), search: "review", source: codex).map(\.id), ["personal-codex"])
+        XCTAssertEqual(listed(project: .directory(client), search: "implement").map(\.id), [])
+        XCTAssertEqual(Set(listed(search: "~/Projects/web").map(\.id)), ["personal-codex", "personal-claude", "older"])
+        XCTAssertEqual(listed(search: "  LOCAL DRAFT  ").map(\.id), ["unknown"])
+        let active = listed(project: .directory(personal), activeOnly: true)
+        XCTAssertEqual(Set(active.map(\.id)), ["personal-codex", "personal-claude"])
+        let counts = StatsView.sessionCounts(store, source: nil, activeOnly: true, project: .directory(personal))
+        XCTAssertEqual(counts.listed, active.count)
+        XCTAssertEqual(counts.running, 2)
+        let all = listed()
+        XCTAssertEqual(all.count, 5, "clearing the local filters restores the whole list")
+        XCTAssertEqual(all.reduce(0) { $0 + store.sessionTokens($1).total }, 170, "no signed-in quota account is needed to count local usage")
+        XCTAssertEqual(store.statsRange, range, "list filters do not change the chart's range")
+        XCTAssertEqual(store.tokenDimensions, dimensions)
+        XCTAssertEqual(store.tokenBucketSize, bucket)
+    }
+
     @MainActor
     func testActiveOnlyKeepsTheLastDayAndEachDayHoldsWhatWasLastActiveOnIt() throws {
         let suite = "SessionListTests.\(UUID().uuidString)", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

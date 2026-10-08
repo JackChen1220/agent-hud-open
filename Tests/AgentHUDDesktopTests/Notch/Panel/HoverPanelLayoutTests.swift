@@ -1,10 +1,72 @@
 import AppKit
 import SwiftUI
 import XCTest
-import AgentHUDCore
+@testable import AgentHUDCore
 @testable import AgentHUDDesktop
 
 final class HoverPanelLayoutTests: XCTestCase {
+    @MainActor
+    func testSessionQuestionExpansionResizesTheActualHUDAndItsMeasuredContent() async throws {
+        _ = NSApplication.shared
+        let screen = try XCTUnwrap(NSScreen.main)
+        let domain = "app.agenthud.tests.panel-question-height.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let agent = AgentDescriptor(id: "question-height-model", vendor: "DeepSeek", model: "Test", source: "Test", enabled: true)
+        let settings = SettingsStore(defaults: defaults, defaultAgents: [agent])
+        settings.update {
+            $0.screens[ScreenIdentity.key(for: screen)] = ScreenPlacement(mode: .notch)
+            $0.showIslandQuota = false
+            $0.showIslandTokens = false
+            $0.showIslandSessions = true
+            $0.collapseDelayMs = 5000
+        }
+        let now = Date()
+        let session = LiveSession(id: "question-height-session", agentId: agent.id, task: "Pick a destination", terminal: "proj",
+                                  startedAt: now, pctOfWindow: nil, tokensIn: 100, tokensOut: 20, observedAt: now)
+        let request = PermissionRequest(id: "question-height-request", source: .deepseek, sessionID: session.id,
+                                        toolName: "AskUserQuestion", summary: "Pick one", detail: nil, cwd: nil,
+                                        questions: [PermissionQuestion(question: "Pick one", options: [.init(label: "A"),
+                                                                                                      .init(label: "B"),
+                                                                                                      .init(label: "C")])], at: now)
+        PermissionRequests.shared.updateNativeRequests([request], source: .deepseek) { _, _ in }
+        defer { PermissionRequests.shared.stopNativeRequests(source: .deepseek) }
+        let store = UsageStore(provider: DemoUsageProvider(), settings: settings, accessAllowed: { false })
+        store.replace(report: UsageReport(generatedAt: now, snapshots: [], sessions: [session], consumers: [agent]))
+        // This HUD represents the other display: the waiting request is owned by another screen's event panel.
+        let hud = ScreenHUD(key: ScreenIdentity.key(for: screen), screen: screen, store: store, settings: settings,
+                            mouseLocation: { CGPoint(x: screen.frame.minX + 20, y: screen.frame.minY + 20) })
+        defer { hud.close() }
+        hud.forceOpen()
+        hud.island.show()
+        let window = hud.island.panel, hosting = try XCTUnwrap(window.contentView)
+        let initialHeight = hud.island.contentHeight(for: hud.island.rootView).rounded()
+        try await waitUntil("the session's question badge has native bounds", hosting: hosting) {
+            self.questionBadgeFrame(in: hosting) != nil
+        }
+        let badge = try XCTUnwrap(questionBadgeFrame(in: hosting))
+        let screenPoint = window.convertToScreen(hosting.convert(badge, to: nil))
+        try click(CGPoint(x: screenPoint.midX, y: screenPoint.midY), in: window)
+        try await waitUntil("the actual HUD grows to fit the inline answers", hosting: hosting) {
+            guard let scroll = self.firstScrollView(in: hosting), let document = scroll.documentView else { return false }
+            return window.frame.height > initialHeight + 100
+                && document.bounds.height > 200
+                && document.bounds.height <= scroll.contentView.bounds.height + 1
+        }
+        XCTAssertEqual(hud.island.rootView.answeringSessionID, session.id)
+        XCTAssertEqual(window.frame.height, hud.island.contentHeight(for: hud.island.rootView).rounded(), accuracy: 1,
+                       "Fresh natural-height measurement must include the same expansion as the visible view")
+
+        // A redraw keeps that single expansion; the client's withdrawal clears it and restores the short panel.
+        hud.apply(animated: false)
+        XCTAssertEqual(hud.island.rootView.answeringSessionID, session.id)
+        PermissionRequests.shared.stopNativeRequests(source: .deepseek)
+        hud.apply(animated: false)
+        try await waitUntil("withdrawn questions restore the compact summary", hosting: hosting) {
+            hud.island.rootView.answeringSessionID == nil && abs(window.frame.height - initialHeight) < 1
+        }
+    }
+
     @MainActor
     func testNativeSessionBoundsIgnoreHeaderTextStatusDotsAndFooterIcons() {
         let hosting = PanelActionFrameView(frame: CGRect(x: 0, y: 0, width: 420, height: 220))
@@ -242,6 +304,15 @@ final class HoverPanelLayoutTests: XCTestCase {
     private func rowTitleFrames(in hosting: NSView) -> [CGRect] {
         nativeButtonFrames(in: hosting).filter { $0.height < 22 && $0.width > 180 && $0.maxX < hosting.bounds.maxX - 30 }
             .sorted { hosting.isFlipped ? $0.minY < $1.minY : $0.maxY > $1.maxY }
+    }
+
+    @MainActor
+    private func questionBadgeFrame(in hosting: NSView) -> CGRect? {
+        let titles = rowTitleFrames(in: hosting)
+        return nativeButtonFrames(in: hosting).first { badge in
+            badge.height > 16 && badge.height < 22 && badge.width < 40
+                && titles.contains { badge.minX > $0.maxX && abs(badge.midY - $0.midY) < 1 }
+        }
     }
 
     @MainActor

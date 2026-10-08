@@ -116,7 +116,8 @@ final class ProviderAccountTests: XCTestCase {
         let complete = UsageReport(generatedAt: later, snapshots: [.init(agentId: accountA.windowID("codex"), remainingPct: 58, updatedAt: later)],
                                    sessions: [], discoveredAgents: [descriptor(accountA)],
                                    accounts: ["Codex": [AccountObservation(account: accountA, label: "a@example.com", observedAt: later,
-                                                                           aliases: [withoutEmail.id, withoutWorkspace.id])]])
+                                                                           aliases: [withoutEmail.id, withoutWorkspace.id],
+                                                                           quotaWindowIDs: [accountA.windowID("codex")])]])
         let provider = RetainedUsageProvider(provider: Sequence([report(account: withoutEmail, remaining: 60, at: now, credits: nil),
                                                                   report(account: withoutWorkspace, remaining: 59, at: now.addingTimeInterval(120), credits: nil),
                                                                   complete]))
@@ -304,7 +305,7 @@ final class ProviderAccountTests: XCTestCase {
         UsageReport(generatedAt: date, snapshots: [.init(agentId: account.windowID("codex"), remainingPct: remaining, updatedAt: date)],
                     sessions: [], discoveredAgents: [descriptor(account)],
                     codexResetCredits: credits.map { .init(availableCount: $0, credits: nil) }, codexResetCreditsObservedAt: credits == nil ? nil : date,
-                    accounts: ["Codex": [AccountObservation(account: account, observedAt: date)]])
+                    accounts: ["Codex": [AccountObservation(account: account, observedAt: date, quotaWindowIDs: [account.windowID("codex")])]])
     }
 }
 

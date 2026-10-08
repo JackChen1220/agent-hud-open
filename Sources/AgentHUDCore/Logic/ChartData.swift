@@ -149,20 +149,25 @@ public enum ChartData {
             ?? columns.last.flatMap { date == $0.interval.end ? $0 : nil }
     }
 
-    /// Four x-axis labels: three absolute hours and "现在 HH:mm".
+    /// Four x-axis labels: dates and times, with the current one marked "现在".
     public static func axisLabels(range: StatsRange, now: Date, calendar: Calendar = .current) -> [String] {
         let hours = Double(range.hours)
         let offsets = [hours, hours * 2 / 3, hours / 3]
         let earlier = offsets.map { offset -> String in
             let date = now.addingTimeInterval(-offset * 3600)
-            return weekdayTime(date, calendar: calendar)
+            return dateTime(date, calendar: calendar)
         }
-        let hh = calendar.component(.hour, from: now), mm = calendar.component(.minute, from: now)
-        return earlier + [L10n.text("现在", "Now") + String(format: " %02d:%02d", hh, mm)]
+        return earlier + [L10n.text("现在 ", "Now ") + dateTime(now, calendar: calendar)]
     }
 
     public static func weekdayName(_ date: Date, calendar: Calendar = .current) -> String {
         L10n.weekdayNames[calendar.component(.weekday, from: date) - 1]
+    }
+
+    /// A weekday, concrete month/day and 24-hour time in the interface's date locale.
+    public static func dateTime(_ date: Date, calendar: Calendar = .current) -> String {
+        date.formatted(Date.FormatStyle(locale: L10n.dateLocale, calendar: calendar, timeZone: calendar.timeZone)
+            .weekday(.abbreviated).month(.abbreviated).day().hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
     }
 
     /// "周二 16:10"
