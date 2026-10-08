@@ -18,19 +18,23 @@ final class ChartDataTests: XCTestCase {
     }
 
     func testTokenBarsAlignAgentsByHour() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let usage = [
             event("a", seconds: 0, tokens: 10), event("b", seconds: 0, tokens: 1),
             event("a", seconds: 3600, tokens: 20), event("b", seconds: 3600, tokens: 2),
         ]
         let now = Date(timeIntervalSince1970: 5 * 3600)
-        let bars = ChartData.tokenBars(usage: usage, agentIds: ["a", "b"], range: .hours5, now: now)
+        let bars = ChartData.tokenBars(usage: usage, agentIds: ["a", "b"], range: .hours5, now: now, calendar: calendar)
         XCTAssertEqual(bars.map(\.tokens), [[10, 1], [20, 2], [0, 0], [0, 0], [0, 0]])
         XCTAssertEqual(bars.map(\.total), [11, 22, 0, 0, 0], "small token counts are retained in the stack")
-        let missing = ChartData.tokenBars(usage: usage, agentIds: ["a", "zzz"], range: .hours5, now: now)
+        let missing = ChartData.tokenBars(usage: usage, agentIds: ["a", "zzz"], range: .hours5, now: now, calendar: calendar)
         XCTAssertEqual(missing.map(\.tokens), [[10, 0], [20, 0], [0, 0], [0, 0], [0, 0]])
     }
 
     func testTokenBarsKeepSparseHoursAndExcludeOutsideSamples() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let now = Date(timeIntervalSince1970: 5.5 * 3600)
         let usage = [
             event("a", seconds: -3600, tokens: 999),
@@ -38,7 +42,7 @@ final class ChartDataTests: XCTestCase {
             event("b", seconds: 3 * 3600, tokens: 456),
             event("a", seconds: 6 * 3600, tokens: 999),
         ]
-        let bars = ChartData.tokenBars(usage: usage, agentIds: ["a", "b"], range: .hours5, now: now)
+        let bars = ChartData.tokenBars(usage: usage, agentIds: ["a", "b"], range: .hours5, now: now, calendar: calendar)
         XCTAssertEqual(bars.count, 6, "partial boundary hours retain their actual positions")
         XCTAssertEqual(bars[3].tokens, [123, 456])
         XCTAssertEqual(bars.map(\.total).reduce(0, +), 579)

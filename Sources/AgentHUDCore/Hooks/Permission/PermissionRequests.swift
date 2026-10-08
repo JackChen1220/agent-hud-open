@@ -96,13 +96,17 @@ public final class PermissionRequests {
     /// Reconciles a native client's actual waiting requests. Executing tools never enter this queue, and a request
     /// answered in that client disappears at the next reading without sending it another answer.
     func updateNativeRequests(_ requests: [PermissionRequest], source: PermissionHooks.Source,
+                              preservesDismissals: Bool = false,
                               answer: @escaping @MainActor (PermissionRequest, PermissionDecision) async throws -> Void) {
         let requests = requests.filter { $0.source == source }
         let ids = Set(requests.map(\.id))
         for request in pending.filter({ $0.source == source }) where !ids.contains(request.id) {
-            if case .native = waiting[request.id] { withdraw(request.id) }
+            if preservesDismissals { hideNativeRequest(request.id) }
+            else if case .native = waiting[request.id] { withdraw(request.id) }
         }
-        dismissedNative = dismissedNative.filter { $0.value != source || ids.contains($0.key) }
+        if !preservesDismissals {
+            dismissedNative = dismissedNative.filter { $0.value != source || ids.contains($0.key) }
+        }
         for request in requests where dismissedNative[request.id] == nil {
             waiting[request.id] = .native { decision in try await answer(request, decision) }
             guard !pending.contains(where: { $0.id == request.id }) else { continue }
@@ -111,13 +115,23 @@ public final class PermissionRequests {
         }
     }
 
+    /// An event stream settles prompts explicitly; a disconnect alone cannot clear a user's dismissal.
+    func settleNativeRequest(_ id: String, source: PermissionHooks.Source) {
+        if request(id)?.source == source, case .native = waiting[id] { withdraw(id) }
+        if dismissedNative[id] == source { dismissedNative.removeValue(forKey: id) }
+    }
+
     /// A failed reading hides cards but cannot prove that a prompt the user left has ended.
     func removeNativeRequests(source: PermissionHooks.Source) {
         for request in pending.filter({ $0.source == source }) {
-            guard case .native = waiting[request.id] else { continue }
-            waiting.removeValue(forKey: request.id)
-            pending.removeAll { $0.id == request.id }
+            hideNativeRequest(request.id)
         }
+    }
+
+    private func hideNativeRequest(_ id: String) {
+        guard case .native = waiting[id] else { return }
+        waiting.removeValue(forKey: id)
+        pending.removeAll { $0.id == id }
     }
 
     func stopNativeRequests(source: PermissionHooks.Source) {

@@ -396,13 +396,14 @@ final class PermissionHookTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual([request.badge, request.summary], ["ASK", "Push the 40 commits now?"])
 
         // ZCode reads the answers back inside the question's own input, the same shape Claude Code reads them in.
-        let answers = ["Push the 40 commits now?": "Push", "Which pages report it?": "Channels, Documents"]
+        let answers: [String: PermissionQuestion.Answer] = ["Push the 40 commits now?": .init(selected: ["Push"]),
+                                                            "Which pages report it?": .init(selected: ["Channels", "Documents"])]
         let decision = try ProviderJSON.read(PermissionDecision.answer(answers).response(for: request))["hookSpecificOutput"]["decision"]
         XCTAssertEqual(decision["behavior"].stringValue, "allow")
         XCTAssertEqual(decision["updatedInput"]["questions"], try ProviderJSON.read(JSONSerialization.data(withJSONObject: questions)),
                        "ZCode reads the questions back beside their answers")
         XCTAssertEqual(decision["updatedInput"]["metadata"]["source"].stringValue, "x", "the rest of the call is left as it was")
-        XCTAssertEqual(decision["updatedInput"]["answers"], .object(answers.mapValues { .string($0) }))
+        XCTAssertEqual(decision["updatedInput"]["answers"], .object(answers.mapValues { .string($0.text) }))
         let skipped = try ProviderJSON.read(PermissionDecision.answer([:]).response(for: request))["hookSpecificOutput"]["decision"]
         XCTAssertEqual(skipped["updatedInput"]["answers"], .object([:]), "ZCode reads it as the questions left open")
 
@@ -512,13 +513,14 @@ final class PermissionHookTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(request.questions.map(\.multiSelect), [false, true])
         XCTAssertEqual([request.badge, request.summary], ["ASK", "Push the 40 commits now?"])
 
-        let answers = ["Push the 40 commits now?": "Push", "Which pages report it?": "Channels, Documents"]
+        let answers: [String: PermissionQuestion.Answer] = ["Push the 40 commits now?": .init(selected: ["Push"]),
+                                                            "Which pages report it?": .init(selected: ["Channels", "Documents"])]
         let decision = try ProviderJSON.read(PermissionDecision.answer(answers).response(for: request))["hookSpecificOutput"]["decision"]
         XCTAssertEqual(decision["behavior"].stringValue, "allow")
         XCTAssertEqual(decision["updatedInput"]["questions"], try ProviderJSON.read(JSONSerialization.data(withJSONObject: questions)),
                        "Claude Code reads the questions back beside their answers")
         XCTAssertEqual(decision["updatedInput"]["metadata"]["source"].stringValue, "x", "the rest of the call is left as it was")
-        XCTAssertEqual(decision["updatedInput"]["answers"], .object(answers.mapValues { .string($0) }))
+        XCTAssertEqual(decision["updatedInput"]["answers"], .object(answers.mapValues { .string($0.text) }))
         XCTAssertTrue(PermissionDecision.answer(answers).response(for: .claude).isEmpty, "answers need the question they answer")
         let skipped = try ProviderJSON.read(PermissionDecision.answer([:]).response(for: request))["hookSpecificOutput"]["decision"]
         XCTAssertEqual(skipped["behavior"].stringValue, "allow", "skipping every question is not a refusal")

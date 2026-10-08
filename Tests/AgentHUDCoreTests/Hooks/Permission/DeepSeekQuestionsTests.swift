@@ -3,8 +3,7 @@ import Foundation
 import XCTest
 @testable import AgentHUDCore
 
-/// The questions DeepSeek Harness's web host asks, read from captured frames and answered the way its
-/// `/api/respond` files them.
+/// Captured questions from hosts exposing the `host.describe` / question event-stream API.
 final class DeepSeekQuestionsTests: XCTestCase, @unchecked Sendable {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
     private let port = 3080
@@ -52,6 +51,8 @@ final class DeepSeekQuestionsTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(read.rpcID, "afbc4073-a9cb-44bf-9e0e-ec41948f8505")
         XCTAssertEqual(read.sessionID, "session-85d81a47-8249-4078-9d52-8f085746740a")
         XCTAssertEqual(read.questions.count, 1)
+        XCTAssertEqual(read.questions[0].id, "choice")
+        XCTAssertEqual(read.questions[0].answerKey, "choice")
         XCTAssertEqual(read.questions[0].question, "请选择一个选项：您希望如何继续？")
         XCTAssertEqual(read.questions[0].options.map(\.label), ["选项 A", "选项 B"])
         XCTAssertFalse(read.questions[0].multiSelect)
@@ -87,7 +88,7 @@ final class DeepSeekQuestionsTests: XCTestCase, @unchecked Sendable {
     /// `selected` — the shapes the host accepted live — with every question in the batch covered.
     func testAnswerMapsChoicesCustomWordsAndSkips() throws {
         let waiting = try pending()
-        let question = waiting.request.questions[0].question
+        let question = waiting.request.questions[0].answerKey
         func entry(_ decision: PermissionDecision) throws -> (selected: [String], custom: String?) {
             let body = try DeepSeekQuestions.answer(decision, for: waiting)
             XCTAssertEqual(body["type"].stringValue, "client-response")
@@ -98,36 +99,85 @@ final class DeepSeekQuestionsTests: XCTestCase, @unchecked Sendable {
             let answers = try XCTUnwrap(answer["answers"]?.arrayValue)
             XCTAssertEqual(answers.count, 1, "every question in the batch is covered")
             let entry = try XCTUnwrap(answers[0].objectValue)
-            XCTAssertEqual(entry["id"]?.stringValue, question)
+            XCTAssertEqual(entry["id"]?.stringValue, "choice", "echo the caller's stable id, not the displayed text")
             return (entry["selected"]?.arrayValue?.compactMap { $0.stringValue } ?? [],
                     entry["custom"]?.stringValue)
         }
-        XCTAssertEqual(try entry(.answer([question: "选项 A"])).selected, ["选项 A"])
-        XCTAssertEqual(try entry(.answer([question: "自己想想"])).custom, "自己想想")
-        XCTAssertEqual(try entry(.answer([question: "选项 A"])).custom, nil)
+        XCTAssertEqual(try entry(.answer([question: .init(selected: ["选项 A"])])).selected, ["选项 A"])
+        XCTAssertEqual(try entry(.answer([question: .init(custom: "自己想想")])).custom, "自己想想")
+        XCTAssertEqual(try entry(.answer([question: .init(selected: ["选项 A"])])).custom, nil)
         XCTAssertEqual(try entry(.answer([:])).selected, [], "a question left open is skipped")
+        let choice = try DeepSeekQuestions.answer(.answer([question: .init(selected: ["选项 A"])]), for: waiting)
+        let chosen = try XCTUnwrap(choice["result"]["value"]["answer"]["answers"].arrayValue?.first?.objectValue)
+        XCTAssertNil(chosen["custom"], "optional strings are omitted; null fails Harness's output schema")
+        let skipped = try DeepSeekQuestions.answer(.answer([:]), for: waiting)
+        let skip = try XCTUnwrap(skipped["result"]["value"]["answer"]["answers"].arrayValue?.first?.objectValue)
+        XCTAssertNil(skip["custom"], "skipping also omits optional custom text")
     }
 
-    func testMultiSelectSplitsLabelsAndKeepsTheSupplement() throws {
+    func testMultiSelectPreservesLabelsAndSupplementWithoutParsingText() throws {
         let json = frame(payload: .object([
             "sessionId": .string("session-multi"),
             "questions": .array([
                 .object([
                     "id": .string("both"), "question": .string("选哪些？"), "multiSelect": .bool(true),
                     "options": .array([
-                        .object(["label": .string("甲")]), .object(["label": .string("乙")]),
+                        .object(["label": .string("甲, 乙")]), .object(["label": .string("丙")]),
                     ]),
                 ]),
             ]),
         ]))
         let frame = try XCTUnwrap(DeepSeekQuestions.Frame.read(json))
         let waiting = DeepSeekQuestions.pending(frame, port: port, now: now)
-        let question = waiting.request.questions[0].question
-        let body = try DeepSeekQuestions.answer(.answer([question: "甲, 乙, 再想想"]), for: waiting)
+        let question = waiting.request.questions[0].answerKey
+        let body = try DeepSeekQuestions.answer(.answer([question: .init(selected: ["甲, 乙", "丙"], custom: "丙, 再想想")]), for: waiting)
         let answer = try XCTUnwrap(body["result"]["value"]["answer"].objectValue)
         let entry = try XCTUnwrap(try XCTUnwrap(answer["answers"]?.arrayValue)[0].objectValue)
-        XCTAssertEqual(entry["selected"]?.arrayValue?.compactMap { $0.stringValue }, ["甲", "乙"])
-        XCTAssertEqual(entry["custom"]?.stringValue, "再想想")
+        XCTAssertEqual(entry["id"]?.stringValue, "both")
+        XCTAssertEqual(entry["selected"]?.arrayValue?.compactMap { $0.stringValue }, ["甲, 乙", "丙"])
+        XCTAssertEqual(entry["custom"]?.stringValue, "丙, 再想想")
+    }
+
+    func testEqualQuestionTextKeepsIndependentAnswersByID() throws {
+        let questions: [ProviderJSON] = ["first", "second"].map { id in
+            .object(["id": .string(id), "question": .string("Continue?"),
+                     "options": .array([.object(["label": .string("Yes")]), .object(["label": .string("No")])])])
+        }
+        let json = frame(payload: .object(["sessionId": .string("session"), "questions": .array(questions)]))
+        let read = try XCTUnwrap(DeepSeekQuestions.Frame.read(json))
+        let waiting = DeepSeekQuestions.pending(read, port: port, now: now)
+        let body = try DeepSeekQuestions.answer(.answer([
+            "first": .init(selected: ["Yes"]), "second": .init(selected: ["No"]),
+        ]), for: waiting)
+        let answers = try XCTUnwrap(body["result"]["value"]["answer"]["answers"].arrayValue)
+        XCTAssertEqual(answers.map { $0["id"].stringValue }, ["first", "second"])
+        XCTAssertEqual(answers.map { $0["selected"].arrayValue?.first?.stringValue }, ["Yes", "No"])
+    }
+
+    func testFrameRequiresUniqueStableIDsAndLeavesUnreadPlansToHarness() throws {
+        func read(_ questions: [ProviderJSON]) -> DeepSeekQuestions.Frame? {
+            DeepSeekQuestions.Frame.read(frame(payload: .object([
+                "sessionId": .string("session"), "questions": .array(questions),
+            ])))
+        }
+        let question: [String: ProviderJSON] = [
+            "id": .string("choice"), "question": .string("Continue?"),
+            "options": .array([.object(["label": .string("Yes")])]),
+        ]
+        var missing = question
+        missing.removeValue(forKey: "id")
+        XCTAssertNil(read([.object(missing)]))
+        var empty = question
+        empty["id"] = .string("  ")
+        XCTAssertNil(read([.object(empty)]))
+        XCTAssertNil(read([.object(question), .object(question)]))
+        var plan = question
+        plan["intent"] = .object(["kind": .string("plan-review"), "approve": .string("Yes")])
+        XCTAssertNil(read([.object(plan)]), "a plan requires Harness's native review surface")
+        var detail = question
+        detail["detail"] = .string("# Complete plan\nChange production settings")
+        XCTAssertNil(read([.object(detail)]), "supporting detail must not be dropped while offering a decision")
+        XCTAssertNil(read([.object(question), .object(plan)]), "one unread question leaves the whole batch native")
     }
 
     func testAnswerRefusesWhatIsNotAnAnswer() throws {
@@ -145,6 +195,22 @@ final class DeepSeekQuestionsTests: XCTestCase, @unchecked Sendable {
             "type": .string("server-response"), "rpcId": .string("x"),
             "result": .object(["ok": .bool(true), "value": .object(["accepted": .bool(false), "reason": .string("not-pending")])]),
         ])))
+        XCTAssertEqual(try DeepSeekQuestions.receipt(.object([
+            "type": .string("server-response"), "result": .object([
+                "ok": .bool(true), "value": .object(["accepted": .bool(false), "reason": .string("not-pending")]),
+            ]),
+        ])), .notPending)
+        XCTAssertThrowsError(try DeepSeekQuestions.receipt(.object([
+            "type": .string("server-response"), "result": .object([
+                "ok": .bool(true), "value": .object(["accepted": .bool(false), "reason": .string("invalid-answer")]),
+            ]),
+        ])), "an unknown rejection does not prove the question is settled")
+        XCTAssertThrowsError(try DeepSeekQuestions.receipt(.object([
+            "type": .string("server-response"), "result": .object(["ok": .bool(true), "value": .object([:])]),
+        ])))
+        XCTAssertThrowsError(try DeepSeekQuestions.receipt(.object([
+            "type": .string("server-response"), "result": .object(["ok": .bool(false)]),
+        ])))
     }
 
     /// A describe call decides the port is a Harness web host by its fields; a failure result or a foreign
@@ -160,6 +226,47 @@ final class DeepSeekQuestionsTests: XCTestCase, @unchecked Sendable {
             "type": .string("server-response"), "rpcId": .string("probe"),
             "result": .object(["ok": .bool(true), "value": .object(["detail": .string("a foreign server")])]),
         ])))
+    }
+
+    func testConfirmedHostProtocolSendsDescribeAndExactAnswer() async throws {
+        let describeData = try JSONEncoder().encode(describe())
+        var client = DeepSeekQuestions()
+        client.http = ProviderHTTP(send: { request in
+            XCTAssertEqual(request.url?.absoluteString, "http://127.0.0.1:3080/api/host.describe")
+            XCTAssertEqual(request.httpMethod, "POST")
+            let body = try ProviderJSON.read(try XCTUnwrap(request.httpBody))
+            XCTAssertEqual(body["type"].stringValue, "client-request")
+            XCTAssertEqual(body["method"].stringValue, "host.describe")
+            XCTAssertEqual(body["payload"], .object([:]))
+            return describeData
+        })
+        let confirmed = try await client.describe(port: port)
+        XCTAssertTrue(confirmed)
+
+        let waiting = try pending()
+        let body = try DeepSeekQuestions.answer(.answer(["choice": .init(selected: ["选项 A"])]), for: waiting)
+        let receiptData = try JSONEncoder().encode(ProviderJSON.object([
+            "type": .string("server-response"), "rpcId": .string(waiting.rpcID),
+            "result": .object(["ok": .bool(true), "value": .object(["accepted": .bool(true)])]),
+        ]))
+        client.http = ProviderHTTP(send: { request in
+            XCTAssertEqual(request.url?.absoluteString, "http://127.0.0.1:3080/api/respond")
+            XCTAssertEqual(try ProviderJSON.read(try XCTUnwrap(request.httpBody)), body)
+            return receiptData
+        })
+        let reply = try await client.send(body, port: port)
+        XCTAssertEqual(try DeepSeekQuestions.receipt(reply), .accepted)
+    }
+
+    func testAuthenticatedIncompatibleHostIsNotConfirmed() async throws {
+        var client = DeepSeekQuestions()
+        client.http = ProviderHTTP(send: { _ in throw ProviderHTTPError(status: 401) })
+        do {
+            _ = try await client.describe(port: port)
+            XCTFail("a host requiring a different authenticated API must stay native")
+        } catch let error as ProviderHTTPError {
+            XCTAssertEqual(error.status, 401)
+        }
     }
 
     /// Discovery takes the web-profile processes, their named port or the default, and nothing else.

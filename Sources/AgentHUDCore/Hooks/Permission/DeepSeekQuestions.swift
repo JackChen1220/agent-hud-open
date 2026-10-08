@@ -2,8 +2,8 @@ import AgentHUDSupport
 import Foundation
 
 /// The questions DeepSeek Harness's web host asks its user, read from the event stream it already serves on
-/// loopback. No hook runs: `ask_user_question` is a tool of a `web`-profile host, whose questions also replay on
-/// connect and are answered by RPC against the same host.
+/// loopback. Hosts exposing `host.describe` and `question/requested` replay pending questions on connect and
+/// accept answers through the same host. Hosts using a different API remain on Harness's own surface.
 public struct DeepSeekQuestions: Sendable {
     /// One waiting question, with everything answering it needs: the frame's `rpcId` is what `/api/respond`
     /// names, and the request's id is what the HUD's queue and this answer share.
@@ -19,7 +19,7 @@ public struct DeepSeekQuestions: Sendable {
         let port: Int
 
         func json(_ method: String, body: ProviderJSON, http: ProviderHTTP, timeout: TimeInterval = 2) async throws -> ProviderJSON {
-            try await post(Self.envelope(method, payload: .object([:])), http: http, timeout: timeout)
+            try await post(Self.envelope(method, payload: body), http: http, timeout: timeout)
         }
 
         func post(_ body: ProviderJSON, http: ProviderHTTP, timeout: TimeInterval) async throws -> ProviderJSON {
@@ -64,10 +64,21 @@ public struct DeepSeekQuestions: Sendable {
                   let rpcID = json["rpcId"].stringValue, !rpcID.isEmpty else { return nil }
             let payload = json["payload"]
             guard let sessionID = payload["sessionId"].stringValue, !sessionID.isEmpty else { return nil }
-            // The questions read the same shapes Claude Code's AskUserQuestion carries, which is what Harness
-            // modeled its tool on; a question the HUD cannot read in full is left to Harness's own surface.
-            let questions = PermissionQuestion.read(payload["questions"])
-            guard !questions.isEmpty else { return nil }
+            // Harness files answers under the caller's stable question id. Display text is not an identity;
+            // two questions can have the same wording. Plans and supporting detail stay on the native surface,
+            // where the user can read what the decision is about before answering.
+            guard let items = payload["questions"].arrayValue, !items.isEmpty else { return nil }
+            var ids: Set<String> = []
+            var questions: [PermissionQuestion] = []
+            for item in items {
+                guard let id = item["id"].stringValue,
+                      !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      ids.insert(id).inserted,
+                      item["intent"]["kind"].stringValue != "plan-review",
+                      item["detail"].stringValue?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false,
+                      let question = PermissionQuestion.read(.array([item])).first else { return nil }
+                questions.append(question)
+            }
             return Frame(rpcID: rpcID, sessionID: sessionID, questions: questions)
         }
 
@@ -96,9 +107,12 @@ public struct DeepSeekQuestions: Sendable {
     }
 
     /// The waiting question a frame carries, named after this endpoint and its RPC.
+    static func requestID(port: Int, rpcID: String) -> String { "deepseek:\(port):\(rpcID)" }
+
     static func pending(_ frame: Frame, port: Int, now: Date) -> Pending {
         let questions: [ProviderJSON] = frame.questions.map { question in
             .object([
+                "id": .string(question.answerKey),
                 "question": .string(question.question),
                 "header": question.header.map { .string($0) } ?? .null,
                 "options": .array(question.options.map { option in
@@ -110,7 +124,7 @@ public struct DeepSeekQuestions: Sendable {
         }
         let input: ProviderJSON = .object(["questions": .array(questions)])
         let request = PermissionRequest(
-            id: "deepseek:\(port):\(frame.rpcID)", source: .deepseek,
+            id: requestID(port: port, rpcID: frame.rpcID), source: .deepseek,
             sessionID: PermissionHooks.Source.deepseek.sessionID(frame.sessionID),
             toolName: PermissionQuestion.tool,
             summary: frame.questions.first?.question ?? "",
@@ -122,28 +136,18 @@ public struct DeepSeekQuestions: Sendable {
 
     /// The user's answer in the shape `/api/respond` files: each question's offered labels under `selected`, its
     /// `custom` beside them, a question the user skipped left with an empty `selected`. The answers arrive keyed by
-    /// the question text, exactly as the question card collects them.
+    /// Harness's original question ids, with choices and free text kept separate all the way from the card.
     static func answer(_ decision: PermissionDecision, for pending: Pending) throws -> ProviderJSON {
         guard case .answer(let answers) = decision else { throw Failure.unsupportedDecision }
         var entries: [ProviderJSON] = []
         for question in pending.request.questions {
-            let given = answers[question.question]
-            var selected: [String] = [], custom: String?
-            if let given {
-                let offered = question.options.map(\.label)
-                let parts = given.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-                    .filter { !given.contains(",") || !$0.isEmpty }
-                for part in parts where offered.contains(part) {
-                    selected.append(part)
-                }
-                let own = parts.filter { !offered.contains($0) }.joined(separator: ", ")
-                custom = own.isEmpty ? nil : own
-            }
-            entries.append(.object([
-                "id": .string(question.question),
-                "selected": .array(selected.map { .string($0) }),
-                "custom": custom.map { .string($0) } ?? .null,
-            ]))
+            let given = answers[question.answerKey] ?? PermissionQuestion.Answer()
+            var entry: [String: ProviderJSON] = [
+                "id": .string(question.answerKey),
+                "selected": .array(given.selected.map { .string($0) }),
+            ]
+            if let custom = given.custom { entry["custom"] = .string(custom) }
+            entries.append(.object(entry))
         }
         return .object([
             "type": .string("client-response"), "rpcId": .string(pending.rpcID),
@@ -154,9 +158,21 @@ public struct DeepSeekQuestions: Sendable {
         ])
     }
 
-    /// Whether the host took the answer: `accepted` false says the question had already been settled elsewhere.
+    /// A confirmed receipt is terminal only when the host took the answer or explicitly says the question ended.
+    enum Receipt: Equatable, Sendable {
+        case accepted, notPending
+    }
+
+    static func receipt(_ reply: ProviderJSON) throws -> Receipt {
+        let value = try Endpoint.value(reply)
+        if value["accepted"].boolValue == true { return .accepted }
+        if value["accepted"].boolValue == false, value["reason"].stringValue == "not-pending" { return .notPending }
+        throw ProviderFailure.format
+    }
+
+    /// Whether the host took this answer; a malformed or unknown rejection does not settle the HUD's card.
     static func accepted(_ reply: ProviderJSON) -> Bool {
-        (try? Endpoint.value(reply))?["accepted"].boolValue == true
+        (try? receipt(reply)) == .accepted
     }
 
     enum Failure: LocalizedError {

@@ -62,8 +62,12 @@ final class HoverPanelLayoutTests: XCTestCase {
         XCTAssertEqual(hud.island.rootView.answeringSessionID, session.id)
         PermissionRequests.shared.stopNativeRequests(source: .deepseek)
         hud.apply(animated: false)
+        let restoredHeight = hud.island.contentHeight(for: hud.island.rootView).rounded()
+        XCTAssertLessThan(restoredHeight, initialHeight, "Withdrawing the request also removes its taller badge")
         try await waitUntil("withdrawn questions restore the compact summary", hosting: hosting) {
-            hud.island.rootView.answeringSessionID == nil && abs(window.frame.height - initialHeight) < 1
+            hud.island.rootView.answeringSessionID == nil
+                && self.questionBadgeFrame(in: hosting) == nil
+                && abs(window.frame.height - restoredHeight) < 1
         }
     }
 

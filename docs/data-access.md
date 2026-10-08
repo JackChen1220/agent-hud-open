@@ -30,7 +30,7 @@ Per-client fields, endpoints and stored data: [providers](providers.md). Token c
 - OpenClaw's agent database also stores authentication profiles; only its session tables are queried.
 - Custom endpoints are not assumed to share official billing accounts, and executable key resolvers are never run.
 - Kimi account identity is confirmed through the official profile endpoint, separately for each deployment; only hashed credential-to-account associations are cached, and accounts are never merged from matching quota values, reset times or unverified token claims.
-- DeepSeek process inspection reads executable identity and start time only, not profile contents or browser credentials.
+- DeepSeek session liveness inspection reads executable identity and start time. Question-host discovery reads command names, profile and port arguments; it does not read profile contents or browser credentials.
 
 ## Local storage
 

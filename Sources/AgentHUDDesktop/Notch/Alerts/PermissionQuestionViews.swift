@@ -62,20 +62,21 @@ final class QuestionDraft {
 
     /// The answer as the client files it: an offered label, several in the order they were offered, the user's own
     /// words — or nothing yet.
-    func answer(_ index: Int, of question: PermissionQuestion) -> String? {
-        var parts = question.options.indices.filter { picks[index]?.contains($0) == true }.map { question.options[$0].label }
+    func answer(_ index: Int, of question: PermissionQuestion) -> PermissionQuestion.Answer? {
+        let selected = question.options.indices.filter { picks[index]?.contains($0) == true }.map { question.options[$0].label }
+        var custom: String?
         if ownPicked.contains(index), let text = own[index]?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
-            parts.append(text)
+            custom = text
         }
-        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+        return selected.isEmpty && custom == nil ? nil : .init(selected: selected, custom: custom)
     }
 
     /// The answers given, each filed under its question. A question skipped is simply not among them, and the client
     /// reads that as the user leaving it open.
-    func answers(for questions: [PermissionQuestion]) -> [String: String] {
-        var answers: [String: String] = [:]
+    func answers(for questions: [PermissionQuestion]) -> [String: PermissionQuestion.Answer] {
+        var answers: [String: PermissionQuestion.Answer] = [:]
         for (index, question) in questions.enumerated() {
-            if let answer = answer(index, of: question) { answers[question.question] = answer }
+            if let answer = answer(index, of: question) { answers[question.answerKey] = answer }
         }
         return answers
     }
