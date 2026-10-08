@@ -26,6 +26,7 @@ public struct CombinedUsageProvider: UsageProvider {
         /// Each session's breakdown with the counts it was read at, valid while the ledger keeps the writes it was read from.
         struct Breakdown: Sendable {
             let counts: [Int]
+            let request: SessionUsageRequest
             let usage: SessionUsage?
         }
         private var breakdowns: [String: Breakdown] = [:]
@@ -136,7 +137,7 @@ public struct CombinedUsageProvider: UsageProvider {
         let usage = ((try? await ledger.buckets(since: since)) ?? []) + reported
         var periods = (try? await ledger.periods(endingAt: now)) ?? UsagePeriods()
         periods.add(reported, endingAt: now)
-        let sessions = reports.flatMap(\.sessions)
+        let sessions = GrokBotUsage.merge(reports.flatMap(\.sessions))
         let progress = reports.compactMap(\.indexing)
         let sessionUsage = await breakdowns(of: sessions)
         return UsageReport(generatedAt: now, snapshots: Dictionary(grouping: reports.flatMap(\.snapshots), by: \.agentId).values.compactMap { $0.max { $0.updatedAt < $1.updatedAt } }.sorted { $0.agentId < $1.agentId },
@@ -176,7 +177,7 @@ public struct CombinedUsageProvider: UsageProvider {
         var kept: [String: Results.Breakdown] = [:], requests: [SessionUsageRequest] = []
         for session in sessions {
             let counts = [session.tokensIn, session.tokensOut, session.cacheReadTokens], request = SessionUsageRequest(session)
-            if let breakdown = known[session.id], breakdown.counts == counts, !request.touches(changed) {
+            if let breakdown = known[session.id], breakdown.counts == counts, breakdown.request == request, !request.touches(changed) {
                 kept[session.id] = breakdown
             } else {
                 requests.append(request)
@@ -184,7 +185,7 @@ public struct CombinedUsageProvider: UsageProvider {
         }
         if !requests.isEmpty, let read = try? await ledger.sessionUsage(requests) {
             let counts = Dictionary(sessions.map { ($0.id, [$0.tokensIn, $0.tokensOut, $0.cacheReadTokens]) }, uniquingKeysWith: { first, _ in first })
-            for request in requests { kept[request.sessionID] = .init(counts: counts[request.sessionID] ?? [], usage: read[request.sessionID]) }
+            for request in requests { kept[request.sessionID] = .init(counts: counts[request.sessionID] ?? [], request: request, usage: read[request.sessionID]) }
             await results.storeBreakdowns(kept, mark: now)
         } else {
             // Nothing could be read: keep what was known, and the mark it was read at, so the next pass reads it again.

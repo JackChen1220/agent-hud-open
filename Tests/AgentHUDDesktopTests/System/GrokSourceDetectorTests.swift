@@ -36,6 +36,19 @@ final class GrokSourceDetectorTests: XCTestCase {
         XCTAssertFalse(resolved[1].supportsLiveStatus)
     }
 
+    func testCursorMeteredBotSessionMakesOnlyBotReadyAndKeepsItsCapabilities() {
+        let bot = LiveSession(id: "grok-bot:slot:agent", agentId: "cursor-model:grok-bot-default", task: "Bot task",
+                              terminal: nil, startedAt: now, pctOfWindow: nil, tokensIn: 10, tokensOut: 2,
+                              client: "Grok Bot", accountWide: true, navigationTarget: .grokBotAgent(id: "agent"),
+                              usageKey: "cursor-account:account:agent")
+        let report = UsageReport(generatedAt: now, snapshots: [], sessions: [bot])
+        let resolved = SourceDetector.resolve(sources, report: report)
+        XCTAssertEqual(resolved.map(\.state), [.installed, .ready(plan: nil)])
+        XCTAssertEqual(resolved.map(\.provider), ["Grok", "Grok"], "billing source does not rename either execution client")
+        XCTAssertEqual(resolved.map(\.supportsLiveStatus), [true, false], "token metering does not establish real-time Bot state")
+        XCTAssertEqual(resolved[0], sources[0])
+    }
+
     func testOtherProvidersCannotBorrowCLIReadiness() {
         let report = UsageReport(generatedAt: now, snapshots: [], sessions: [session(client: "Grok CLI", agent: "cursor-model:other")])
         XCTAssertEqual(SourceDetector.resolve(sources, report: report), sources)

@@ -67,5 +67,6 @@ private extension LiveSession {
             && endedAt == other.endedAt && pctOfWindow == other.pctOfWindow && tokensIn == other.tokensIn && tokensOut == other.tokensOut
             && cacheReadTokens == other.cacheReadTokens && client == other.client && transcriptPath == other.transcriptPath
             && accountWide == other.accountWide && lastActivityAt == other.lastActivityAt && navigationTarget == other.navigationTarget
+            && usageKey == other.usageKey
     }
 }

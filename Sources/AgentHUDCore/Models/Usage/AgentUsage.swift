@@ -48,7 +48,7 @@ public struct AgentUsage: Hashable, Sendable, Identifiable {
         }
         var spent: [String: [(session: Session, rank: Rank)]] = [:], recached: [String: Decimal] = [:]
         for session in sessions {
-            guard let vendor = sessionVendor(session), let breakdown = breakdowns[session.id] else { continue }
+            guard let vendor = vendors[session.agentId] ?? sessionVendor(session), let breakdown = breakdowns[session.id] else { continue }
             var byModel: [String: TokenKinds] = [:]
             for period in breakdown.periods where interval.contains(period.start) { byModel[period.agentId, default: TokenKinds()] += period.tokens.kinds }
             if !byModel.isEmpty {

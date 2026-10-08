@@ -4,6 +4,9 @@ Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` o
 
 ## Unreleased
 
+- Grok Bot sessions show token usage and billing model identifiers from Cursor dashboard conversations with the same native agent ID. Matched sessions retain their Bot title, conversation and navigation, while unmatched conversations stay under Cursor; billing events count once.
+- Host API: `LiveSession.usageKey` optionally references another provider's canonical ledger contribution. `SessionUsageRequest` uses that contribution for the session's own breakdown and calls; execution identity and billing consumer identity remain separate.
+
 ## 0.4.37 — 2026-10-09
 
 - Grok accounts and quota stay under Grok. Grok CLI and Grok Bot have distinct client entries and artwork; Bot installation is detected independently, with its session reading capability shown explicitly.

@@ -17,6 +17,8 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
     public let cacheReadTokens: Int
     public let client: String?
     public let transcriptPath: String?
+    /// The canonical ledger contribution when another provider meters this session; nil uses its transcript and id.
+    public let usageKey: String?
     public let accountWide: Bool
     /// The directory the session works in; `terminal` names its last component.
     public let workingDirectory: String?
@@ -52,7 +54,8 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
         agentName: String? = nil,
         subagentSessions: [LiveSession]? = nil,
         lastActivityAt: Date? = nil,
-        navigationTarget: SessionNavigationTarget? = nil
+        navigationTarget: SessionNavigationTarget? = nil,
+        usageKey: String? = nil
     ) {
         self.id = id
         self.agentId = agentId
@@ -67,6 +70,7 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
         self.cacheReadTokens = cacheReadTokens
         self.client = client
         self.transcriptPath = transcriptPath
+        self.usageKey = usageKey
         self.accountWide = accountWide
         self.workingDirectory = workingDirectory
         self.subagentTranscripts = subagentTranscripts.flatMap { $0.isEmpty ? nil : $0 }
@@ -89,7 +93,7 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, agentId, task, terminal, startedAt, endedAt, observedAt, pctOfWindow, tokensIn, tokensOut, client, transcriptPath, cacheReadTokens, accountWide
-        case workingDirectory, subagentTranscripts, agentName, subagentSessions, lastActivityAt
+        case workingDirectory, subagentTranscripts, agentName, subagentSessions, lastActivityAt, usageKey
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -106,7 +110,8 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
             subagentTranscripts: try c.decodeIfPresent([String].self, forKey: .subagentTranscripts),
             agentName: try c.decodeIfPresent(String.self, forKey: .agentName),
             subagentSessions: try c.decodeIfPresent([LiveSession].self, forKey: .subagentSessions),
-            lastActivityAt: try c.decodeIfPresent(Date.self, forKey: .lastActivityAt))
+            lastActivityAt: try c.decodeIfPresent(Date.self, forKey: .lastActivityAt),
+            usageKey: try c.decodeIfPresent(String.self, forKey: .usageKey))
     }
 
     /// Every descendant, in the order of the tree; the top-level session list keeps only the roots.

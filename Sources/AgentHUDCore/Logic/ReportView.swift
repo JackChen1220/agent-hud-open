@@ -376,7 +376,7 @@ public struct ReportView: Sendable {
     private static func read(_ session: LiveSession, index: Index, settings: Settings, now: Date) -> Session {
         let vendor = index.vendors[session.agentId] ?? SessionSource.vendor(impliedBy: session.agentId)
         let source = SessionSource(vendor: vendor, client: session.client)
-        let provider = vendor?.lowercased()
+        let provider = source.vendor?.lowercased()
         let turns = (index.turns[session.id] ?? []).filter { provider == nil || $0.provider.lowercased() == provider }
         let turn = newest(turns)
         let asked = index.requests[session.id]

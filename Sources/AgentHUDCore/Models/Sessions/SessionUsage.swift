@@ -180,6 +180,10 @@ public struct SessionUsageRequest: Hashable, Sendable {
     /// keeps its sub-agents' logs in the directory `x/`.
     public init(_ session: LiveSession) {
         let named = session.subagentTranscripts ?? []
+        if let key = session.usageKey {
+            self.init(sessionID: session.id, keys: [key], subagentKeys: named)
+            return
+        }
         guard let path = session.transcriptPath else {
             self.init(sessionID: session.id, keys: [session.id], subagentKeys: named)
             return

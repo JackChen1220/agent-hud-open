@@ -8,8 +8,9 @@ enum SourceDetector {
         return sources.map { source in
             // Shared account quota does not establish that either execution client supplied sessions.
             if source.provider == "Grok", source.name == "Grok CLI" || source.name == "Grok Bot" {
-                guard report.sessions.contains(where: { SessionSource(vendor: "Grok", client: $0.client).name == source.name
-                          && SessionSource.vendor(impliedBy: $0.agentId) == "Grok" }) else { return source }
+                guard report.sessions.contains(where: {
+                    SessionSource(vendor: SessionSource.vendor(impliedBy: $0.agentId), client: $0.client).agentVendor == source.name
+                }) else { return source }
                 return SourceStatus(id: source.id, name: source.name, detail: source.detail, state: .ready(plan: nil),
                                     provider: source.provider, supportsLiveStatus: source.supportsLiveStatus)
             }
@@ -83,7 +84,7 @@ enum SourceDetector {
                                      provider: source.vendor)
             guard source == .grok else { return [status] }
             return [status, SourceStatus(id: "grok-bot", name: "Grok Bot",
-                detail: L10n.text("本机缓存会话、额度与跳转；Token 用量和实时状态暂不可读", "Cached sessions, quota and navigation; token usage and live status unavailable"),
+                detail: L10n.text("本机缓存会话、额度与用量；实时状态暂不可读", "Cached sessions, quota and usage; live status unavailable"),
                 state: GrokBotLocator.isInstalled(home: home) ? .installed : .notDetected,
                 provider: "Grok", supportsLiveStatus: false)]
         } + OpenAgentSource.allCases.map {

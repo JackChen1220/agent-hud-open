@@ -2,6 +2,46 @@ import XCTest
 @testable import AgentHUDCore
 
 final class SessionNavigationTests: XCTestCase {
+    func testMeteredUsageKeyRoundTripsAndEarlierSessionsKeepTheirOwnLedgerKey() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let session = LiveSession(id: "grok-bot:slot:agent", agentId: "cursor-model:grok-bot-default", task: "Bot task",
+                                 terminal: nil, startedAt: now, pctOfWindow: nil, tokensIn: 10, tokensOut: 2,
+                                 client: "Grok Bot", transcriptPath: "/fixture/bot/transcript.blob", accountWide: true,
+                                 navigationTarget: .grokBotAgent(id: "agent"), usageKey: "cursor-account:account:agent")
+        let data = try JSONEncoder().encode(session)
+        let restored = try JSONDecoder().decode(LiveSession.self, from: data)
+        XCTAssertEqual(restored.id, session.id)
+        XCTAssertEqual(restored.agentId, session.agentId)
+        XCTAssertEqual(restored.usageKey, session.usageKey)
+        XCTAssertEqual(SessionUsageRequest(restored).sessionID, session.id)
+        XCTAssertEqual(SessionUsageRequest(restored).keys, ["cursor-account:account:agent"])
+        XCTAssertNil(restored.navigationTarget, "the portable metering link must not encode a local navigation destination")
+
+        var old = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        old.removeValue(forKey: "usageKey")
+        let earlier = try JSONDecoder().decode(LiveSession.self, from: JSONSerialization.data(withJSONObject: old))
+        XCTAssertNil(earlier.usageKey)
+        XCTAssertEqual(SessionUsageRequest(earlier).keys, ["/fixture/bot/transcript.blob", session.id],
+                       "reports without a usage link keep the existing transcript and session contributions")
+    }
+
+    func testMeteredUsageKeyOwnsTheCanonicalContributionWithOrWithoutABotReplica() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        for path in [nil, "/fixture/bot/transcript.blob"] as [String?] {
+            let session = LiveSession(id: "grok-bot:slot:agent", agentId: "cursor-model:grok-bot-default", task: "Bot task",
+                                     terminal: nil, startedAt: now, pctOfWindow: nil, tokensIn: 10, tokensOut: 2,
+                                     client: "Grok Bot", transcriptPath: path, accountWide: true,
+                                     usageKey: "cursor-account:account:agent")
+            let request = SessionUsageRequest(session)
+            XCTAssertEqual(request.sessionID, session.id, "the result belongs to the native Bot session")
+            XCTAssertEqual(request.keys, ["cursor-account:account:agent"], "metering is read once from its canonical account contribution")
+            XCTAssertNil(request.callLog, "a Bot replica is conversation content, not a per-call token log")
+            XCTAssertNil(request.subagentPrefix)
+            XCTAssertTrue(request.touches(["cursor-account:account:agent"]))
+            XCTAssertFalse(request.touches([session.id, "/fixture/bot/transcript.blob"]))
+        }
+    }
+
     func testSessionTreesRoundTripAndEarlierReportsWithoutChildrenStillDecode() throws {
         let now = Date()
         let child = LiveSession(id: "child", agentId: "codex-model:gpt-6-astra", task: "Review", terminal: nil,
