@@ -76,7 +76,7 @@ Agent HUD Open is a Swift package with three libraries and one executable. `Agen
 - Isolated sources: a missing, signed-out or failing client never hides another.
 - One copy at a time: every application built on these libraries shares `InstanceLock`, whatever its data directory or bundle identifier. A host calls `SingleInstance.claim()` at launch, after its probes and before it opens preferences, the ledger or a client's settings, and quits when it returns false.
 - No invented lifecycle: inactivity is never a completion, and a passed reset deadline is not a confirmed reset.
-- Observed rows only: rows, groups and first-launch entries come from what providers report or find on the Mac, never from a built-in list of placeholders.
+- Observed rows only: quota windows and accounts come from provider readings, never from a built-in placeholder list; Settings lists every source supplied by the host alongside reported rows and services. Groups for undetected sources follow all other groups, preserving relative order within each section and existing windows' manual order.
 - Names apart from ids: vendor ids key settings, the ledger, accounts and sync records and never change; `VendorCatalog` holds the names shown, and a value it does not name is shown as written, never filed under another.
 - Resources and notices: the root `THIRD_PARTY_NOTICES.txt` and the bundled copy stay byte-identical, and source comments cite the file.
 - Source boundaries: `make check` rejects signing material, private service directories and imports, secret-shaped strings, external package dependencies, missing ignore rules and a bundled notices file that differs from the root one.

@@ -35,16 +35,16 @@ public struct AgentSettingsGroup: Identifiable, Equatable, Sendable {
     }
     public var hasLiveStatus: Bool { SessionSource.agentVendors.contains(id) }
 
-    /// One group per vendor with something to set: rows present, as `ReportView.isPresent(_:in:)` decides, a service, or
-    /// a client found on this Mac. A client that is neither installed nor reporting has no group.
+    /// One group per source supplied by the host, including sources not detected on this Mac, plus present rows and
+    /// reported services. Undetected sources follow other groups, preserving order within both sections. A source alone
+    /// creates no windows or accounts; existing windows keep their manual order.
     public static func make(sources: [SourceStatus], agents: [AgentDescriptor], report: UsageReport? = nil) -> [Self] {
         let agents = agents.filter { ReportView.isPresent($0, in: report) }
         let existing = agents.agentGroups
         var ids = existing.map(\.id)
-        let found = sources.filter { $0.state != .notDetected }.map(\.name)
-        for id in found + agents.map(\.vendor) + (report?.services ?? []).map(\.client)
+        for id in sources.map(\.name) + agents.map(\.vendor) + (report?.services ?? []).map(\.client)
             where !ids.contains(id) { ids.append(id) }
-        return ids.map { id in
+        let groups = ids.map { id in
             let source = sources.first { $0.name == id }
             let windows = existing.first { $0.id == id }?.agents ?? []
             let services = (report?.services ?? []).filter { $0.client == id }
@@ -74,6 +74,7 @@ public struct AgentSettingsGroup: Identifiable, Equatable, Sendable {
                         apiProviders: Array(Set(api)).sorted(), accounts: accounts,
                         billingAccounts: (report?.billing ?? []).filter { ($0.billingPool?.provider ?? $0.vendor) == id })
         }
+        return groups.filter { $0.source?.state != .notDetected } + groups.filter { $0.source?.state == .notDetected }
     }
 
     /// Rows name their account once a client has been signed in to more than one.

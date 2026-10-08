@@ -194,7 +194,7 @@ final class AgentSettingsTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(UsageReport.self, from: JSONEncoder().encode(retained)).services, report.services)
     }
 
-    func testGroupsIncludeFoundClientsWithoutWindowsAndPreserveWindowOrder() {
+    func testGroupsIncludeUndetectedSourcesWithoutWindowsAndPreserveWindowOrder() {
         let sources = [
             SourceStatus(id: "claude-code", name: "Claude", detail: "", state: .ready(plan: "max_20x")),
             SourceStatus(id: "cursor", name: "Cursor", detail: "", state: .notDetected),
@@ -207,15 +207,66 @@ final class AgentSettingsTests: XCTestCase {
             AgentDescriptor(id: "c2", vendor: "Claude", model: "Weekly", source: "", enabled: false),
         ]
         let groups = AgentSettingsGroup.make(sources: sources, agents: agents)
-        XCTAssertEqual(groups.map(\.id), ["Codex", "Claude", "Grok"], "a client neither installed nor reporting has no group")
+        XCTAssertEqual(groups.map(\.id), ["Codex", "Claude", "Grok", "Cursor"], "undetected sources follow detected groups without changing their relative order")
         XCTAssertEqual(groups[1].agents.map(\.id), ["c1", "c2"])
         XCTAssertEqual(groups[1].displayedCount(settings: Settings()), 1)
         XCTAssertEqual(groups[1].agents.count, 2)
         XCTAssertEqual(groups[2].displayedCount(settings: Settings()), 0)
         XCTAssertTrue(groups[2].agents.isEmpty)
+        XCTAssertEqual(groups[3].source?.state, .notDetected)
+        XCTAssertTrue(groups[3].agents.isEmpty)
         let hidden = AgentSettingsGroup.make(sources: sources, agents: agents.map { $0.with(enabled: false) })
-        XCTAssertEqual(hidden.map { $0.displayedCount(settings: Settings()) }, [0, 0, 0])
+        XCTAssertEqual(hidden.map { $0.displayedCount(settings: Settings()) }, [0, 0, 0, 0])
         XCTAssertEqual(hidden[1].agents.count, 2)
+    }
+
+    func testUndetectedGroupsMoveLastWhileEachSectionAndItsWindowsKeepTheirOrder() {
+        let sources = [
+            SourceStatus(id: "grok", name: "Grok", detail: "", state: .notDetected),
+            SourceStatus(id: "claude-code", name: "Claude", detail: "", state: .ready(plan: "max_20x")),
+            SourceStatus(id: "cursor", name: "Cursor", detail: "", state: .notDetected),
+            SourceStatus(id: "codex-cli", name: "Codex", detail: "", state: .installed),
+        ]
+        let agents = [
+            AgentDescriptor(id: "cursor-weekly", vendor: "Cursor", model: "Weekly", source: "", enabled: false),
+            AgentDescriptor(id: "legacy", vendor: "Legacy", model: "Plan", source: "", enabled: true),
+            AgentDescriptor(id: "claude", vendor: "Claude", model: "5h", source: "", enabled: true),
+            AgentDescriptor(id: "cursor-daily", vendor: "Cursor", model: "Daily", source: "", enabled: true),
+        ]
+        let report = UsageReport(generatedAt: Date(), snapshots: [], sessions: [], services: [
+            .init(client: "Service extra", provider: "OpenAI", product: .api),
+            .init(client: "Cursor", provider: "Anthropic", product: .api),
+        ])
+        let groups = AgentSettingsGroup.make(sources: sources, agents: agents, report: report)
+        XCTAssertEqual(groups.map(\.id), ["Legacy", "Claude", "Codex", "Service extra", "Cursor", "Grok"])
+        XCTAssertNil(groups[0].source, "existing rows without a detected-source entry stay in the first section")
+        XCTAssertNil(groups[3].source, "reported services without a detected-source entry stay in the first section")
+        XCTAssertEqual(groups[3].apiProviders, ["OpenAI"])
+        XCTAssertEqual(groups[4].agents, [agents[0], agents[3]], "partitioning groups preserves each window and its switch")
+        XCTAssertEqual(groups[4].apiProviders, ["Anthropic"], "an undetected group retains reported service details")
+        XCTAssertEqual(groups[4].displayedCount(settings: Settings()), 1)
+        XCTAssertTrue(groups[5].agents.isEmpty)
+    }
+
+    func testEverySupportedSourceRemainsListedWhenNoneIsInstalledWithoutInventingReadings() {
+        // The detector uses these existing catalogs plus the core clients; no second table of supported names.
+        let enumerated = Set(AdditionalSource.allCases.map(\.vendor) + OpenAgentSource.allCases.map(\.name))
+        let coreClients = SessionSource.agentVendors.filter { !enumerated.contains($0) }
+        let sources = coreClients.map {
+            SourceStatus(id: $0.lowercased(), name: $0, detail: "", state: .notDetected)
+        } + AdditionalSource.allCases.map {
+            SourceStatus(id: $0.rawValue, name: $0.vendor, detail: $0.detail, state: .notDetected)
+        } + OpenAgentSource.allCases.map {
+            SourceStatus(id: $0.rawValue, name: $0.name, detail: $0.detail, state: .notDetected)
+        }
+        XCTAssertEqual(sources.count, 17)
+        XCTAssertEqual(Set(sources.map(\.name)).count, sources.count)
+        let groups = AgentSettingsGroup.make(sources: sources, agents: [])
+        XCTAssertEqual(groups.map(\.id), sources.map(\.name), "Every supported source has a selectable settings group")
+        XCTAssertEqual(groups.compactMap(\.source), sources)
+        XCTAssertTrue(groups.allSatisfy { $0.agents.isEmpty && $0.accounts.isEmpty && $0.billingAccounts.isEmpty
+            && $0.unobservedAccounts.isEmpty && $0.plans.isEmpty && $0.apiProviders.isEmpty
+            && $0.displayedCount(settings: Settings()) == 0 }, "An undetected source is not a quota window or an observed account")
     }
 
     func testGroupsListOnlyRowsAProviderStillReports() {

@@ -540,7 +540,7 @@ public enum SnapshotRunner {
             AgentDescriptor(id: "settings-deepseek-chat", vendor: "DeepSeek", model: "deepseek-chat", source: L10n.sourceDeepSeekSessions, enabled: true),
             AgentDescriptor(id: "settings-deepseek-reasoner", vendor: "DeepSeek", model: "deepseek-reasoner", source: L10n.sourceDeepSeekSessions, enabled: true),
         ] }
-        let sources: [SourceStatus] = [
+        let configuredSources: [SourceStatus] = [
             .init(id: "claude-code", name: "Claude", detail: L10n.text("额度、会话与用量统计", "Quota, sessions and usage"), state: .ready(plan: "max_20x")),
             .init(id: "codex-cli", name: "Codex", detail: L10n.text("额度、会话与用量统计", "Quota, sessions and usage"), state: .ready(plan: "prolite")),
             .init(id: "deepseek", name: "DeepSeek", detail: L10n.text("Harness 会话、API 余额与费用", "Harness sessions, API balance and costs"), state: .ready(plan: nil)),
@@ -550,8 +550,14 @@ public enum SnapshotRunner {
             .init(id: "opencode", name: "OpenCode", detail: "", state: .installed),
             .init(id: "pi", name: "Pi", detail: "", state: .installed),
             .init(id: "kimi", name: "Kimi", detail: "", state: .ready(plan: "Allegretto")),
-            .init(id: "glm", name: "GLM", detail: "", state: .notDetected),
+            .init(id: "glm", name: "GLM", detail: OpenAgentSource.glm.detail, state: .notDetected),
         ]
+        let otherSources = AdditionalSource.allCases.map {
+            SourceStatus(id: $0.rawValue, name: $0.vendor, detail: $0.detail, state: .notDetected)
+        } + OpenAgentSource.allCases.map {
+            SourceStatus(id: $0.rawValue, name: $0.name, detail: $0.detail, state: .notDetected)
+        }
+        let sources = configuredSources + otherSources.filter { source in !configuredSources.contains { $0.id == source.id } }
         store.replace(report: UsageReport(generatedAt: Date(), snapshots: [], sessions: [],
             subscriptions: ["kimi-plan": "Allegretto"], billing: [DemoData.deepSeekBilling(now: Date())], services: [
                 .init(client: "OpenCode", provider: "Anthropic", product: .api),
@@ -561,7 +567,7 @@ public enum SnapshotRunner {
             ]))
         for scheme in [ColorScheme.dark, .light] {
             let appearance = scheme == .dark ? "dark" : "light"
-            for (state, providerID) in [("overview", nil), ("claude", "Claude"), ("prepaid", "DeepSeek"), ("unavailable", "Antigravity")] as [(String, String?)] {
+            for (state, providerID) in [("overview", nil), ("claude", "Claude"), ("prepaid", "DeepSeek"), ("unavailable", "Antigravity"), ("unconfigured", "GLM")] as [(String, String?)] {
                 let displayOrder = settings.agents
                 if state == "prepaid" { settings.moveAgentGroup(id: "DeepSeek", to: "Claude") }
                 defer { settings.updateAgents { _ in displayOrder } }

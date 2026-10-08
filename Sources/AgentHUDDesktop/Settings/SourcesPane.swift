@@ -22,6 +22,9 @@ struct SourcesPane: View {
         let selected = groups.first { $0.id == selectedProviderID } ?? groups.first
         HStack(alignment: .top, spacing: 20) {
             VStack(alignment: .leading, spacing: 12) {
+                Text(L10n.text("\(groups.count) 个智能体", "\(groups.count) agents"))
+                    .font(.ui(11)).foregroundStyle(theme.secondary)
+                    .padding(.horizontal, 6)
                 ScrollView {
                     LazyVStack(spacing: 3) {
                         ForEach(groups) { group in
@@ -74,6 +77,7 @@ private struct AgentProviderRow: View {
     let onSelect: () -> Void
 
     var body: some View {
+        let undetected = group.source?.state == .notDetected
         HStack(spacing: 4) {
             if !group.agents.isEmpty {
                 OrderDragHandle(theme: theme)
@@ -90,6 +94,8 @@ private struct AgentProviderRow: View {
             Button(action: onSelect) {
                 HStack(spacing: 8) {
                     AgentLogo(vendor: group.id, size: 20)
+                        .saturation(undetected ? 0 : 1)
+                        .opacity(undetected ? 0.55 : 1)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(VendorCatalog.name(group.id)).font(.ui(12, selected ? .semibold : .regular))
                             .lineLimit(2)
@@ -97,6 +103,10 @@ private struct AgentProviderRow: View {
                             Text(L10n.text("显示 \(group.displayedCount(settings: settings.settings))/\(group.agents.count)",
                                            "Showing \(group.displayedCount(settings: settings.settings))/\(group.agents.count)"))
                                 .font(.tabular(10)).foregroundStyle(theme.secondary)
+                        } else if let source = group.source {
+                            Text(source.state == .installed ? L10n.text("已安装", "Installed") : source.statusLabel)
+                                .font(.ui(10)).foregroundStyle(theme.secondary).lineLimit(1)
+                                .help(source.statusLabel)
                         }
                     }
                     Spacer(minLength: 0)
@@ -105,7 +115,7 @@ private struct AgentProviderRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(theme.text)
+            .foregroundStyle(undetected ? theme.secondary : theme.text)
             .accessibilityIdentifier("agent-group-\(group.id)")
             .accessibilityLabel(VendorCatalog.name(group.id))
             .accessibilityValue(selected ? L10n.text("已选中", "Selected") : L10n.text("未选中", "Not selected"))
@@ -128,9 +138,21 @@ private struct AgentProviderDetail: View {
     @Binding var dragging: AgentOrderDrag?
 
     var body: some View {
+        let hasAccounts = !group.accounts.isEmpty || !group.billingAccounts.isEmpty || !group.unobservedAccounts.isEmpty
+        let observer = ClientObserverStatus(vendor: group.id, clientHooks: settings.settings.clientHooks, report: report)
+        let hasClientReadings = observer != nil || group.id == AdditionalSource.copilot.vendor
         VStack(alignment: .leading, spacing: 24) {
-            header
-            if !group.accounts.isEmpty || !group.billingAccounts.isEmpty || !group.unobservedAccounts.isEmpty {
+            if !hasAccounts && group.agents.isEmpty && !group.hasLiveStatus && !hasClientReadings {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(group.source?.statusLabel ?? L10n.text("暂无可配置项", "No settings available yet"))
+                        .font(.ui(13, .medium))
+                    if let detail = group.source?.detail, !detail.isEmpty {
+                        Text(detail).font(.ui(12)).foregroundStyle(theme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            if hasAccounts {
                 SettingsSection(title: L10n.text("账户", "Accounts"),
                                 subtitle: L10n.text("显隐不影响历史会话和 Token 统计。", "Visibility leaves session history and token usage intact."),
                                 theme: theme) {
@@ -175,8 +197,7 @@ private struct AgentProviderDetail: View {
                     AgentLiveStatusSettings(vendor: group.id, settings: settings)
                 }
             }
-            let observer = ClientObserverStatus(vendor: group.id, clientHooks: settings.settings.clientHooks, report: report)
-            if observer != nil || group.id == AdditionalSource.copilot.vendor {
+            if hasClientReadings {
                 SettingsSection(title: L10n.text("客户端读取", "Client readings"), theme: theme) {
                     if let observer { ClientObserverSettings(status: observer, theme: theme) }
                     if group.id == AdditionalSource.copilot.vendor {
@@ -191,28 +212,6 @@ private struct AgentProviderDetail: View {
 
     private var balanceAccounts: [APIBilling] {
         group.billingAccounts.filter { billing in !group.accounts.contains { $0.account.id == billing.id } }
-    }
-
-    private var header: some View {
-        HStack(alignment: .top, spacing: 12) {
-            AgentLogo(vendor: group.id, size: 26)
-            VStack(alignment: .leading, spacing: 7) {
-                Text(VendorCatalog.name(group.id)).font(.ui(17, .semibold))
-                ForEach(group.plans, id: \.self) { plan in PlanBadge(plan: plan, theme: theme) }
-                if !group.apiProviders.isEmpty {
-                    Text("API · " + group.apiProviders.joined(separator: ", "))
-                        .font(.ui(11)).foregroundStyle(theme.secondary)
-                }
-                if let source = group.source {
-                    Text(source.statusLabel).font(.ui(11)).foregroundStyle(theme.secondary)
-                    if !source.detail.isEmpty {
-                        Text(source.detail).font(.ui(11)).foregroundStyle(theme.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-            Spacer(minLength: 0)
-        }
     }
 }
 
