@@ -4,11 +4,17 @@ Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` o
 
 ## Unreleased
 
+## 0.4.37 — 2026-10-09
+
 - Grok accounts and quota stay under Grok. Grok CLI and Grok Bot have distinct client entries and artwork; Bot installation is detected independently, with its session reading capability shown explicitly.
 - Grok CLI sessions can return to their verified live iTerm pane, and Grok Bot sessions open their native Agent view. Bot's account-scoped local conversation cache and Antigravity's SQLite conversation text are available to read-only conversation consumers; Bot cache gaps and unavailable live state stay explicit.
 - Grok can use an unexpired personal Bot quota cache when CLI quota is unavailable, keeping the original read time. Account headers show quota failures in yellow and local-data notices in secondary text; overlapping CLI log formats warn only when older usage lies outside the inference history.
 - Host API: `SourceStatus.provider` groups execution clients under their account provider; `supportsLiveStatus` describes the client's reading capability. `AgentSettingsGroup.clients` lists those execution clients, and `SessionSource.agentVendor` selects client-specific status and artwork without changing the account provider.
 - Host API: `SessionCompletion.client` optionally names its execution client, including in serialized records; older records keep their existing provider identity. `agentVendor` supplies its client-specific presentation name.
+- Sessions from one Git repository, including its worktrees, share a project group. Directories outside Git keep their recorded path.
+- Codex session details list their direct sub-agents, each with its own name, task, workspace, status and usage breakdown. Open a child and return to its parent; copied parent history no longer replaces a fork's identity or counts its inherited usage again.
+- The distributed Agent HUD Mac app supports local-network viewing from compatible iPhones, with automatic connection or QR pairing. Shared sessions preserve their project paths and Codex parent-child relationships.
+- Host API: `LiveSession.agentName` and `subagentSessions` represent the child-session tree. `ReportView.session(_:)` resolves descendants, and `parentSession(of:)` finds a direct parent. `SessionProject` groups a repository and its worktrees.
 - ZCode questions can be answered on the HUD. Compatible DeepSeek Harness web hosts expose questions through their local event API; other hosts keep questions in Harness.
 - The hover panel prioritizes waiting and running sessions, shows client marks and keeps a short recently ended list. Session titles without a client destination open their details, and question badges offer inline answers.
 - Host API: `PermissionDecision.answer` carries `[String: PermissionQuestion.Answer]`, separating selected labels from custom text. `PermissionQuestion.id` is optional; `answerKey` uses that identity when present. Hook responses still serialize answers under the original question text.
