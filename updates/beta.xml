@@ -33,14 +33,14 @@ Requires an Apple Silicon Mac running macOS 14 or later.
       <agenthudMinimumIOSVersion>1.4</agenthudMinimumIOSVersion>
     </item>
     <item>
-      <title>0.4.36</title>
-      <pubDate>Thu, 08 Oct 2026 02:06:40 +0800</pubDate>
-      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.36</link>
-      <sparkle:version>467</sparkle:version>
-      <sparkle:shortVersionString>0.4.36</sparkle:shortVersionString>
+      <title>0.4.37</title>
+      <pubDate>Fri, 09 Oct 2026 04:01:16 +0800</pubDate>
+      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.37</link>
+      <sparkle:version>476</sparkle:version>
+      <sparkle:shortVersionString>0.4.37</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-      <description sparkle:format="markdown"># Agent HUD 0.4.36
+      <description sparkle:format="markdown"># Agent HUD 0.4.37
 
 ## Compatibility
 
@@ -52,14 +52,20 @@ Requires an Apple Silicon Mac running macOS 14 or later.
 
 ## Changes
 
-- Open a supported desktop conversation or focus the originating iTerm2 pane from a new reply, with a separate action to view token usage. In Active sessions, click the title to return to the agent or the token count to view usage.
-- Return destinations are available for Codex Desktop, Claude Desktop Code and Cowork, and Antigravity's running standalone app. Codex CLI, Claude Code CLI, Pi and OpenCode can return to their existing iTerm2 pane when a destination is available.
-- New replies and permission requests now share one event panel. Select a reply or request to see its details while the others remain available.
-- Failed session returns keep the reminder open for retry or token usage. Token usage remains available when the original session cannot be located.
-- Buttons respond across their icons, text and spacing, and token bars stay within their cards.
-- Holding Command no longer adds a dashed outline around the HUD; drag outlines appear during repositioning.
+- Grok CLI and Grok Bot now have separate client entries and artwork under Grok. Open the matching CLI terminal pane or Bot Agent view from a session.
+- View Grok CLI, Grok Bot and Antigravity conversations across devices when conversation sharing is enabled. Bot history gaps and unavailable live status remain explicit.
+- Recent conversation text and reading progress now survive a Mac app restart in a local SQLite cache. Codex reads newly appended log content instead of repeatedly scanning long conversations in full.
+- Grok Bot keeps its native identity, title and navigation when an exact conversation ID links it to an existing Cursor billing record. That usage remains billed to Cursor and is counted once; unmatched Cursor activity keeps its original identity.
+- Grok can fall back to a valid cached quota reading with its original timestamp. Quota failures and local-history notices are displayed separately, and fully covered log overlaps no longer warn.
+- Open Codex sub-agents in their own details and conversations, with names, tasks and parent relationships preserved. Copied parent history no longer replaces a fork's identity or duplicates its inherited usage.
+- Sessions from a repository and its worktrees share one project group, and shared sessions retain their project paths.
+- Connect a compatible iPhone to your Mac on the same local network, with automatic connection or QR pairing.
+- The HUD shows quota and balances, then Tokens, then local sessions. Its token history always covers the latest 24 hours in 15-minute columns, independently of Dashboard filters; at most five local sessions appear with the remaining activity shown as +N more, and billing receipts no longer displace local activity.
+- Glow preparation and shared-reading computation run in the background, with redundant refreshes combined, to keep opening, scrolling and collapsing responsive. Large cross-device sync uploads also avoid repeated sorting work on the main thread.
+- Antigravity and DeepSeek session discovery does less background work when unrelated processes are running.
+- Session client marks and native titles stay visible; ZCode questions and compatible DeepSeek Harness prompts support inline answers.
 </description>
-      <enclosure url="https://github.com/jazzenchen/agent-hud-open/releases/download/v0.4.36/Agent-HUD-0.4.36-arm64.dmg" length="11842893" type="application/octet-stream" sparkle:edSignature="sVONs8TQDRPO4WYkMwFAbB33IQ8iGP8cbP26dq6ZLkEm/d1EHnOe0SQrhKVg/BXtecn5bjc3gH/KndvT1UfXAA==" />
+      <enclosure url="https://github.com/jazzenchen/agent-hud-open/releases/download/v0.4.37/Agent-HUD-0.4.37-arm64.dmg" length="12663032" type="application/octet-stream" sparkle:edSignature="c21a/t6MumfRPQ7c6O1/F+kP5nZ2G8riJ8cOsi2OwWUdSmNafbC3JFu2I5paVSaLZiH+S1a7vrht/i/kunuUCw==" />
       <agenthudMacOnly>false</agenthudMacOnly>
       <agenthudMinimumIOSVersion>1.4</agenthudMinimumIOSVersion>
     </item>
