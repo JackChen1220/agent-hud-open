@@ -6,7 +6,7 @@ import AgentHUDCore
 enum AgentArtwork {
     /// Vendor to bundled artwork. Shared with the logo queue, which samples the same files at its own size.
     static let fileNames: [String: String] =
-        ["Claude": "claude", "ChatGPT": "chatgpt", "Antigravity": "antigravity", "DeepSeek": "deepseek", "Grok": "grok",
+        ["Claude": "claude", "ChatGPT": "chatgpt", "Antigravity": "antigravity", "DeepSeek": "deepseek", "Grok": "grok", "Grok Bot": "grok-bot",
          "Cursor": "cursor", "OpenCode": "opencode", "OpenCode-dark": "opencode-dark", "Kimi": "kimi", "GLM": "glm", "Pi": "pi",
          "GitHub Copilot": "copilot", "OpenClaw": "openclaw", "Hermes": "hermes", "ZCode": "zcode", "CodeBuddy": "codebuddy",
          "WorkBuddy": "workbuddy", "Qwen": "qwen", "Qoder": "qoder", "Qoder-dark": "qoder-dark"]
