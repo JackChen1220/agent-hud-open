@@ -9,8 +9,19 @@ struct StatsView: View {
     var onIdealHeightChange: ((CGFloat) -> Void)?
     @Environment(\.colorScheme) private var scheme
     @State private var sessionSource: SessionSource?
+    @State private var sessionProject: SessionProject?
+    @State private var sessionSearch: String
     /// How the Sessions page lists its sessions: under their days, or those active in the last day without days.
     @State private var arrangement = SessionArrangement.day
+
+    init(store: UsageStore, scrollable: Bool = true, onIdealHeightChange: ((CGFloat) -> Void)? = nil,
+         project: SessionProject? = nil, search: String = "") {
+        self.store = store
+        self.scrollable = scrollable
+        self.onIdealHeightChange = onIdealHeightChange
+        _sessionProject = State(initialValue: project)
+        _sessionSearch = State(initialValue: search)
+    }
 
     var body: some View {
         let theme = Theme.forScheme(scheme)
@@ -67,7 +78,8 @@ struct StatsView: View {
                 if let session = store.focusedSession {
                     SessionDetailView(session: session, store: store, theme: theme)
                 } else {
-                    SessionList(store: store, theme: theme, source: sessionSource, activeOnly: arrangement == .active)
+                    SessionList(store: store, theme: theme, source: sessionSource, activeOnly: arrangement == .active,
+                                project: sessionProject, search: sessionSearch)
                 }
             }
         }
@@ -99,6 +111,9 @@ struct StatsView: View {
             .frame(maxWidth: .infinity)
             .accessibilityIdentifier("stats-tab")
             controls(theme).frame(height: 28)
+            if store.statsTab == .sessions && store.focusedSession == nil {
+                sessionFilters(theme)
+            }
         }
         .padding(EdgeInsets(top: 4, leading: 22, bottom: 10, trailing: 22))
         .background(theme.windowBackground)
@@ -170,9 +185,40 @@ struct StatsView: View {
         }
     }
 
+    /// Local list filters leave the token charts' range and dimensions alone and survive opening a session's page.
+    private func sessionFilters(_ theme: Theme) -> some View {
+        HStack(spacing: 12) {
+            SelectionMenu(
+                title: L10n.text("项目路径", "Project path"),
+                options: [SegmentOption(value: Optional<SessionProject>.none, label: L10n.text("全部项目", "All projects"))]
+                    + sessionProjects.map { SegmentOption(value: Optional($0), label: $0.label) },
+                selection: $sessionProject,
+                theme: theme,
+                width: 260
+            )
+            .help(sessionProject?.label ?? L10n.text("按会话记录的完整目录路径筛选", "Filter by the session's recorded directory path"))
+            .accessibilityIdentifier("session-project-filter")
+            SessionSearchField(text: $sessionSearch)
+                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("session-search")
+        }
+        .frame(height: 24)
+    }
+
+    private var sessionProjects: [SessionProject] {
+        var projects = Set(store.statsSessions.map(SessionProject.init))
+        if let sessionProject { projects.insert(sessionProject) }
+        return projects.sorted {
+            if $0 == .unassigned { return false }
+            if $1 == .unassigned { return true }
+            return $0.label.localizedStandardCompare($1.label) == .orderedAscending
+        }
+    }
+
     private func sessionCount(_ theme: Theme) -> some View {
         let activeOnly = arrangement == .active
-        let counts = Self.sessionCounts(store, source: sessionSource, activeOnly: activeOnly)
+        let counts = Self.sessionCounts(store, source: sessionSource, activeOnly: activeOnly,
+                                        project: sessionProject, search: sessionSearch)
         let listed = counts.listed, running = counts.running
         return HStack(spacing: 6) {
             Circle().fill(running > 0 ? theme.status(.ok) : theme.tertiary).frame(width: 6, height: 6)
@@ -184,8 +230,9 @@ struct StatsView: View {
     }
 
     /// How many sessions the list shows, and how many of them are running.
-    static func sessionCounts(_ store: UsageStore, source: SessionSource?, activeOnly: Bool) -> (listed: Int, running: Int) {
-        let sessions = store.listedSessions(source: source, activeOnly: activeOnly), view = store.view
+    static func sessionCounts(_ store: UsageStore, source: SessionSource?, activeOnly: Bool,
+                              project: SessionProject? = nil, search: String = "") -> (listed: Int, running: Int) {
+        let sessions = store.listedSessions(source: source, activeOnly: activeOnly, project: project, search: search), view = store.view
         return (sessions.count, sessions.filter { view.phase(of: $0).isInFlight }.count)
     }
 
@@ -214,6 +261,44 @@ struct StatsView: View {
         .accessibilityLabel(L10n.text("统计的 Token 种类", "Token kinds counted"))
     }
 
+}
+
+/// The same native search control as other Mac windows, with its clear button and immediate filtering.
+private struct SessionSearchField: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField(frame: .zero)
+        field.controlSize = .small
+        field.font = .systemFont(ofSize: 11)
+        field.placeholderString = L10n.text("搜索会话或路径", "Search sessions or paths")
+        field.setAccessibilityLabel(L10n.text("搜索会话", "Search sessions"))
+        field.sendsSearchStringImmediately = true
+        field.target = context.coordinator
+        field.action = #selector(Coordinator.search(_:))
+        return field
+    }
+
+    func updateNSView(_ field: NSSearchField, context: Context) {
+        context.coordinator.parent = self
+        if field.stringValue != text { field.stringValue = text }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSearchField, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 240, height: 22)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        var parent: SessionSearchField
+        init(_ parent: SessionSearchField) { self.parent = parent }
+
+        @objc func search(_ field: NSSearchField) {
+            parent.text = field.stringValue
+        }
+    }
 }
 
 private struct StatsIdealHeightKey: PreferenceKey {

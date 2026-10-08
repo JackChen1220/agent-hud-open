@@ -107,6 +107,11 @@ public struct AgentDescriptor: Hashable, Codable, Sendable, Identifiable {
         return vendor == "DeepSeek"
     }
 
+    /// The existing identity shared by this row's quota or API balance. Legacy API balances are keyed by vendor.
+    public var displayAccountID: String? {
+        account?.id ?? billingPool?.id ?? (isAPIBilled ? vendor : nil)
+    }
+
     /// Returns a copy with the given fields replaced (the core never mutates in place).
     public func with(
         enabled: Bool? = nil,

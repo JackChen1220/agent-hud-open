@@ -50,6 +50,8 @@ public final class DesktopApplication {
     }
 
     public func start() {
+        let sources = options.demo ? DemoData.sources : SourceDetector.resolve(SourceDetector.detect(), report: store.report)
+        settings.update { $0.applyLiveStatusDefaults(sources: sources) }
         applyAppearance()
         let notch = IslandController(store: store, settings: settings, additionalHUDControls: additionalHUDControls)
         notch.onOpenStats = { [weak self] in self?.showStats() }

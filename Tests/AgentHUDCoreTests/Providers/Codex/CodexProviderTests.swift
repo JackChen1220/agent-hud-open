@@ -670,6 +670,9 @@ final class CodexProviderTests: XCTestCase {
         let report = try await provider.fetchAccountAndLocalUsage(agents: [], historyHours: 24)
         XCTAssertEqual(report.snapshot(for: account.windowID("codex"))?.windowDuration, 7 * 86400)
         XCTAssertEqual(report.snapshot(for: account.windowID("codex:spark:primary"))?.windowDuration, 5 * 3600)
+        XCTAssertEqual(report.observation(accountID: account.id)?.quotaWindowIDs,
+                       Set(["codex", "codex:spark:primary", "codex:unknown:primary"].map(account.windowID)),
+                       "The rate-limit response explicitly supplies its complete inventory, including a window without a known cadence")
         let weekly = try XCTUnwrap(report.insightsByAgent[account.windowID("codex")])
         XCTAssertEqual(try XCTUnwrap(weekly.burnRatePctPerHour), 10.0 / 30, accuracy: 1e-9,
                        "the statistics range must not truncate the readings behind the last day")

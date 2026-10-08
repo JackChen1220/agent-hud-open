@@ -38,7 +38,6 @@ struct AntigravityClient: Sendable {
         // Opening Antigravity's native quota popover forces a new summary rather than its local service's cached one.
         let json = try await endpoint.json("RetrieveUserQuotaSummary", body: .object(["forceRefresh": .bool(true)]), http: http)
         var result = try Self.summary(json)
-        guard !result.windows.isEmpty else { throw ProviderFailure.format }
         // The IDE and agy can be signed in to different accounts, so identity comes from the same server. Its legacy
         // per-model quotas may be older than the fresh summary and supply no readings while the summary is available.
         if let status = try? await endpoint.json("GetUserStatus", body: Self.statusRequest, http: http) {
@@ -50,20 +49,56 @@ struct AntigravityClient: Sendable {
     static func candidates(_ output: String) -> [AntigravityService.Candidate] { AntigravityService.candidates(output) }
     static func ports(_ output: String) -> [Int] { AntigravityService.ports(output) }
 
+    /// The older per-family schema is a fallback for an account without summary windows, never extra limits alongside
+    /// that same account's known summary. The window-key prefixes are the two schemas this parser produces.
+    static func supersededLegacyWindowIDs(in windows: [AgentDescriptor], by known: [AgentDescriptor]) -> Set<String> {
+        let summaryAccounts = Set(known.filter {
+            $0.windowKey.hasPrefix("antigravity:") && !$0.windowKey.hasPrefix("antigravity:legacy:")
+        }.compactMap(\.displayAccountID))
+        return Set(windows.filter {
+            $0.windowKey.hasPrefix("antigravity:legacy:") && $0.displayAccountID.map(summaryAccounts.contains) == true
+        }.map(\.id))
+    }
+
+    /// Retained summary rows keep their recorded group and cadence; their own window duration supplies the period.
+    /// Legacy model-family readings have no summary cadence and keep their names.
+    static func summaryNames(_ windows: [AgentDescriptor], snapshots: [UsageSnapshot]) -> [AgentDescriptor] {
+        windows.map { agent in
+            guard agent.windowKey.hasPrefix("antigravity:"), !agent.windowKey.hasPrefix("antigravity:legacy:"),
+                  let duration = snapshots.first(where: { $0.agentId == agent.id })?.windowDuration else { return agent }
+            let word: String?
+            if agent.windowKey.hasPrefix("antigravity:gemini-") { word = "Gemini" }
+            else if agent.windowKey.hasPrefix("antigravity:3p-") { word = L10n.text("第三方", "3rd-party") }
+            else { word = agent.model.range(of: " · ").map { groupWord(String(agent.model[..<$0.lowerBound])) } }
+            guard let short = compactName(word: word, duration: duration, allModels: agent.allModels),
+                  short != agent.shortModel else { return agent }
+            return AgentDescriptor(id: agent.id, vendor: agent.vendor, model: agent.model, shortModel: short, source: agent.source,
+                enabled: agent.enabled, connected: agent.connected, billingPool: agent.billingPool, account: agent.account, allModels: agent.allModels)
+        }
+    }
+
+    private static func compactName(word: String?, duration: TimeInterval?, allModels: Bool) -> String? {
+        let period = WindowNames.Period(seconds: duration)
+        if allModels { return period?.shortName }
+        guard let word else { return nil }
+        return period.map { "\(word) \($0.afterWord)" } ?? word
+    }
+
     static func summary(_ json: ProviderJSON) throws -> ProviderQuota {
         let groups = json["response"]["groups"].arrayValue ?? json["summary"]["groups"].arrayValue ?? json["groups"].arrayValue
         guard let groups else { throw ProviderFailure.format }
-        var result = ProviderQuota(), ids = Set<String>()
+        var result = ProviderQuota(), ids = Set<String>(), activeGroups = Set<Int>()
         var found: [(group: Int, name: String?, window: ProviderQuota.Window)] = []
         for (index, group) in groups.enumerated() {
             guard let buckets = group["buckets"].arrayValue else { throw ProviderFailure.format }
             for bucket in buckets {
-                guard bucket["disabled"].boolValue != true, let id = bucket["bucketId"].stringValue, !id.isEmpty else { continue }
+                guard bucket["disabled"].boolValue != true else { continue }
+                guard let id = bucket["bucketId"].stringValue, !id.isEmpty, ids.insert(id).inserted else { throw ProviderFailure.format }
+                activeGroups.insert(index)
                 let remaining = bucket["remaining"]
                 let fraction = bucket["remainingFraction"].numberValue ?? remaining["remainingFraction"].numberValue
                     ?? (remaining["case"].stringValue == "remainingFraction" ? remaining["value"].numberValue : nil)
                 guard let fraction, (0...1).contains(fraction) else { continue }
-                guard ids.insert(id).inserted else { throw ProviderFailure.format }
                 let label = [group["displayName"].stringValue, bucket["displayName"].stringValue ?? id].compactMap { $0 }.joined(separator: " · ")
                 // Antigravity names its buckets Weekly Limit and Five Hour Limit; ids write the period with an underscore.
                 let cadence = (id + " " + (bucket["displayName"].stringValue ?? "")).lowercased()
@@ -75,18 +110,12 @@ struct AntigravityClient: Sendable {
             }
         }
         // One group's windows are the account's main set, known by their period alone and plan-wide; with several groups
-        // a window limits its group's models and is known by its group's word, and by its period too where the group has
-        // more than one window.
-        let counts = Dictionary(grouping: found, by: \.group).mapValues(\.count)
+        // a window limits its group's models and is known by its group's word and its period.
+        result.quotaWindowIDs = Set(ids.map { "antigravity:" + $0 })
         result.windows = found.map { entry in
             var window = entry.window
-            window.allModels = counts.count == 1
-            let period = WindowNames.Period(seconds: window.duration)
-            if counts.count == 1 {
-                window.shortLabel = period?.shortName
-            } else if let word = entry.name.map(groupWord) {
-                window.shortLabel = counts[entry.group] == 1 ? word : period.map { "\(word) \($0.afterWord)" }
-            }
+            window.allModels = activeGroups.count == 1
+            window.shortLabel = compactName(word: entry.name.map(groupWord), duration: window.duration, allModels: window.allModels)
             return window
         }
         return result

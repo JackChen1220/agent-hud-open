@@ -124,6 +124,15 @@ final class WindowNamesTests: XCTestCase {
                              ("Claude and GPT models · Five Hour Limit", "3rd-party 5h"), ("Claude and GPT models · Weekly Limit", "3rd-party 7d")]) {
             quota(try AntigravityClient.summary(several).windows)
         }
+        let onlyWeekly = #"{"displayName":"Claude and GPT models","buckets":[{"bucketId":"3p-weekly","displayName":"Weekly Limit Remaining","remainingFraction":1}]}"#
+        let three = try json(#"{"groups":[\#(gemini),\#(onlyWeekly)]}"#)
+        try assertNames("a group with one remaining period still names the period",
+                        zh: [("Gemini Models · Five Hour Limit", "Gemini 5h"), ("Gemini Models · Weekly Limit", "Gemini 每周"),
+                             ("Claude and GPT models · Weekly Limit Remaining", "第三方 每周")],
+                        en: [("Gemini Models · Five Hour Limit", "Gemini 5h"), ("Gemini Models · Weekly Limit", "Gemini 7d"),
+                             ("Claude and GPT models · Weekly Limit Remaining", "3rd-party 7d")]) {
+            quota(try AntigravityClient.summary(three).windows)
+        }
         let status = try json(#"{"userStatus":{"cascadeModelConfigData":{"clientModelConfigs":[{"label":"Gemini 3 Pro","modelOrAlias":{"model":"M1"},"quotaInfo":{"remainingFraction":0.5}},{"label":"Claude Sonnet 5","modelOrAlias":{"model":"M2"},"quotaInfo":{"remainingFraction":0.5}},{"label":"Kimi K3","modelOrAlias":{"model":"M3"},"quotaInfo":{"remainingFraction":0.5}}]}}}"#)
         try assertNames("the earlier per-model quota", zh: [("Kimi K3", "K3"), ("Claude and GPT models", "第三方"), ("Gemini Models", "Gemini")],
                         en: [("Kimi K3", "K3"), ("Claude and GPT models", "3rd-party"), ("Gemini Models", "Gemini")]) {

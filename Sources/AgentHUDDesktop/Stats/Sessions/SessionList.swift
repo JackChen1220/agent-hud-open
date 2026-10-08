@@ -18,11 +18,13 @@ struct SessionList: View {
     let theme: Theme
     let source: SessionSource?
     let activeOnly: Bool
+    var project: SessionProject? = nil
+    var search = ""
     /// Days the user opened or closed against how they start.
     @State private var flipped: Set<Date> = []
 
     var body: some View {
-        let sessions = store.listedSessions(source: source, activeOnly: activeOnly)
+        let sessions = store.listedSessions(source: source, activeOnly: activeOnly, project: project, search: search)
         let calendar = Calendar.current, today = calendar.startOfDay(for: store.now)
         let filedToday = Self.filedToday(sessions, store: store, today: today, calendar: calendar)
         VStack(alignment: .leading, spacing: 0) {
@@ -52,8 +54,10 @@ struct SessionList: View {
                 }
             }
             if sessions.isEmpty {
-                Text(activeOnly ? L10n.text("近 24 小时没有活跃的会话", "No sessions active in the last 24 hours")
-                                : L10n.text("近 7 天没有会话", "No sessions in the last 7 days"))
+                Text(project != nil || !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                     ? L10n.text("没有匹配的会话", "No matching sessions")
+                     : activeOnly ? L10n.text("近 24 小时没有活跃的会话", "No sessions active in the last 24 hours")
+                                  : L10n.text("近 7 天没有会话", "No sessions in the last 7 days"))
                     .font(.ui(12)).foregroundStyle(theme.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .card(theme)
@@ -395,11 +399,37 @@ struct TurnSparkline: View {
     }
 }
 
+/// A session's recorded directory, shared across clients, or an unknown directory. A folder name alone is not a path.
+enum SessionProject: Hashable {
+    case directory(String)
+    case unassigned
+
+    init(_ session: LiveSession) {
+        if let path = session.workingDirectory, !path.isEmpty { self = .directory(path) }
+        else { self = .unassigned }
+    }
+
+    var label: String {
+        switch self {
+        case .directory(let path): (path as NSString).abbreviatingWithTildeInPath
+        case .unassigned: L10n.text("未归属项目", "Unassigned project")
+        }
+    }
+}
+
 extension UsageStore {
     /// The list's sessions, from one source or all: the last seven days', or with `activeOnly`, the Active arrangement,
     /// those running or active in the last day. Newest activity first.
-    func listedSessions(source: SessionSource?, activeOnly: Bool) -> [LiveSession] {
-        let sessions = statsSessions.filter { source == nil || sessionSource($0) == source }
+    func listedSessions(source: SessionSource?, activeOnly: Bool, project: SessionProject? = nil, search: String = "") -> [LiveSession] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sessions = statsSessions.filter { session in
+            guard source == nil || sessionSource(session) == source,
+                  project == nil || SessionProject(session) == project else { return false }
+            guard !query.isEmpty else { return true }
+            return [session.task, session.workingDirectory, session.displayPath, SessionProject(session).label,
+                    sessionSource(session).name, consumerName(session.agentId)]
+                .compactMap { $0 }.contains { $0.localizedStandardContains(query) }
+        }
         guard activeOnly else { return sessions }
         let view = self.view, since = now.addingTimeInterval(-86_400)
         return sessions.filter {

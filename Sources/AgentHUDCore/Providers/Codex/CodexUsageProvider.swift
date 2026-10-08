@@ -291,7 +291,8 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
                 label: reading.limits.account?.email, plan: reading.limits.plan, observedAt: reading.at,
                 quotaNotice: failures[source], readingIssue: failures[source].map(ReadingIssue.readFailed),
                 resetCredits: reading.limits.rateLimitResetCredits,
-                aliases: reading.limits.partialKeys)
+                aliases: reading.limits.partialKeys,
+                quotaWindowIDs: Set(reading.limits.rows(home: source).map(\.id)))
         }
         let completions = indexed.sessions.flatMap { session in
             (session.transcript.completions ?? []).map { completion in

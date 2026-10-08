@@ -86,7 +86,7 @@ struct HoverPanelView: View {
                 }
             }
             if store.settings.settings.showIslandTokens, store.isLoading || store.isIndexing || !store.consumers.isEmpty {
-                TokenConsumptionChart(store: store, theme: theme, context: .island)
+                TokenConsumptionChart(store: store, theme: theme, context: .island, onOpenStats: onOpenStats)
                     .padding(.top, 8)
                     .topDivider(theme.divider)
             }

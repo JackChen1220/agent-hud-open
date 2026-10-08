@@ -108,7 +108,8 @@ final class RowPresenceTests: XCTestCase {
         func read(_ rows: [AgentDescriptor], at date: Date, notice: String? = nil, failed: String? = nil) -> UsageReport {
             UsageReport(generatedAt: date, snapshots: rows.map { UsageSnapshot(agentId: $0.id, remainingPct: 50, updatedAt: date) },
                         sessions: [], discoveredAgents: rows, sourceNotices: (notice ?? failed).map { ["Codex": $0] } ?? [:],
-                        quotaNotices: failed.map { ["Codex": $0] } ?? [:], accounts: ["Codex": [AccountObservation(account: current, observedAt: date)]])
+                        quotaNotices: failed.map { ["Codex": $0] } ?? [:],
+                        accounts: ["Codex": [AccountObservation(account: current, observedAt: date, quotaWindowIDs: Set(rows.map(\.id)))]])
         }
         let earlier = read([window, spark], at: now.addingTimeInterval(-600))
         // The reads a run makes in turn, whether the left-out window keeps its row in the settings, and whether it keeps its

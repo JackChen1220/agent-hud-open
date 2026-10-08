@@ -45,6 +45,8 @@ final class AdditionalProviderTests: XCTestCase, @unchecked Sendable {
     func testAntigravityQuotaKeepsZeroAndOmitsUnknownOrDisabledBuckets() throws {
         let quota = try AntigravityClient.summary(json(#"{"groups":[{"displayName":"Premium","buckets":[{"bucketId":"weekly","remaining":{"case":"remainingFraction","value":0}},{"bucketId":"missing","remaining":{}},{"bucketId":"disabled","disabled":true,"remainingFraction":1}]}]}"#))
         XCTAssertEqual(quota.windows.count, 1)
+        XCTAssertEqual(quota.quotaWindowIDs, ["antigravity:weekly", "antigravity:missing"],
+                       "Complete presence includes enabled buckets without values, while disabled buckets retire")
         XCTAssertEqual(quota.windows[0].remaining, 0)
         XCTAssertNil(quota.windows[0].reset, "A cadence label cannot establish a reset instant")
         XCTAssertEqual(quota.windows[0].duration, 604800)
