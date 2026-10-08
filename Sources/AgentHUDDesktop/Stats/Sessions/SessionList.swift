@@ -399,24 +399,6 @@ struct TurnSparkline: View {
     }
 }
 
-/// A session's recorded directory, shared across clients, or an unknown directory. A folder name alone is not a path.
-enum SessionProject: Hashable {
-    case directory(String)
-    case unassigned
-
-    init(_ session: LiveSession) {
-        if let path = session.workingDirectory, !path.isEmpty { self = .directory(path) }
-        else { self = .unassigned }
-    }
-
-    var label: String {
-        switch self {
-        case .directory(let path): (path as NSString).abbreviatingWithTildeInPath
-        case .unassigned: L10n.text("未归属项目", "Unassigned project")
-        }
-    }
-}
-
 extension UsageStore {
     /// The list's sessions, from one source or all: the last seven days', or with `activeOnly`, the Active arrangement,
     /// those running or active in the last day. Newest activity first.

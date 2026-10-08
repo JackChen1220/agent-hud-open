@@ -43,7 +43,7 @@ The five kinds (`TokenKind`, selected as `TokenDimensions`) are additive and nev
 
 ### Session filters
 
-- Project filtering uses each session's full recorded directory path across clients; matching folder names at different paths stay separate, and missing paths form an unassigned group.
+- Project filtering groups Git working directories and linked worktrees by their common repository; directories outside Git retain their full recorded path across clients; matching folder names at different paths stay separate, and missing paths form an unassigned group.
 - Search matches titles, paths and source or client names and combines with the selected project, source and Active arrangement; list counts and daily totals follow the same filtered sessions.
 - Returning from a session's details preserves those filters; the Tokens page keeps its own time range and token dimensions.
 

@@ -77,6 +77,7 @@ struct StatsView: View {
             case .sessions:
                 if let session = store.focusedSession {
                     SessionDetailView(session: session, store: store, theme: theme)
+                        .id(session.id)
                 } else {
                     SessionList(store: store, theme: theme, source: sessionSource, activeOnly: arrangement == .active,
                                 project: sessionProject, search: sessionSearch)
@@ -139,16 +140,18 @@ struct StatsView: View {
                     theme: theme
                 )
             case .sessions where store.focusedSession != nil:
+                let parent = store.focusedSessionParent
                 Button {
-                    store.focusedSessionID = nil
+                    store.focusedSessionID = parent?.id
                 } label: {
-                    Label(L10n.text("全部会话", "All sessions"), systemImage: "chevron.left")
+                    Label(parent.map { $0.agentName ?? $0.task } ?? L10n.text("全部会话", "All sessions"), systemImage: "chevron.left")
+                        .lineLimit(1)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .font(.ui(12, .semibold))
                 .keyboardShortcut("[", modifiers: .command)
-                .help(L10n.text("回到会话列表", "Back to the session list"))
+                .help(parent == nil ? L10n.text("回到会话列表", "Back to the session list") : L10n.text("回到上级 agent", "Back to the parent agent"))
                 .accessibilityIdentifier("session-list-back")
                 Spacer(minLength: 12)
             case .sessions:
@@ -196,7 +199,7 @@ struct StatsView: View {
                 theme: theme,
                 width: 260
             )
-            .help(sessionProject?.label ?? L10n.text("按会话记录的完整目录路径筛选", "Filter by the session's recorded directory path"))
+            .help(sessionProject?.label ?? L10n.text("按项目筛选，同一仓库的工作树归为一个项目", "Filter by project, including the repository's worktrees"))
             .accessibilityIdentifier("session-project-filter")
             SessionSearchField(text: $sessionSearch)
                 .frame(maxWidth: .infinity)

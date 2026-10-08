@@ -22,6 +22,8 @@ public extension UsageStore {
     /// The focused session while this Mac still reports it.
     var focusedSession: LiveSession? { focusedSessionID.flatMap { view.session($0)?.session } }
 
+    var focusedSessionParent: LiveSession? { focusedSessionID.flatMap { view.parentSession(of: $0) } }
+
     func sessionUsage(_ session: LiveSession) -> SessionUsage? { report?.sessionUsage?[session.id] }
 
     /// Reads the focused turn's calls from the ledger, and the tools they asked for from their logs, once per focus.

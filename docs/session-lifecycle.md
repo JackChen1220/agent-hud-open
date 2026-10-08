@@ -11,7 +11,7 @@ Which clients expose running and terminal turns, which of them say they are wait
 | Client | Running turns | Terminal turns | Evidence |
 | --- | --- | --- | --- |
 | Claude Code | Yes | Yes | A prompt line starts the turn, but a slash command Claude Code runs itself, such as `/exit`, `/clear` or `/model`, and its output do not; an assistant `stop_reason` of `end_turn` or `stop_sequence` completes it; a `[Request interrupted` user line ends it; `tool_use` keeps it running, and a working assistant line after the turn stopped, with no prompt before it (a sub-agent's report, a queued notification, a Stop hook's feedback), resumes it. Attachment and queue records never date a turn. `isSidechain` lines and `<synthetic>` messages (API errors) never start or finish a turn, and the session's sub-agents keep it running ([Sub-agents](#sub-agents)). The turn's message is the latest assistant text block, and its notification hook reports waiting for approval. |
-| Codex Desktop / CLI | Yes | Yes | `task_started` (`turn_id`) starts the turn and later events refresh it; `task_complete` completes it; `turn_aborted` ends it; an `agent_message` is the running turn's message. Guardian and sub-agent rollouts report none. |
+| Codex Desktop / CLI | Yes | Yes | `task_started` (`turn_id`) starts the turn and later events refresh it; `task_complete` completes it; `turn_aborted` ends it; an `agent_message` is the running turn's message. Spawned agents report their own turns within their parent's detail; guardians report none, and only root-session turns produce completion reminders. |
 | DeepSeek Harness | Yes | Yes | `turn/start`, later step, message and tool events (format 0 also logs streaming chunks), `turn/end`; only `reason.kind == completed` is a completion, and sub-agent sessions and inherited fork history record none. A quiet turn stays active while a Node process that predates it holds the Harness profile. |
 | Grok CLI | Yes | Yes | Session updates keyed by `promptId`; `turn_completed` with `stop_reason` `end_turn` completes, other outcomes end without a completion. Older unified logs carry usage only. |
 | Kimi | Yes | Yes | On the `main` agent the first `step.begin` starts the turn and loop events refresh it; `turn.ended` with `reason == completed` and no `error` completes it; child agents never finish the parent. Older status logs carry usage only. |
@@ -56,8 +56,10 @@ Which clients expose running and terminal turns, which of them say they are wait
 
 - A Claude Code session also runs while the sub-agents and workflow agents it started work, after its own agent ended its turn or went quiet waiting for them. Their logs sit in a directory named after the session's log (`<session>/subagents/`, workflow agents under `workflows/<run>/`), and their latest activity is the session's latest event.
 - Each of those logs follows its own turn: its prompt starts it; `end_turn`, a `StructuredOutput` call (a workflow agent handing back its result) or a `[Request interrupted` line ends it; 30 quiet minutes abandon it, as for any running turn. An agent stopped without any of these, such as one closed with its session, keeps the session running until then.
-- The session's turn keeps its id and start while its agents work. Sub-agent logs report no completions and mark no prompts, so the agent's own answer is still announced when it ends its turn.
+- A Claude Code session's turn keeps its id and start while its agents work. Its sub-agent logs report no completions and mark no prompts, so the agent's own answer is still announced when it ends its turn.
 - A session waiting for approval keeps waiting while its agents work: a request is answered by a line of the session's own log after it, never by a sub-agent's.
+- A Codex session's detail lists the agents it directly started; each opens its own detail and descendants, with its own name, task, workspace, start time and usage breakdown. The session list contains only root sessions.
+- Codex guardians contribute to their session's usage breakdown without appearing as agents in its detail.
 
 ### Observers
 

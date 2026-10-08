@@ -34,6 +34,8 @@ public struct CodexTranscript: Codable, Sendable {
     public private(set) var isInternal = false
     /// The thread that started this rollout's sub-agent: a spawned agent names it in its source, a guardian beside it.
     public private(set) var parentThreadID: String?
+    public private(set) var agentName: String?
+    private(set) var agentPath: String?
     public private(set) var startedAt: Date?
     public private(set) var lastActivityAt: Date?
     public private(set) var task: String?
@@ -68,6 +70,8 @@ public struct CodexTranscript: Codable, Sendable {
     private var totalWrite = 0
     private var totalReasoning = 0
     private var hasTotals = false
+    /// Newer forks restamp copied history and mark its last ordinal in their first metadata.
+    private var inheritedThroughOrdinal: Int?
     /// Turn starts and compactions read since the store last took them.
     private var marks: [UsageLedger.Mark] = []
 
@@ -81,16 +85,24 @@ public struct CodexTranscript: Codable, Sendable {
               let payload = object["payload"] as? [String: Any],
               let timestamp = (object["timestamp"] as? String).flatMap(ISO8601Fast.parse) else { return }
         if type == "session_meta" {
-            id = payload["id"] as? String
+            // A fork starts with its own metadata, then can replay the parent's history and metadata.
+            // The first valid identity owns this file and the inherited-history cutoff.
+            guard id == nil, let sessionID = payload["id"] as? String, !sessionID.isEmpty else { return }
+            id = sessionID
+            inheritedThroughOrdinal = payload["subagent_history_start_ordinal"] as? Int
             cwd = payload["cwd"] as? String
             startedAt = (payload["timestamp"] as? String).flatMap(ISO8601Fast.parse) ?? timestamp
             let source = payload["source"] as? String
             let origin = payload["originator"] as? String
             isSubagent = (payload["source"] as? [String: Any])?["subagent"] != nil
             if let subagent = (payload["source"] as? [String: Any])?["subagent"] as? [String: Any] {
+                let spawn = subagent["thread_spawn"] as? [String: Any]
                 isInternal = subagent["other"] as? String == "guardian"
                 parentThreadID = payload["parent_thread_id"] as? String
-                    ?? (subagent["thread_spawn"] as? [String: Any])?["parent_thread_id"] as? String
+                    ?? spawn?["parent_thread_id"] as? String
+                agentPath = (spawn?["agent_path"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                agentName = [spawn?["agent_nickname"] as? String, payload["agent_nickname"] as? String,
+                             agentPath.map { URL(fileURLWithPath: $0).lastPathComponent }].compactMap { $0 }.first { !$0.isEmpty }
             }
             // CLI launched from Desktop can inherit its originator; the rollout's source is authoritative. Otherwise the
             // originator names the client, and one the vendor catalog does not name is shown as written.
@@ -109,6 +121,7 @@ public struct CodexTranscript: Codable, Sendable {
         }
         // Forks copy earlier history. Read its cumulative baseline but do not count it again.
         let inherited = timestamp < (startedAt ?? .distantPast)
+            || inheritedThroughOrdinal.map { boundary in (object["ordinal"] as? Int).map { $0 <= boundary } ?? false } == true
         if type == "compacted" {
             if !inherited { marks.append(.init(.compaction, at: timestamp)) }
             return
@@ -246,7 +259,7 @@ public struct CodexTranscript: Codable, Sendable {
     var lastEventAt: Date? { lastActivityAt.map { max($0, turns?.last?.observedAt ?? $0) } }
 
     public var sessionTurns: [SessionTurn] {
-        guard let id, !isSubagent, !isInternal else { return [] }
+        guard let id, !isInternal else { return [] }
         return (turns ?? []).compactMap { turn in
             guard let turnID = turn.id, !turnID.isEmpty else { return nil }
             return SessionTurn(provider: "codex", sessionID: id, turnID: turnID, state: turn.state,
@@ -357,9 +370,8 @@ public actor CodexTranscriptStore {
 enum CodexRollouts: TailLog {
     static let source = "codex"
     static let summaryKey = "transcript"
-    /// 3: cache writes, reasoning, context windows, turn starts and compactions. 4: sub-agents name the thread that
-    /// started them.
-    static let version = 4
+    /// 5: keep the first valid metadata, so copied parent history cannot replace a spawned agent's identity.
+    static let version = 5
 
     static func summary(for url: URL) -> CodexTranscript { CodexTranscript() }
 
