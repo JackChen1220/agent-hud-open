@@ -174,7 +174,8 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
             readingIssues: quotaNotice.map { [source.vendor: .readFailed($0)] } ?? [:],
             consumerIdsByQuota: Dictionary(uniqueKeysWithValues: quotaIDs.map { ($0, consumerIDs) }),
             completions: local.sessions.flatMap(\.completions) + hookCompletions, turns: local.sessions.flatMap(\.turns),
-            accounts: quota.isSignedIn ? [source.vendor: [AccountObservation(account: account, label: quota.label, plan: quota.plan, observedAt: observedAt)]] : nil,
+            accounts: quota.isSignedIn ? [source.vendor: [AccountObservation(account: account, label: quota.label, plan: quota.plan, observedAt: observedAt,
+                quotaWindowIDs: quota.quotaWindowIDs.map { Set($0.map(account.windowID)) })]] : nil,
             forgottenAccountProviders: quota.forgetAccounts ? [source.vendor] : nil)
     }
 }

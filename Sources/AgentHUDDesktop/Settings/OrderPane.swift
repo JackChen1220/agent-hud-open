@@ -5,22 +5,16 @@ import AgentHUDCore
 struct AgentOrderRow: View {
     let agent: AgentDescriptor
     let theme: Theme
-    var accountName: String? = nil
     var accountVisible = true
     let onToggle: (Bool) -> Void
 
     var body: some View {
         HStack(spacing: 12) {
             OrderDragHandle(theme: theme)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(agent.name)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let accountName {
-                    Text(accountName).font(.ui(11)).foregroundStyle(theme.secondary)
-                        .lineLimit(1).truncationMode(.middle)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(agent.shortName)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help(agent.name)
             Toggle(L10n.text("显示", "Show") + " " + agent.displayName, isOn: Binding(get: { agent.enabled }, set: { onToggle($0) }))
                 .labelsHidden().toggleStyle(.switch).controlSize(.small)
                 .disabled(!accountVisible)
@@ -50,7 +44,7 @@ enum AgentOrderDrag: Equatable {
     case model(String)
 }
 
-/// Group headers move entire groups; model rows only reorder within their group.
+/// Provider handles move entire groups; window rows reorder within their account, keeping other accounts' slots.
 struct ReorderDropDelegate: DropDelegate {
     let target: AgentOrderDrag
     @Binding var dragging: AgentOrderDrag?
@@ -64,7 +58,7 @@ struct ReorderDropDelegate: DropDelegate {
         case let (.model(sourceID), .model(targetID)):
             guard let source = settings.agents.first(where: { $0.id == sourceID }),
                   let destination = settings.agents.first(where: { $0.id == targetID }) else { return false }
-            return source.displayVendor == destination.displayVendor
+            return source.displayVendor == destination.displayVendor && source.displayAccountID == destination.displayAccountID
         default: return false
         }
     }
@@ -76,9 +70,7 @@ struct ReorderDropDelegate: DropDelegate {
             case let (.group(sourceID), .group(targetID)):
                 settings.moveAgentGroup(id: sourceID, to: targetID)
             case let (.model(sourceID), .model(targetID)):
-                if let index = settings.agents.firstIndex(where: { $0.id == targetID }) {
-                    settings.moveAgent(id: sourceID, to: index)
-                }
+                settings.moveAccountWindow(id: sourceID, to: targetID)
             default: break
             }
         }

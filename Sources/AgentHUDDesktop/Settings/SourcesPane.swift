@@ -142,6 +142,7 @@ private struct AgentProviderDetail: View {
 
     var body: some View {
         let hasAccounts = !group.accounts.isEmpty || !group.billingAccounts.isEmpty || !group.unobservedAccounts.isEmpty
+        let windowSections = group.windowSections
         let observer = ClientObserverStatus(vendor: group.id, clientHooks: settings.settings.clientHooks, report: report)
         let hasClientReadings = observer != nil || group.id == AdditionalSource.copilot.vendor
         VStack(alignment: .leading, spacing: 24) {
@@ -182,17 +183,26 @@ private struct AgentProviderDetail: View {
             if !group.agents.isEmpty {
                 SettingsSection(title: L10n.text("显示窗口", "Visible windows"),
                                 subtitle: L10n.text("拖动窗口，调整光晕和面板中的顺序。", "Drag windows to reorder the glow and panel."), theme: theme) {
-                    ForEach(group.agents) { agent in
-                        AgentOrderRow(agent: agent, theme: theme, accountName: group.accountName(for: agent),
-                                      accountVisible: settings.settings.accountVisible(agent.displayAccountID)) {
-                            settings.setAgent(id: agent.id, enabled: $0)
+                    ForEach(windowSections) { section in
+                        if let title = section.title ?? (windowSections.count > 1 ? L10n.text("其他窗口", "Other windows") : nil) {
+                            Text(title).font(.ui(11, .medium)).foregroundStyle(theme.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .lineLimit(1).truncationMode(.middle)
+                                .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 4)
                         }
-                        .onDrag {
-                            dragging = .model(agent.id)
-                            return NSItemProvider(object: agent.id as NSString)
+                        ForEach(section.agents) { agent in
+                            AgentOrderRow(agent: agent, theme: theme,
+                                          accountVisible: settings.settings.accountVisible(agent.displayAccountID)) {
+                                settings.setAgent(id: agent.id, enabled: $0)
+                            }
+                            .onDrag {
+                                dragging = .model(agent.id)
+                                return NSItemProvider(object: agent.id as NSString)
+                            }
+                            .onDrop(of: [UTType.text], delegate: ReorderDropDelegate(target: .model(agent.id), dragging: $dragging, settings: settings))
+                            if agent.id != section.agents.last?.id { SettingsDivider(theme: theme) }
                         }
-                        .onDrop(of: [UTType.text], delegate: ReorderDropDelegate(target: .model(agent.id), dragging: $dragging, settings: settings))
-                        if agent.id != group.agents.last?.id { SettingsDivider(theme: theme) }
+                        if section.id != windowSections.last?.id { SettingsDivider(theme: theme) }
                     }
                 }
             }

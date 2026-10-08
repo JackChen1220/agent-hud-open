@@ -581,6 +581,37 @@ public enum SnapshotRunner {
                 }
             }
         }
+        saveAntigravitySettings(settings: settings, store: store, sources: sources, folder: folder)
+    }
+
+    private static func saveAntigravitySettings(settings: SettingsStore, store: UsageStore, sources: [SourceStatus], folder: URL) {
+        let now = Date()
+        let current = ProviderAccount.identified(provider: "Antigravity", user: "work@example.com", workspace: nil)!
+        let previous = ProviderAccount.identified(provider: "Antigravity", user: "personal@example.com", workspace: nil)!
+        func row(_ account: ProviderAccount, _ key: String, _ short: String, _ name: String) -> AgentDescriptor {
+            .init(id: account.windowID("antigravity:" + key), vendor: "Antigravity", model: name,
+                  shortModel: short, source: "", enabled: account == current, account: account, allModels: false)
+        }
+        let rows = [
+            row(previous, "gemini-weekly", "Gemini 7d", "Gemini Models · Weekly Limit Remaining"),
+            row(current, "gemini-weekly", "Gemini 7d", "Gemini Models · Weekly Limit Remaining"),
+            row(previous, "3p-weekly", "3rd-party 7d", "Claude and GPT models · Weekly Limit Remaining"),
+            row(current, "gemini-5h", "Gemini 5h", "Gemini Models · Five Hour Limit Remaining"),
+            row(current, "3p-weekly", "3rd-party 7d", "Claude and GPT models · Weekly Limit Remaining"),
+        ]
+        settings.updateAgents { _ in rows }
+        settings.setAccount(id: previous.id, visible: false)
+        store.replace(report: UsageReport(generatedAt: now, snapshots: [], sessions: [], accounts: ["Antigravity": [
+            .init(account: current, label: "work@example.com", observedAt: now),
+            .init(account: previous, label: "personal@example.com", observedAt: now.addingTimeInterval(-86400), isCurrent: false),
+        ]]))
+        for scheme in [ColorScheme.dark, .light] {
+            let view = SettingsView(settings: settings, store: store, initialTab: .sources,
+                                    sourceStatuses: sources, initialProviderID: "Antigravity")
+            let appearance = scheme == .dark ? "dark" : "light"
+            save("settings-agents-antigravity-accounts-\(appearance)",
+                 view.frame(width: SettingsWindowLayout.size.width, height: SettingsWindowLayout.size.height), folder: folder, scheme: scheme)
+        }
     }
 
     private static func saveAdaptiveDashboard(store: UsageStore, folder: URL) async {

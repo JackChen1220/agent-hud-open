@@ -71,6 +71,9 @@ struct ProviderQuota: Sendable {
         var allModels = true
     }
     var windows: [Window] = []
+    /// Explicit complete inventory, separate from readable values so an enabled bucket without a value remains present.
+    /// These ids are scoped to the account when the provider builds its report; nil makes no completeness claim.
+    var quotaWindowIDs: Set<String>? = nil
     var plan: String? = nil
     /// Why the quota could not be read although the service answered, such as a client that is not running or not signed
     /// in: a failed read, which holds the vendor's readings back.

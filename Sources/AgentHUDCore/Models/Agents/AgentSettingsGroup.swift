@@ -18,6 +18,30 @@ public struct AgentSettingsGroup: Identifiable, Equatable, Sendable {
         public let detail: String?
     }
 
+    public struct WindowSection: Identifiable, Equatable, Sendable {
+        public let id: String?
+        public let title: String?
+        public let agents: [AgentDescriptor]
+    }
+
+    /// Account sections follow their first window; every account's windows keep their manual order.
+    /// Presentation groups the windows without changing their interleaved HUD order in the store.
+    public var windowSections: [WindowSection] {
+        let windows = Dictionary(grouping: agents, by: \.displayAccountID)
+        let fallbackAccounts = unobservedAccounts
+        var seen = Set<String?>()
+        return agents.compactMap { agent in
+            let id = agent.displayAccountID
+            guard seen.insert(id).inserted else { return nil }
+            let title = id.flatMap { id in
+                accounts.first { $0.account.id == id }?.displayName
+                    ?? billingAccounts.first { $0.id == id }?.displayName
+                    ?? fallbackAccounts.first { $0.id == id }?.displayName
+            }
+            return WindowSection(id: id, title: title, agents: windows[id] ?? [])
+        }
+    }
+
     /// Existing rows still offer a display switch before their account or balance reading is available.
     /// Each identity appears once, and identities already represented by a summary do not need a fallback.
     public var unobservedAccounts: [DisplayAccount] {
@@ -77,9 +101,4 @@ public struct AgentSettingsGroup: Identifiable, Equatable, Sendable {
         return groups.filter { $0.source?.state != .notDetected } + groups.filter { $0.source?.state == .notDetected }
     }
 
-    /// Rows name their account once a client has been signed in to more than one.
-    public func accountName(for agent: AgentDescriptor) -> String? {
-        guard accounts.count > 1, let id = agent.account?.id else { return nil }
-        return accounts.first { $0.account.id == id }?.displayName
-    }
 }
