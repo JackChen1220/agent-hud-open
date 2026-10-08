@@ -6,6 +6,32 @@ final class AntigravityServiceTests: XCTestCase, @unchecked Sendable {
         (1...count).map { "\($0) /Applications/Antigravity.app/Contents/Resources/language_server --csrf_token fixture-\($0)" }.joined(separator: "\n")
     }
 
+    func testDiscoveryKeepsCandidateBoundariesPriorityAndQuotedFlagsAmongUnrelatedProcesses() {
+        let unrelated = (100...2_099).map {
+            "\($0) /usr/local/bin/node /opt/workers/worker-\($0).js --argument=synthetic"
+        }.joined(separator: "\n")
+        let fixture = """
+        9 /Applications/Antigravity IDE.app/language-server --csrf_token=ide-fixture
+        3 agy\u{2003}serve --csrf_token '雪 fixture' --extension_server_port "65535" --extension_server_csrf_token='extension fixture'
+        8 /usr/local/bin/agy-helper --csrf_token=other
+        4 /opt/antigravity_cli/engine --extension_server_port 0
+        7 /usr/local/bin/agy/bin/worker --csrf_token=other
+        2 /opt/antigravity-cli/engine --extension_server_port=65536
+        1 /Applications/Antigravity.app/language_server --csrf_token 'native fixture' --extension_server_port=42111
+        6 /opt/other/language-server --app_data_dir='antigravity-ide' --csrf_token data-fixture
+        5 /opt/other/language-server --app_data_dir='Antigravity' --csrf_token other
+        10 /opt/antigravity/language_server
+        11 /usr/local/bin/AGY serve
+        12 /usr/local/bin/agy --x--csrf_token=ignored --extension_server_portExtra=41000
+        """
+        let candidates = AntigravityService.candidates(unrelated + "\n" + fixture)
+        XCTAssertEqual(candidates.map(\.pid), [1, 2, 3, 4, 11, 12, 6, 9])
+        XCTAssertEqual(candidates.map(\.priority), [0, 1, 1, 1, 1, 1, 2, 2])
+        XCTAssertEqual(candidates.map(\.token), ["native fixture", "", "雪 fixture", "", "", "", "data-fixture", "ide-fixture"])
+        XCTAssertEqual(candidates.map(\.extensionPort), [42111, nil, 65535, nil, nil, nil, nil, nil])
+        XCTAssertEqual(candidates[2].extensionToken, "extension fixture")
+    }
+
     func testNativeDiscoveryIncludesEveryCredentialBearingService() async throws {
         let processes = processes(7)
         let endpoints = try await AntigravityService.permissionEndpoints { executable, arguments in

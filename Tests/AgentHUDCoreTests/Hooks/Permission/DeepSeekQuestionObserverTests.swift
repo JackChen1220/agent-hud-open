@@ -8,6 +8,33 @@ import XCTest
 final class DeepSeekQuestionObserverTests: XCTestCase {
     private let port = 4599
 
+    func testDiscoveryKeepsWebHostBoundariesQuotedPortsAndDefaultsAmongUnrelatedProcesses() async {
+        let unrelated = (100...2_099).map {
+            "\($0) /usr/local/bin/node /opt/workers/worker-\($0).js --argument=synthetic"
+        }.joined(separator: "\n")
+        let fixture = """
+        1 /usr/local/bin/dsh --profile web --port 4599
+        2 node /opt/测试/bin.js\u{2003}--profile=web --port='5600'
+        3 dsh --profile web --port="65535"
+        4 /usr/local/bin/dsh --profile web --port 0
+        5 /usr/local/bin/dsh --profile=web --port 65536
+        6 /usr/local/bin/dsh --profile headless --port 9999
+        7 /usr/local/bin/dsh-helper --profile web --port 9998
+        8 node /opt/tools/bin.jsx --profile=web --port 9997
+        9 /usr/local/bin/dsh/bin/worker --profile web --port 9996
+        10 /usr/local/bin/DSH --PROFILE=WEB --port 6000
+        11 /Applications/Unrelated.app/worker --profile web --port 9995
+        12 /usr/local/bin/dsh --profile=web --x--port=9994 --portExtra=9993
+        """
+        let output = unrelated + "\n" + fixture
+        let ports = await DeepSeekQuestionObserver.discoverPorts(inspect: { _, _ in output })
+        XCTAssertEqual(ports, [DeepSeekQuestionObserver.defaultPort, 4599, 5600, 6000, 65535])
+        XCTAssertTrue(DeepSeekQuestionObserver.isHarness("/usr/local/bin/dsh --profile=web-preview"),
+                      "the existing profile prefix match remains unchanged")
+        XCTAssertFalse(DeepSeekQuestionObserver.isHarness("/usr/local/bin/dsh --profile  web"),
+                       "discovery keeps the existing literal web-profile syntax")
+    }
+
     private func frame(_ id: String) -> ProviderJSON {
         .object([
             "type": .string("server-request"), "method": .string("question/requested"), "rpcId": .string(id),
