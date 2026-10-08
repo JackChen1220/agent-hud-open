@@ -39,6 +39,15 @@ enum SessionNavigator {
             return components.url
         case .antigravityConversation:
             return nil
+        case .grokBotAgent(let id):
+            guard !id.isEmpty, id.utf8.count <= 128,
+                  id.utf8.allSatisfy({ (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 45 || $0 == 95 }) else { return nil }
+            var components = URLComponents()
+            components.scheme = "grokbot"
+            components.host = "app"
+            components.path = "/v1/agent"
+            components.queryItems = [URLQueryItem(name: "id", value: id)]
+            return components.url
         }
     }
 }

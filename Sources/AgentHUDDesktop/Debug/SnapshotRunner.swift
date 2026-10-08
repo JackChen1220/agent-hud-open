@@ -546,7 +546,9 @@ public enum SnapshotRunner {
             .init(id: "deepseek", name: "DeepSeek", detail: L10n.text("Harness 会话、API 余额与费用", "Harness sessions, API balance and costs"), state: .ready(plan: nil)),
             .init(id: "antigravity", name: "Antigravity", detail: L10n.text("启动并登录 Antigravity 或 agy 后读取额度 · 部分本地会话无法读取，用量可能不完整", "Start and sign in to Antigravity or agy to load quota. Some local sessions could not be read; usage may be incomplete."), state: .unavailable),
             .init(id: "cursor", name: "Cursor", detail: L10n.text("账户额度与跨设备用量", "Account quota and usage across devices"), state: .notDetected),
-            .init(id: "grok", name: "Grok", detail: L10n.text("Grok CLI 额度与本地会话", "Grok CLI quota and local sessions"), state: .ready(plan: "X Premium")),
+            .init(id: "grok", name: "Grok CLI", detail: L10n.text("本地会话与用量", "Local sessions and usage"), state: .installed, provider: "Grok"),
+            .init(id: "grok-bot", name: "Grok Bot", detail: L10n.text("本机缓存会话与跳转；用量和实时状态暂不可读", "Cached local sessions and navigation; usage and live status unavailable"),
+                  state: .installed, provider: "Grok", supportsLiveStatus: false),
             .init(id: "opencode", name: "OpenCode", detail: "", state: .installed),
             .init(id: "pi", name: "Pi", detail: "", state: .installed),
             .init(id: "kimi", name: "Kimi", detail: "", state: .ready(plan: "Allegretto")),
@@ -567,7 +569,7 @@ public enum SnapshotRunner {
             ]))
         for scheme in [ColorScheme.dark, .light] {
             let appearance = scheme == .dark ? "dark" : "light"
-            for (state, providerID) in [("overview", nil), ("claude", "Claude"), ("prepaid", "DeepSeek"), ("unavailable", "Antigravity"), ("unconfigured", "GLM")] as [(String, String?)] {
+            for (state, providerID) in [("overview", nil), ("claude", "Claude"), ("grok", "Grok"), ("prepaid", "DeepSeek"), ("unavailable", "Antigravity"), ("unconfigured", "GLM")] as [(String, String?)] {
                 let displayOrder = settings.agents
                 if state == "prepaid" { settings.moveAgentGroup(id: "DeepSeek", to: "Claude") }
                 defer { settings.updateAgents { _ in displayOrder } }
@@ -575,7 +577,7 @@ public enum SnapshotRunner {
                                         sourceStatuses: sources, initialProviderID: providerID)
                 save("settings-agents-\(state)-\(appearance)",
                      view.frame(width: SettingsWindowLayout.size.width, height: SettingsWindowLayout.size.height), folder: folder, scheme: scheme)
-                if state == "claude" || state == "prepaid" {
+                if state == "claude" || state == "grok" || state == "prepaid" {
                     save("settings-agents-\(state)-small-\(appearance)",
                          view.frame(width: SettingsWindowLayout.minimum.width, height: SettingsWindowLayout.minimum.height), folder: folder, scheme: scheme)
                 }

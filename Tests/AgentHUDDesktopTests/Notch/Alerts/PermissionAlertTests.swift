@@ -155,9 +155,9 @@ final class PermissionAlertTests: XCTestCase {
 
         draft.pick(1, of: 0, in: one)
         draft.pick(0, of: 0, in: one)
-        XCTAssertEqual(draft.answer(0, of: one), "Push", "a single answer replaces the one before it")
+        XCTAssertEqual(draft.answer(0, of: one), .init(selected: ["Push"]), "a single answer replaces the one before it")
         draft.type("Push tomorrow", of: 0, in: one)
-        XCTAssertEqual(draft.answer(0, of: one), "Push tomorrow", "writing one's own answer sets the offered ones aside")
+        XCTAssertEqual(draft.answer(0, of: one), .init(custom: "Push tomorrow"), "writing one's own answer sets the offered ones aside")
         draft.type("  ", of: 0, in: one)
         XCTAssertNil(draft.answer(0, of: one), "blank words are no answer")
         draft.pick(1, of: 0, in: one)
@@ -169,12 +169,26 @@ final class PermissionAlertTests: XCTestCase {
         draft.pick(0, of: 1, in: many)
         draft.type("Settings", of: 1, in: many)
         XCTAssertEqual(draft.answers(for: [one, many]),
-                       ["Push now?": "Wait", "Which pages?": "Channels, Documents, Settings"],
+                       ["Push now?": .init(selected: ["Wait"]),
+                        "Which pages?": .init(selected: ["Channels", "Documents"], custom: "Settings")],
                        "several answers keep the order they were offered in, the user's own words last")
         draft.pick(0, of: 1, in: many)
-        XCTAssertEqual(draft.answer(1, of: many), "Documents, Settings", "picking again takes it back")
+        XCTAssertEqual(draft.answer(1, of: many), .init(selected: ["Documents"], custom: "Settings"), "picking again takes it back")
         draft.skip(1)
-        XCTAssertEqual(draft.answers(for: [one, many]), ["Push now?": "Wait"], "a skipped question is left out")
+        XCTAssertEqual(draft.answers(for: [one, many]), ["Push now?": .init(selected: ["Wait"])], "a skipped question is left out")
+    }
+
+    func testQuestionAnswersKeepIdentityChoicesAndCustomWordsSeparate() {
+        let one = PermissionQuestion(id: "one", question: "Choose", options: [.init(label: "CSV, JSON")])
+        let two = PermissionQuestion(id: "two", question: "Choose", options: [.init(label: "A")], multiSelect: true)
+        let draft = QuestionDraft()
+        draft.pick(0, of: 0, in: one)
+        draft.pick(0, of: 1, in: two)
+        draft.type("A, but later", of: 1, in: two)
+        XCTAssertEqual(draft.answers(for: [one, two]), [
+            "one": .init(selected: ["CSV, JSON"]),
+            "two": .init(selected: ["A"], custom: "A, but later"),
+        ])
     }
 }
 

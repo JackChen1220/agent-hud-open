@@ -99,7 +99,10 @@ struct ProviderQuotaBlock: View {
             let sections = store.accountSections(rows)
             ForEach(sections) { section in
                 if let account = section.account {
-                    AccountSectionHeader(account: account, label: store.accountLabel(for: account), notice: store.accountNotice(for: section))
+                    let warning = store.view.assessment(of: account).status.reason
+                    let details = store.view.accountSourceNotice(for: section)
+                    AccountSectionHeader(account: account, label: store.accountLabel(for: account),
+                                         notice: details, warning: warning)
                 }
                 ForEach(section.rows) { row in
                     ModelUsageRow(row: row, now: store.now, metric: metric,
@@ -128,6 +131,7 @@ struct AccountSectionHeader: View {
     /// Whether the account is current or when it was last read.
     let label: String
     var notice: String?
+    var warning: String?
     private let theme = Theme.island
 
     var body: some View {
@@ -145,9 +149,15 @@ struct AccountSectionHeader: View {
                     .foregroundStyle(theme.tertiary)
                     .lineLimit(1)
             }
-            if let notice {
-                Text(notice)
+            if let warning {
+                Text(warning)
                     .foregroundStyle(theme.statusText(.warning))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let notice, notice != warning {
+                Text(notice)
+                    .foregroundStyle(theme.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }

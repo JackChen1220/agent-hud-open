@@ -156,6 +156,27 @@ final class RetainedUsageProviderTests: XCTestCase {
         XCTAssertEqual(failed.sessions, [session])
     }
 
+    func testGrokQuotaFailureCannotRestoreBotSessionsFromAnotherAccountPartition() async throws {
+        let agent = AgentDescriptor(id: "grok-model:Unknown", vendor: "Grok", model: "Unknown", source: "local", enabled: true)
+        func session(_ id: String, client: String) -> LiveSession {
+            LiveSession(id: id, agentId: agent.id, task: "Synthetic session", terminal: nil, startedAt: now,
+                        pctOfWindow: nil, tokensIn: 0, tokensOut: 0, client: client, observedAt: now)
+        }
+        let cli = session("grok:cli", client: "Grok CLI")
+        let old = session("grok-bot:old:agent", client: "Grok Bot"), current = session("grok-bot:current:agent", client: "Grok Bot")
+        let previous = UsageReport(generatedAt: now, snapshots: [], sessions: [cli, old], consumers: [agent])
+        let changed = UsageReport(generatedAt: now.addingTimeInterval(60), snapshots: [], sessions: [current],
+                                  quotaNotices: ["Grok": "Quota unavailable"], readingIssues: ["Grok": .readFailed("Quota unavailable")])
+        let signedOut = UsageReport(generatedAt: now.addingTimeInterval(120), snapshots: [], sessions: [],
+                                    quotaNotices: ["Grok": "Quota unavailable"], readingIssues: ["Grok": .readFailed("Quota unavailable")])
+        let provider = RetainedUsageProvider(provider: SequenceProvider([previous, changed, signedOut]))
+        _ = try await provider.fetchUsage(agents: [], historyHours: 24)
+        let switched = try await provider.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(Set(switched.sessions.map(\.id)), [cli.id, current.id])
+        let out = try await provider.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(out.sessions.map(\.id), [cli.id], "quota failure retains CLI history, but not a removed Bot roster")
+    }
+
     func testARowUnseenForTheRetentionPeriodRetiresWithItsReading() async throws {
         let kept = AgentDescriptor(id: "kept", vendor: "Antigravity", model: "Gemini", source: "", enabled: true)
         let gone = AgentDescriptor(id: "gone", vendor: "Antigravity", model: "Claude", source: "", enabled: true)

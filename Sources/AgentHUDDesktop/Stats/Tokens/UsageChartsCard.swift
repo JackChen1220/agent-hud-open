@@ -12,7 +12,7 @@ struct UsageChartsCard: View {
     }
 }
 
-/// The same stacked token chart in statistics and the expanded island.
+/// The statistics chart keeps its model controls; the island can show just a compact strip of its bars.
 struct TokenConsumptionChart: View {
     enum Context { case stats, island }
 
@@ -26,6 +26,7 @@ struct TokenConsumptionChart: View {
     let store: UsageStore
     let theme: Theme
     let context: Context
+    let compact: Bool
     var onOpenStats: () -> Void
     private let inspectedColumnID: Date?
     @State private var modelFilter: TokenModelFilter
@@ -33,10 +34,11 @@ struct TokenConsumptionChart: View {
 
     init(store: UsageStore, theme: Theme, context: Context, modelsExpanded: Bool = false,
          modelFilter: TokenModelFilter = TokenModelFilter(), inspectedColumnID: Date? = nil,
-         onOpenStats: @escaping () -> Void = {}) {
+         compact: Bool = false, onOpenStats: @escaping () -> Void = {}) {
         self.store = store
         self.theme = theme
         self.context = context
+        self.compact = compact
         self.onOpenStats = onOpenStats
         self.inspectedColumnID = inspectedColumnID
         _modelsExpanded = State(initialValue: modelsExpanded)
@@ -73,9 +75,9 @@ struct TokenConsumptionChart: View {
                     }
                 }
             }
-            if context == .stats, !models.isEmpty || !modelFilter.isAll {
+            if !compact, context == .stats, !models.isEmpty || !modelFilter.isAll {
                 modelPicker(models)
-            } else if context == .island {
+            } else if !compact, context == .island {
                 let legend = Self.islandLegend(consumers: store.consumers, columns: allColumns)
                 if !legend.shown.isEmpty {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), alignment: .leading)], alignment: .leading, spacing: 6) {
@@ -101,26 +103,28 @@ struct TokenConsumptionChart: View {
                            colors: consumers.map { AgentPalette.swiftUIColor(index: store.consumerPaletteIndex($0.id)) },
                            consumers: consumers, theme: theme, isLoading: store.report == nil,
                            noModelsSelected: context == .stats && modelFilter.consumerIDs?.isEmpty == true,
-                           inspectedColumnID: inspectedColumnID)
+                           inspectedColumnID: inspectedColumnID, compact: compact)
                 .id([store.statsRange.hours, store.tokenBucketSize.rawValue, store.tokenDimensions.rawValue])
-                .frame(height: context == .island ? 72 : 100)
+                .frame(height: compact ? 40 : (context == .island ? 72 : 100))
                 .padding(.horizontal, context == .stats ? 12 : 6)
-                .padding(.top, 12)
+                .padding(.top, compact ? 8 : 12)
                 .zIndex(1)
 
-            HStack {
-                let labels = ChartData.axisLabels(range: store.statsRange, now: store.dataDate)
-                ForEach(Array(labels.enumerated()), id: \.offset) { index, label in
-                    if index > 0 { Spacer() }
-                    Text(label)
-                        .lineLimit(2)
-                        .multilineTextAlignment(index == 0 ? .leading : index == labels.count - 1 ? .trailing : .center)
-                        .fixedSize(horizontal: false, vertical: true)
+            if !compact {
+                HStack {
+                    let labels = ChartData.axisLabels(range: store.statsRange, now: store.dataDate)
+                    ForEach(Array(labels.enumerated()), id: \.offset) { index, label in
+                        if index > 0 { Spacer() }
+                        Text(label)
+                            .lineLimit(2)
+                            .multilineTextAlignment(index == 0 ? .leading : index == labels.count - 1 ? .trailing : .center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
+                .font(.ui(10))
+                .foregroundStyle(theme.secondary)
+                .padding(.horizontal, context == .stats ? 12 : 6)
             }
-            .font(.ui(10))
-            .foregroundStyle(theme.secondary)
-            .padding(.horizontal, context == .stats ? 12 : 6)
         }
     }
 
@@ -218,10 +222,12 @@ struct TokenBarsChart: View {
     let theme: Theme
     var isLoading = false
     var noModelsSelected = false
+    let compact: Bool
     @State private var hoveredID: Date?
 
     init(columns: [TokenColumn], interval: DateInterval, colors: [Color], consumers: [AgentDescriptor], theme: Theme,
-         isLoading: Bool = false, noModelsSelected: Bool = false, inspectedColumnID: Date? = nil) {
+         isLoading: Bool = false, noModelsSelected: Bool = false, inspectedColumnID: Date? = nil,
+         compact: Bool = false) {
         self.columns = columns
         self.interval = interval
         self.colors = colors
@@ -229,6 +235,7 @@ struct TokenBarsChart: View {
         self.theme = theme
         self.isLoading = isLoading
         self.noModelsSelected = noModelsSelected
+        self.compact = compact
         _hoveredID = State(initialValue: inspectedColumnID)
     }
 
@@ -281,7 +288,7 @@ struct TokenBarsChart: View {
                         }
                     }
                 }
-                if peak > 0 || !isLoading {
+                if !compact, peak > 0 || !isLoading {
                     Text(TokenFormat.short(peak))
                         .font(.ui(10))
                         .foregroundStyle(theme.secondary)

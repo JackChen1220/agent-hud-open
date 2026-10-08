@@ -26,7 +26,7 @@ final class SessionNavigationTests: XCTestCase {
 
     func testLocalObserverTargetUsesAnExplicitKindAndIdentity() throws {
         for target in [SessionNavigationTarget.codexThread(id: "thread"), .iTermSession(id: "w0t0p0:session"),
-                       .antigravityConversation(id: "conversation"), .claudeDesktopSession(id: "local_desktop"),
+                       .antigravityConversation(id: "conversation"), .grokBotAgent(id: "agent_ID-1"), .claudeDesktopSession(id: "local_desktop"),
                        .claudeCoworkSession(id: "local_cowork")] {
             let data = try JSONEncoder().encode(target)
             let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: String])

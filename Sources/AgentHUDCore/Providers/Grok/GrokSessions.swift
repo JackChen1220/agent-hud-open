@@ -32,6 +32,7 @@ enum GrokSessions: LocalSessionLayout {
             guard isInference(item), let previous = updates[item.id] else { return item }
             var item = item
             item.title = previous.title; item.workspace = previous.workspace
+            item.path = previous.path
             item.turns = previous.turns; item.completions = previous.completions
             item.startedAt = previous.startedAt
             item.lastActivity = [item.lastActivity, previous.lastActivity].compactMap { $0 }.max()
@@ -40,8 +41,13 @@ enum GrokSessions: LocalSessionLayout {
     }
 
     static func notice(merging sessions: [ProviderSession]) -> String? {
-        let updates = updateLogs(sessions)
-        guard sessions.contains(where: { isInference($0) && updates[$0.id]?.events.isEmpty == false }) else { return nil }
+        let inferenceStarts = Dictionary(sessions.filter(isInference).compactMap { session in
+            session.events.map(\.timestamp).min().map { (session.id, $0) }
+        }, uniquingKeysWith: min)
+        guard sessions.contains(where: { session in
+            guard session.path?.hasSuffix("/updates.jsonl") == true, let start = inferenceStarts[session.id] else { return false }
+            return session.events.contains { $0.timestamp < start }
+        }) else { return nil }
         return L10n.text("Grok 新旧日志并存：采用新版请求记录，旧历史可能不完整", "Grok log formats overlap: using inference records; older history may be incomplete")
     }
 
@@ -80,6 +86,11 @@ enum GrokSessions: LocalSessionLayout {
                 turnID = meta["promptId"].stringValue ?? eventID
                 turnStart = ProviderDate.milliseconds(meta["turnStartMs"]) ?? date
             }
+            // Older user updates lack a prompt id; the following agent/tool update supplies the client's real turn id.
+            if let previous = turnID, let observed = meta["promptId"].stringValue, observed != previous {
+                session.turns.removeAll { $0.turnID == previous }
+                turnID = observed
+            }
             if let turnID, kind == "user_message_chunk" || kind == "agent_message_chunk" || kind == "agent_thought_chunk" || kind == "tool_call" || kind == "tool_call_update" {
                 session.turns.removeAll { $0.turnID == turnID }
                 session.turns.append(.init(provider: "Grok", sessionID: id, turnID: turnID, state: .running,
@@ -106,7 +117,7 @@ enum GrokSessions: LocalSessionLayout {
                 startedAtMs: turnStart.map(RecordCoding.milliseconds), observedAtMs: RecordCoding.milliseconds(date)))
             if succeeded {
                 session.completions.append(.init(sessionID: id, vendor: "Grok", turnID: completedID, task: title,
-                    model: model, startedAt: turnStart, completedAt: date))
+                    model: model, startedAt: turnStart, completedAt: date, client: "Grok CLI"))
             }
             turnID = nil; turnStart = nil
         }

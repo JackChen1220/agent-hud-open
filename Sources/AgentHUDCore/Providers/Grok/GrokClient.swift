@@ -4,9 +4,21 @@ import Foundation
 struct GrokClient: Sendable {
     var home = GrokSessions.directory(home: FileManager.default.homeDirectoryForCurrentUser, environment: ProcessInfo.processInfo.environment)
     var http = ProviderHTTP()
+    var botDirectory = GrokBotSessions.roots(home: FileManager.default.homeDirectoryForCurrentUser, environment: [:])[0]
 
     func fetch() async throws -> ProviderQuota {
-        guard FileManager.default.fileExists(atPath: home.path) else { return ProviderQuota() }
+        do {
+            let quota = try await fetchCLI()
+            return quota.isSignedIn ? quota : try GrokBotQuota.fetch(in: botDirectory, now: Date()) ?? quota
+        } catch {
+            try Self.propagateCancellation(error)
+            guard let cached = GrokBotQuota.read(in: botDirectory, now: Date()) else { throw error }
+            return cached
+        }
+    }
+
+    private func fetchCLI() async throws -> ProviderQuota {
+        guard FileManager.default.fileExists(atPath: home.path) else { return ProviderQuota(signedOut: true) }
         let url = home.appendingPathComponent("auth.json")
         guard let json = try? ProviderFiles.json(url) else { throw ProviderFailure.login("Grok CLI") }
         let entry = try Self.credential(json, now: Date())
@@ -14,12 +26,21 @@ struct GrokClient: Sendable {
         let headers = ["Authorization": "Bearer \(token)", "x-xai-token-auth": "xai-grok-cli"]
         let response = try await http.json(URL(string: "https://cli-chat-proxy.grok.com/v1/billing?format=credits")!, headers: headers)
         var quota = try Self.parse(response)
+        quota.client = "Grok CLI"
         quota.account = Self.account(entry)
         quota.label = entry["email"].stringValue
-        if let settings = try? await http.json(URL(string: "https://cli-chat-proxy.grok.com/v1/settings")!, headers: headers, timeout: 2) {
+        do {
+            let settings = try await http.json(URL(string: "https://cli-chat-proxy.grok.com/v1/settings")!, headers: headers, timeout: 2)
             quota.plan = settings["subscription_tier_display"].stringValue ?? quota.plan
+        } catch {
+            try Self.propagateCancellation(error)
         }
         return quota
+    }
+
+    private static func propagateCancellation(_ error: any Error) throws {
+        try Task.checkCancellation()
+        if error is CancellationError || (error as? URLError)?.code == .cancelled { throw error }
     }
 
     static func credential(_ json: ProviderJSON, now: Date) throws -> ProviderJSON {

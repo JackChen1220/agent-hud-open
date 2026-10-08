@@ -20,6 +20,11 @@ final class SessionNavigationTests: XCTestCase {
         XCTAssertNil(SessionNavigator.url(for: .iTermSession(id: " \n")))
         XCTAssertNil(SessionNavigator.url(for: .antigravityConversation(id: threadID)),
                      "Antigravity's URL scheme has no conversation route")
+        XCTAssertEqual(SessionNavigator.url(for: .grokBotAgent(id: "agent_ID-1"))?.absoluteString,
+                       "grokbot://app/v1/agent?id=agent_ID-1")
+        for invalid in ["", "../other", "agent?prompt=submit", String(repeating: "a", count: 129), "对话"] {
+            XCTAssertNil(SessionNavigator.url(for: .grokBotAgent(id: invalid)))
+        }
         let desktopID = "local_" + threadID
         XCTAssertEqual(SessionNavigator.url(for: .claudeDesktopSession(id: desktopID))?.absoluteString,
                        "claude://claude.ai/epitaxy/" + desktopID)
@@ -85,7 +90,7 @@ final class SessionNavigationTests: XCTestCase {
         XCTAssertEqual(fixture.hud.questions.map(\.id), [request.id])
         XCTAssertFalse(fixture.hud.island.panel.canBecomeKey, "Selecting a reply releases the old request's keyboard")
         XCTAssertTrue(QuestionDraft.draft(for: request.id) === draft)
-        XCTAssertEqual(draft.answer(0, of: question), "Continue after review", "Switching cards preserves its answer draft")
+        XCTAssertEqual(draft.answer(0, of: question), .init(custom: "Continue after review"), "Switching cards preserves its answer draft")
         XCTAssertEqual(fixture.statsOpens, 0)
     }
 

@@ -78,6 +78,10 @@ struct SourceRow: View {
                         PlanBadge(plan: plan, theme: theme)
                     }
                 }
+                if !source.supportsLiveStatus {
+                    Text(source.detail).font(.ui(11)).foregroundStyle(theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer()
         }
