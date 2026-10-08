@@ -37,4 +37,29 @@ final class AgentUsageTests: XCTestCase {
         XCTAssertEqual(agents[2].tokens.input, 1_000_000, "a bucket before the range is left out")
         XCTAssertNil(agents[0].cost)
     }
+
+    func testNativeBotSessionRemainsOnItsCanonicalBillingCard() throws {
+        let model = "cursor-model:grok-bot-default"
+        let consumer = AgentDescriptor(id: model, vendor: "Cursor", model: "grok-bot-default", source: "", enabled: true)
+        let tokens = SessionUsage.Tokens(tokensIn: 12, tokensOut: 4, cacheReadTokens: 6, cacheWriteTokens: 2)
+        let session = LiveSession(id: "grok-bot:bot-account:native-agent", agentId: model, task: "Native Bot conversation",
+                                  terminal: nil, startedAt: base, endedAt: base, pctOfWindow: nil,
+                                  tokensIn: tokens.tokensIn, tokensOut: tokens.tokensOut, client: "Grok Bot",
+                                  cacheReadTokens: tokens.cacheReadTokens, accountWide: true,
+                                  usageKey: "cursor-account:billing-account:native-agent")
+        let usage = SessionUsage(models: [.init(agentId: model, tokens: tokens)],
+                                 periods: [.init(start: base, agentId: model, tokens: tokens)], calls: 1)
+        let source = SessionSource(vendor: consumer.vendor, client: session.client)
+        XCTAssertEqual(source.vendor, "Grok", "the native session stays with its execution owner")
+        let cards = AgentUsage.build(usage: [usage.periods[0].bucket], consumers: [consumer], sessions: [session],
+                                     breakdowns: [session.id: usage], vendor: { _ in source.vendor },
+                                     interval: DateInterval(start: base, duration: 900), dimensions: .all,
+                                     region: { _ in .international })
+        XCTAssertEqual(cards.map(\.vendor), ["Cursor"], "the ledger's canonical billing card still owns these tokens")
+        let card = try XCTUnwrap(cards.first)
+        XCTAssertEqual(card.tokens, tokens.kinds)
+        XCTAssertEqual(card.models.map(\.agentId), [model])
+        XCTAssertEqual(card.sessions.map(\.id), [session.id], "normalizing the native owner must not orphan or duplicate its card entry")
+        XCTAssertEqual(card.sessions.first?.tokens, tokens.kinds)
+    }
 }
