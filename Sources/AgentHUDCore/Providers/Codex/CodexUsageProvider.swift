@@ -235,37 +235,48 @@ public actor CodexUsageProvider: UsageProvider, LedgerRecording {
         }
         // Spawned agents and guardians keep rollouts of their own that name the thread that started them; a session's
         // breakdown takes every rollout below it.
-        var children: [String: [(id: String?, path: String)]] = [:]
+        var children: [String: [CodexTranscriptStore.Session]] = [:]
         for session in indexed.sessions where session.transcript.isSubagent {
-            if let parent = session.transcript.parentThreadID { children[parent, default: []].append((session.transcript.id, session.path)) }
+            if let parent = session.transcript.parentThreadID { children[parent, default: []].append(session) }
         }
         func descendants(of id: String) -> [String] {
             var paths: [String] = [], queue = [id], seen: Set<String> = [id]
             while let next = queue.popLast() {
                 for child in children[next] ?? [] {
                     paths.append(child.path)
-                    if let childID = child.id, seen.insert(childID).inserted { queue.append(childID) }
+                    if let childID = child.transcript.id, seen.insert(childID).inserted { queue.append(childID) }
                 }
             }
             return paths.sorted()
         }
-        let sessions = indexed.sessions.filter { !$0.transcript.isSubagent }.map { session in
-            (session: session, live: SessionPhase.read(session.transcript.evidence, rule: .rollout, at: now).inFlight)
-        }.sorted { a, b in
-            if a.live != b.live { return a.live }
-            return (a.session.transcript.lastActivityAt ?? .distantPast) > (b.session.transcript.lastActivityAt ?? .distantPast)
-        }.map { session, live in
-            let t = session.transcript
-            return LiveSession(id: t.id!, agentId: "codex-model:\(t.model)",
-                               task: session.title ?? t.task ?? t.cwd.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Codex",
+        func liveSession(_ session: CodexTranscriptStore.Session, ancestors: Set<String> = []) -> LiveSession {
+            let t = session.transcript, id = t.id!
+            let live = SessionPhase.read(t.evidence, rule: .rollout, at: now).inFlight
+            let seen = ancestors.union([id])
+            let agents = (children[id] ?? []).filter {
+                !$0.transcript.isInternal && !seen.contains($0.transcript.id!)
+            }.sorted {
+                let a = $0.transcript.startedAt ?? $0.modifiedAt, b = $1.transcript.startedAt ?? $1.modifiedAt
+                return a == b ? $0.transcript.id! < $1.transcript.id! : a < b
+            }.map { liveSession($0, ancestors: seen) }
+            return LiveSession(id: id, agentId: "codex-model:\(t.model)",
+                               task: session.title ?? t.task ?? t.agentPath.map { URL(fileURLWithPath: $0).lastPathComponent }
+                                   ?? t.agentName ?? t.cwd.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Codex",
                                terminal: t.cwd.map { URL(fileURLWithPath: $0).lastPathComponent },
                                startedAt: t.startedAt ?? session.modifiedAt,
                                endedAt: live ? nil : (t.lastActivityAt ?? session.modifiedAt),
                                pctOfWindow: nil, tokensIn: t.inputTokens,
                                tokensOut: t.outputTokens, client: t.client, transcriptPath: session.path,
                                cacheReadTokens: t.cachedInputTokens, observedAt: now, workingDirectory: t.cwd,
-                               subagentTranscripts: descendants(of: t.id!), lastActivityAt: t.lastEventAt, navigationTarget: navigationTarget(for: t))
+                               subagentTranscripts: descendants(of: id), agentName: t.agentName, subagentSessions: agents,
+                               lastActivityAt: t.lastEventAt, navigationTarget: navigationTarget(for: t))
         }
+        let sessions = indexed.sessions.filter { !$0.transcript.isSubagent && !$0.transcript.isInternal }.map { session in
+            (session: session, live: SessionPhase.read(session.transcript.evidence, rule: .rollout, at: now).inFlight)
+        }.sorted { a, b in
+            if a.live != b.live { return a.live }
+            return (a.session.transcript.lastActivityAt ?? .distantPast) > (b.session.transcript.lastActivityAt ?? .distantPast)
+        }.map { liveSession($0.session) }
         // An unread login's failure belongs to its client home, including accounts retained from an earlier run.
         let selectedHomes = Set(selected.map(\.0))
         let unread = failures.filter { readings[$0.key] == nil && !selectedHomes.contains($0.key) }

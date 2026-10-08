@@ -15,6 +15,38 @@ final class StatsSelectionTests: XCTestCase {
               source: "fixture", enabled: true, billingPool: credential.pool)
     }
 
+    func testChildFocusRefreshesFromTheReportedTreeAndReturnsToItsDirectParent() throws {
+        let store = store()
+        func session(_ id: String, task: String? = nil, tokens: Int = 1, children: [LiveSession] = []) -> LiveSession {
+            LiveSession(id: id, agentId: "codex-model:gpt-6-astra", task: task ?? id, terminal: nil,
+                        startedAt: now, pctOfWindow: nil, tokensIn: tokens, tokensOut: 0,
+                        subagentSessions: children)
+        }
+        let grandchild = session("grandchild")
+        func report(_ child: LiveSession) -> UsageReport {
+            UsageReport(generatedAt: now, snapshots: [], sessions: [session("root", children: [child])])
+        }
+        store.replace(report: report(session("child", children: [grandchild])))
+        store.focusedSessionID = "child"
+        XCTAssertEqual(store.focusedSession?.id, "child")
+        XCTAssertEqual(store.focusedSessionParent?.id, "root")
+        XCTAssertEqual(store.statsSessions.map(\.id), ["root"], "children remain within the root's detail")
+        store.replace(report: report(session("child", task: "Updated task", tokens: 50, children: [grandchild])))
+        XCTAssertEqual(store.focusedSession?.task, "Updated task")
+        XCTAssertEqual(store.focusedSession?.tokensIn, 50, "the selection never retains an old child value")
+        store.focusedSessionID = "grandchild"
+        XCTAssertEqual(store.focusedSession?.id, "grandchild")
+        XCTAssertEqual(store.focusedSessionParent?.id, "child")
+        store.focusedSessionID = store.focusedSessionParent?.id
+        XCTAssertEqual(store.focusedSession?.id, "child")
+        store.focusedSessionID = store.focusedSessionParent?.id
+        XCTAssertEqual(store.focusedSession?.id, "root")
+        XCTAssertNil(store.focusedSessionParent)
+        store.focusedSessionID = "child"
+        store.replace(report: UsageReport(generatedAt: now, snapshots: [], sessions: []))
+        XCTAssertNil(store.focusedSession, "an agent absent from a fresh report is not kept by the detail")
+    }
+
     func testGoShowsOpenCodeTokensWithoutAssigningThemToTheCurrentPool() throws {
         let go = OpenAgentCredentials.credential(.go, token: "fixture-go", client: "OpenCode")
         let quota = row(go), store = store(agents: [quota])

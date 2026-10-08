@@ -257,8 +257,18 @@ public struct ReportView: Sendable {
 
     // MARK: Sessions
 
-    /// The session with this id, the first listed where several share it.
-    public func session(_ id: String) -> Session? { sessions.first { $0.id == id } }
+    /// The session with this id, including agents below the listed root sessions.
+    public func session(_ id: String) -> Session? {
+        if let root = sessions.first(where: { $0.id == id }) { return root }
+        return sessions.lazy.flatMap { $0.session.descendantSessions }.first { $0.id == id }.map { session(for: $0) }
+    }
+
+    /// The session that directly started an agent; nil for a root session or one no longer reported.
+    public func parentSession(of id: String) -> LiveSession? {
+        sessions.lazy.flatMap { [$0.session] + $0.session.descendantSessions }.first {
+            $0.subagentSessions?.contains { $0.id == id } == true
+        }
+    }
 
     /// A session as this view reads it, one that is not among `sessions` included, such as a copy from an earlier report.
     public func session(for session: LiveSession) -> Session {

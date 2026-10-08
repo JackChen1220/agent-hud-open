@@ -283,6 +283,38 @@ final class UsageLedgerTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(second.sessionUsage?["w1"]?.total.tokensIn, 7)
     }
 
+    func testChildDetailsHaveTheirOwnBreakdownsAndRefreshWhenDescendantsSpend() async throws {
+        let ledger = UsageLedger.inMemory()
+        let grandchild = LiveSession(id: "grandchild", agentId: "codex-model:gpt-5", task: "Task", terminal: nil,
+            startedAt: base, pctOfWindow: nil, tokensIn: 7, tokensOut: 0, transcriptPath: "r/grandchild.jsonl")
+        let child = LiveSession(id: "child", agentId: grandchild.agentId, task: "Task", terminal: nil,
+            startedAt: base, pctOfWindow: nil, tokensIn: 30, tokensOut: 0, transcriptPath: "r/child.jsonl",
+            subagentTranscripts: ["r/grandchild.jsonl", "r/guardian.jsonl"], subagentSessions: [grandchild])
+        let root = LiveSession(id: "root", agentId: child.agentId, task: "Task", terminal: nil,
+            startedAt: base, pctOfWindow: nil, tokensIn: 100, tokensOut: 0, transcriptPath: "r/root.jsonl",
+            subagentTranscripts: ["r/child.jsonl", "r/grandchild.jsonl", "r/guardian.jsonl"], subagentSessions: [child])
+        let provider = CombinedUsageProvider([.init("Codex", Reporting(sessions: [root]))], ledger: ledger)
+        try await ledger.write { writer in
+            for (name, tokens) in [("root", 100), ("child", 30), ("grandchild", 7), ("guardian", 9)] {
+                try writer.upsert(source: "codex", contribution: "r/\(name).jsonl",
+                                  events: [self.event(name, minute: 1, agent: "codex-model:gpt-5", input: tokens)])
+            }
+        }
+        let first = try await provider.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(first.sessions.map(\.id), ["root"])
+        XCTAssertEqual(first.sessionUsage?["root"]?.total.tokensIn, 146)
+        XCTAssertEqual(first.sessionUsage?["child"]?.total.tokensIn, 46)
+        XCTAssertEqual(first.sessionUsage?["child"]?.subagents?.tokensIn, 16)
+        XCTAssertEqual(first.sessionUsage?["grandchild"]?.total.tokensIn, 7)
+        try await ledger.write { try $0.upsert(source: "codex", contribution: "r/grandchild.jsonl",
+            events: [self.event("next", minute: 2, agent: "codex-model:gpt-5", input: 4)]) }
+        let second = try await provider.fetchUsage(agents: [], historyHours: 24)
+        XCTAssertEqual(second.sessionUsage?["root"]?.total.tokensIn, 150)
+        XCTAssertEqual(second.sessionUsage?["child"]?.total.tokensIn, 50)
+        XCTAssertEqual(second.sessionUsage?["grandchild"]?.total.tokensIn, 11,
+                       "unchanged session counters do not hide a descendant's newly indexed usage")
+    }
+
     func testWindowedReplacementKeepsOlderEvents() async throws {
         let ledger = UsageLedger.inMemory(), since = base.addingTimeInterval(3600)
         try await ledger.write { try $0.replace(source: "hermes", contribution: "s", events: [
