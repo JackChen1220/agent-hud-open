@@ -29,12 +29,16 @@ final class GrokSourceDetectorTests: XCTestCase {
         XCTAssertEqual(resolved[1], sources[1])
     }
 
-    func testUnsupportedBotReaderAndOtherProvidersCannotBorrowCLIReadiness() {
-        let reports = [
-            UsageReport(generatedAt: now, snapshots: [], sessions: [session(client: "Grok Bot")]),
-            UsageReport(generatedAt: now, snapshots: [], sessions: [session(client: "Grok CLI", agent: "cursor-model:other")]),
-        ]
-        for report in reports { XCTAssertEqual(SourceDetector.resolve(sources, report: report), sources) }
+    func testCachedBotSessionsMakeOnlyBotReadyWithoutAddingLiveStatus() {
+        let report = UsageReport(generatedAt: now, snapshots: [], sessions: [session(client: "Grok Bot")])
+        let resolved = SourceDetector.resolve(sources, report: report)
+        XCTAssertEqual(resolved.map(\.state), [.installed, .ready(plan: nil)])
+        XCTAssertFalse(resolved[1].supportsLiveStatus)
+    }
+
+    func testOtherProvidersCannotBorrowCLIReadiness() {
+        let report = UsageReport(generatedAt: now, snapshots: [], sessions: [session(client: "Grok CLI", agent: "cursor-model:other")])
+        XCTAssertEqual(SourceDetector.resolve(sources, report: report), sources)
     }
 
     func testOldGrokSessionsRemainCLIAndUnspecifiedSourcesKeepExistingDefaults() {

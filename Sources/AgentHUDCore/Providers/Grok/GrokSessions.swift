@@ -32,6 +32,7 @@ enum GrokSessions: LocalSessionLayout {
             guard isInference(item), let previous = updates[item.id] else { return item }
             var item = item
             item.title = previous.title; item.workspace = previous.workspace
+            item.path = previous.path
             item.turns = previous.turns; item.completions = previous.completions
             item.startedAt = previous.startedAt
             item.lastActivity = [item.lastActivity, previous.lastActivity].compactMap { $0 }.max()
@@ -79,6 +80,11 @@ enum GrokSessions: LocalSessionLayout {
             if kind == "user_message_chunk", turnID == nil {
                 turnID = meta["promptId"].stringValue ?? eventID
                 turnStart = ProviderDate.milliseconds(meta["turnStartMs"]) ?? date
+            }
+            // Older user updates lack a prompt id; the following agent/tool update supplies the client's real turn id.
+            if let previous = turnID, let observed = meta["promptId"].stringValue, observed != previous {
+                session.turns.removeAll { $0.turnID == previous }
+                turnID = observed
             }
             if let turnID, kind == "user_message_chunk" || kind == "agent_message_chunk" || kind == "agent_thought_chunk" || kind == "tool_call" || kind == "tool_call_update" {
                 session.turns.removeAll { $0.turnID == turnID }

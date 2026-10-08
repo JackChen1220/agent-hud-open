@@ -547,7 +547,7 @@ public enum SnapshotRunner {
             .init(id: "antigravity", name: "Antigravity", detail: L10n.text("启动并登录 Antigravity 或 agy 后读取额度 · 部分本地会话无法读取，用量可能不完整", "Start and sign in to Antigravity or agy to load quota. Some local sessions could not be read; usage may be incomplete."), state: .unavailable),
             .init(id: "cursor", name: "Cursor", detail: L10n.text("账户额度与跨设备用量", "Account quota and usage across devices"), state: .notDetected),
             .init(id: "grok", name: "Grok CLI", detail: L10n.text("本地会话与用量", "Local sessions and usage"), state: .installed, provider: "Grok"),
-            .init(id: "grok-bot", name: "Grok Bot", detail: L10n.text("会话、用量与实时状态读取暂未支持", "Session, usage and live status reading is not supported yet"),
+            .init(id: "grok-bot", name: "Grok Bot", detail: L10n.text("本机缓存会话与跳转；用量和实时状态暂不可读", "Cached local sessions and navigation; usage and live status unavailable"),
                   state: .installed, provider: "Grok", supportsLiveStatus: false),
             .init(id: "opencode", name: "OpenCode", detail: "", state: .installed),
             .init(id: "pi", name: "Pi", detail: "", state: .installed),

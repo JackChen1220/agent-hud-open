@@ -90,7 +90,7 @@ public enum CodexTerminalOrigins {
         return result
     }
 
-    private static func processIdentity(_ pid: pid_t) -> ProcessIdentity? {
+    static func processIdentity(_ pid: pid_t) -> ProcessIdentity? {
         var info = proc_bsdinfo()
         let size = Int32(MemoryLayout<proc_bsdinfo>.size)
         guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size, info.pbi_start_tvsec > 0 else { return nil }
@@ -121,7 +121,7 @@ public enum CodexTerminalOrigins {
         return ports
     }
 
-    private static func argumentsData(_ pid: pid_t) -> Data? {
+    static func argumentsData(_ pid: pid_t) -> Data? {
         var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid], size = 0
         guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 4, size <= 1024 * 1024 else { return nil }
         var data = Data(count: size)

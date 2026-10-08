@@ -44,9 +44,7 @@ public struct SourceStatus: Hashable, Sendable, Identifiable {
         switch state {
         case .ready: return L10n.text("已就绪", "Ready")
         case .notDetected: return L10n.text("未检测到", "Not detected")
-        case .installed: return supportsLiveStatus
-            ? L10n.text("已安装 · 等待数据", "Installed · waiting for data")
-            : L10n.text("已安装 · 暂未支持读取", "Installed · reading not supported yet")
+        case .installed: return L10n.text("已安装 · 等待数据", "Installed · waiting for data")
         case .unavailable: return L10n.text("暂不可用", "Unavailable")
         }
     }

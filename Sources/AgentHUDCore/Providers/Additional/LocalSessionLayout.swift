@@ -31,7 +31,7 @@ extension AdditionalSource {
         switch self {
         case .cursor: nil
         case .antigravity: AntigravitySessions.self
-        case .grok: GrokSessions.self
+        case .grok: GrokLocalSessions.self
         case .copilot: CopilotSessions.self
         case .openclaw: OpenClawSessions.self
         case .hermes: HermesSessions.self

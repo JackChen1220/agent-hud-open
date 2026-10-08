@@ -5,6 +5,7 @@ Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` o
 ## Unreleased
 
 - Grok accounts and quota stay under Grok. Grok CLI and Grok Bot have distinct client entries and artwork; Bot installation is detected independently, with its session reading capability shown explicitly.
+- Grok CLI sessions can return to their verified live iTerm pane, and Grok Bot sessions open their native Agent view. Bot's account-scoped local conversation cache and Antigravity's SQLite conversation text are available to read-only conversation consumers; Bot cache gaps and unavailable live state stay explicit.
 - Host API: `SourceStatus.provider` groups execution clients under their account provider; `supportsLiveStatus` describes the client's reading capability. `AgentSettingsGroup.clients` lists those execution clients, and `SessionSource.agentVendor` selects client-specific status and artwork without changing the account provider.
 - Host API: `SessionCompletion.client` optionally names its execution client, including in serialized records; older records keep their existing provider identity. `agentVendor` supplies its client-specific presentation name.
 - ZCode questions can be answered on the HUD. Compatible DeepSeek Harness web hosts expose questions through their local event API; other hosts keep questions in Harness.

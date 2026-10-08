@@ -117,6 +117,7 @@ struct ProviderSession: Sendable {
     var turns: [SessionTurn] = []
     var completions: [SessionCompletion] = []
     var accountWide = false
+    var navigationTarget: SessionNavigationTarget? = nil
 }
 
 struct ProviderEvent: Hashable, Sendable {
