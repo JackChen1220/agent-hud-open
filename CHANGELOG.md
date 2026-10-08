@@ -2,6 +2,12 @@
 
 Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the three-part numeric version `X.Y.Z`. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
+## Unreleased
+
+- ZCode questions can be answered on the HUD. Compatible DeepSeek Harness web hosts expose questions through their local event API; other hosts keep questions in Harness.
+- The hover panel prioritizes waiting and running sessions, shows client marks and keeps a short recently ended list. Session titles without a client destination open their details, and question badges offer inline answers.
+- Host API: `PermissionDecision.answer` carries `[String: PermissionQuestion.Answer]`, separating selected labels from custom text. `PermissionQuestion.id` is optional; `answerKey` uses that identity when present. Hook responses still serialize answers under the original question text.
+
 ## 0.4.36 — 2026-10-08
 
 - Completion reminders offer separate actions for returning to the agent and viewing token usage. In Active sessions, the title returns to the agent, the token count opens that session's usage, and the heading opens the session list.

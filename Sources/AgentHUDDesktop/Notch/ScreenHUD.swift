@@ -24,6 +24,8 @@ final class ScreenHUD {
     private var navigationTask: Task<Bool, Never>?
     private var failedNavigationAlertID: String?
     private var failedListedSessionID: String?
+    /// One expansion per screen, shared by its live panel and the fresh view used for measuring it.
+    private var answeringSessionID: String?
     private let mouseLocation: @MainActor () -> CGPoint
     private let additionalHUDControls: @MainActor (@escaping @MainActor () -> Void) -> AnyView
     private(set) var geometry: NotchGeometry
@@ -328,6 +330,13 @@ final class ScreenHUD {
         reevaluateHover()
     }
 
+    private func answerQuestions(in sessionID: String?) {
+        guard answeringSessionID != sessionID else { return }
+        stopTyping()
+        answeringSessionID = sessionID
+        apply(animated: true)
+    }
+
     /// The card being typed into is gone: the keyboard goes back to the app it came from.
     private func stopTyping() {
         island.panel.releaseKeyboard()
@@ -471,6 +480,7 @@ final class ScreenHUD {
             prepareOpening()
         } else if !machine.isOpen {
             openingPreparation = nil
+            answeringSessionID = nil
         }
         if wasOpen != machine.isOpen {
             // The panel opening is someone looking at the numbers, which is reason enough to read the accounts again.
@@ -663,6 +673,8 @@ final class ScreenHUD {
             sessionNavigationFailed: sessionNavigationFailed,
             onDecideAlert: { [weak self] decision in self?.decideAlert(decision) },
             waitingRequests: PermissionRequests.shared.pending,
+            answeringSessionID: answeringSessionID,
+            onAnswerSession: { [weak self] id in self?.answerQuestions(in: id) },
             onSelectRequest: { [weak self] id in self?.selectRequest(id) },
             onTyping: { [weak self] typing in self?.setTyping(typing) },
             showsAlertDetails: open && alerts.current?.inUsagePanel == false,
@@ -695,6 +707,11 @@ final class ScreenHUD {
     }
 
     func apply(animated: Bool) {
+        if let id = answeringSessionID,
+           !PermissionRequests.shared.pending.contains(where: { $0.sessionID == id && $0.isQuestion }) {
+            answeringSessionID = nil
+            stopTyping()
+        }
         let open = machine.isOpen
         let previousGeometry = geometry
         geometry = resolveGeometry()

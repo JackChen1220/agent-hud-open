@@ -10,7 +10,7 @@ Agent HUD Open reads agent activity and usage metadata on your Mac. It has no Ag
 | --- | --- | --- |
 | Claude Code | Session records, account profile, local session-origin hook records and Desktop session identifiers | Installed Claude engine usage interface |
 | Codex Desktop / CLI | Session records and sign-in time, including `CODEX_HOME` | Installed Codex app-server account rate limits |
-| DeepSeek Harness | Session records and profile-owning Node process metadata, including `DSH_HOME` | Official DeepSeek balance endpoint with the configured Harness API key, which Harness's own credentials package resolves inside a short-lived Node helper |
+| DeepSeek Harness | Session records and profile-owning Node process metadata, including `DSH_HOME`; its web host's pending questions on loopback | Official DeepSeek balance endpoint with the configured Harness API key, which Harness's own credentials package resolves inside a short-lived Node helper |
 | Antigravity | The process list (`ps`) and the listening port of the running language server (`lsof`), whose command line holds its local token; conversation metadata | A local `POST` to that language server on 127.0.0.1 |
 | Cursor | Local application database and session metadata | Official Cursor usage endpoints with the installed client's session token |
 | Grok CLI | Local session records and credential file | Official Grok CLI billing endpoint |
@@ -30,7 +30,7 @@ Per-client fields, endpoints and stored data: [providers](providers.md). Token c
 - OpenClaw's agent database also stores authentication profiles; only its session tables are queried.
 - Custom endpoints are not assumed to share official billing accounts, and executable key resolvers are never run.
 - Kimi account identity is confirmed through the official profile endpoint, separately for each deployment; only hashed credential-to-account associations are cached, and accounts are never merged from matching quota values, reset times or unverified token claims.
-- DeepSeek process inspection reads executable identity and start time only, not profile contents or browser credentials.
+- DeepSeek session liveness inspection reads executable identity and start time. Question-host discovery reads command names, profile and port arguments; it does not read profile contents or browser credentials.
 
 ## Local storage
 
@@ -46,6 +46,7 @@ Per-client fields, endpoints and stored data: [providers](providers.md). Token c
 - Pi's extension and OpenCode's plugin run inside those clients and write only metadata records of their turns — session and turn identity, workspace, the session's title, model, provider and times — beside the client's own data; they make no request and upload nothing ([observers](session-lifecycle.md#observers)).
 
 - Antigravity approvals are read from its already-running local service, without changing its permission settings or installing a tool-execution hook. Only the user's explicit allow-once or deny sends an interaction answer to that same service; credentials and waiting tool inputs stay in memory. Client hooks off stops the observer.
+- DeepSeek Harness's questions are read from its web host's loopback event stream and answered back on 127.0.0.1; only the answers the user gives on the HUD are sent, and nothing is written to Harness's files. Client hooks off stops the reading.
 
 ## Related
 

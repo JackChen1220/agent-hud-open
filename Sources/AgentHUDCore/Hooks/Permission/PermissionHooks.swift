@@ -8,8 +8,9 @@ import Foundation
 /// is always available and always safe: the client then behaves exactly as it would with no hook installed.
 public enum PermissionHooks {
     /// Clients whose approvals the HUD can answer. Hook clients read Claude Code's allow/deny answer; Antigravity
-    /// approvals travel through its native local service. Codex CLI and Desktop share one hooks file, WorkBuddy runs
-    /// CodeBuddy Code's engine, and ZCode's desktop app and terminal share one engine and configuration file.
+    /// approvals travel through its native local service, and DeepSeek Harness's questions through its web host's
+    /// event stream. Codex CLI and Desktop share one hooks file, WorkBuddy runs CodeBuddy Code's engine, and ZCode's
+    /// desktop app and terminal share one engine and configuration file.
     /// Only Claude Code and the Qoder builds apply a permission-rule update sent back.
     public enum Source: String, CaseIterable, Sendable {
         case claude
@@ -22,6 +23,7 @@ public enum PermissionHooks {
         case zcode
         case qwen
         case antigravity
+        case deepseek
 
         public var vendor: String {
             switch self {
@@ -35,19 +37,25 @@ public enum PermissionHooks {
             case .zcode: return "ZCode"
             case .qwen: return "Qwen"
             case .antigravity: return "Antigravity"
+            case .deepseek: return "DeepSeek"
             }
         }
 
-        /// Native-service approvals do not install or run a permission hook.
-        public var usesHook: Bool { self != .antigravity }
+        /// Native-service approvals and Harness's questions do not install or run a permission hook.
+        public var usesHook: Bool {
+            switch self {
+            case .antigravity, .deepseek: return false
+            default: return true
+            }
+        }
 
         var event: String { "PermissionRequest" }
         /// The id this client's sessions carry in reports, so a request stands beside its session everywhere. The providers
-        /// that read CodeBuddy, WorkBuddy, ZCode, Qwen Code and Antigravity prefix their ids with the client; Claude Code and Codex keep
-        /// the client's own, and the Qoder builds report no sessions.
+        /// that read CodeBuddy, WorkBuddy, ZCode, Qwen Code, Antigravity and DeepSeek prefix their ids with the client;
+        /// Claude Code and Codex keep the client's own, and the Qoder builds report no sessions.
         func sessionID(_ raw: String) -> String {
             switch self {
-            case .codebuddy, .workbuddy, .zcode, .qwen, .antigravity: return "\(rawValue):\(raw)"
+            case .codebuddy, .workbuddy, .zcode, .qwen, .antigravity, .deepseek: return "\(rawValue):\(raw)"
             case .claude, .codex, .qoder, .qoderCN, .qoderWork: return raw
             }
         }
@@ -57,7 +65,7 @@ public enum PermissionHooks {
         var supportsPermissionUpdates: Bool {
             switch self {
             case .claude, .qoder, .qoderCN, .qoderWork: return true
-            case .codex, .codebuddy, .workbuddy, .zcode, .qwen, .antigravity: return false
+            case .codex, .codebuddy, .workbuddy, .zcode, .qwen, .antigravity, .deepseek: return false
             }
         }
         /// Matched against the tool name; empty is every tool. ZCode rejects an empty matcher and runs a group without
@@ -66,16 +74,17 @@ public enum PermissionHooks {
         /// Claude Code's layout keeps the event lists at `hooks.<Event>`; ZCode nests them at `hooks.events.<Event>`.
         var nestsEvents: Bool { self == .zcode }
         /// Calls that ask the user something other than permission. ZCode routes its question and its plan approval
-        /// through this event, and an answer without the user's reply fails the question or approves an unread plan;
-        /// Qwen Code ignores an allow for both. Claude Code takes a question's answers back through this event and
+        /// through this event; a question's answers travel back inside its own input, keyed by the question, the same
+        /// way Claude Code reads them, while an answer to a plan approves it unread, so the plan stays in ZCode's own
+        /// dialog. Qwen Code ignores an allow for both. Claude Code takes a question's answers back through this event and
         /// shows its own plan dialog while the hook waits; its forks are not known to do either. The HUD leaves these to
-        /// the client's own dialog.
+        /// the client's own dialog. DeepSeek Harness never passes this event: its questions arrive on its web host.
         var unanswerableTools: Set<String> {
             switch self {
-            case .zcode: return ["AskUserQuestion", "ExitPlanMode"]
+            case .zcode: return ["ExitPlanMode"]
             case .qwen: return ["ask_user_question", "exit_plan_mode"]
             case .qoder, .qoderCN, .qoderWork, .codebuddy, .workbuddy: return ["AskUserQuestion", "ExitPlanMode"]
-            case .claude, .codex, .antigravity: return []
+            case .claude, .codex, .antigravity, .deepseek: return []
             }
         }
         /// Whether the client writes Claude Code's session record, where a call answered in the client's own dialog
@@ -99,6 +108,7 @@ public enum PermissionHooks {
             case .zcode: return ".zcode/cli"
             case .qwen: return ".qwen"
             case .antigravity: return ".gemini"
+            case .deepseek: return ".dsh"
             }
         }
 
@@ -107,6 +117,7 @@ public enum PermissionHooks {
             if case .codebuddy = self { return CodeBuddySessions.home(base) }
             if case .qwen = self { return QwenSessions.home(base) }
             if case .antigravity = self { return AntigravitySessions.home(base) }
+            if case .deepseek = self { return DeepSeekLocator.dataDirectory(environment: ProcessInfo.processInfo.environment, home: base) }
             // Claude Code's configuration directory moves with CLAUDE_CONFIG_DIR; the forks have no such variable.
             if case .claude = self { return ClaudeSubscription.directory(home: base) }
             return base.appendingPathComponent(directory, isDirectory: true)
@@ -120,6 +131,7 @@ public enum PermissionHooks {
             case .codex: name = "hooks.json"
             case .zcode: name = "config.json"
             case .antigravity: name = "config/hooks.json"
+            case .deepseek: name = "settings.yaml"
             default: name = "settings.json"
             }
             return home(base).appendingPathComponent(name)
@@ -141,6 +153,8 @@ public enum PermissionHooks {
             case .antigravity:
                 return AntigravitySessions.roots(home: home, environment: ProcessInfo.processInfo.environment)
                     .contains { fileManager.fileExists(atPath: $0.path) }
+            case .deepseek:
+                return DeepSeekLocator.isInstalled(directory: self.home(home))
             }
         }
     }
