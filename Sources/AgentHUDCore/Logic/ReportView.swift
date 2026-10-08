@@ -23,7 +23,7 @@ public struct ReportView: Sendable {
         /// from, or what it said at the Stop hook of a hook turn that takes the reading's place. Nil while live status is
         /// off.
         public let message: String?
-        /// Whether live status is on for the session's vendor; a session without a vendor answers to no vendor's switch.
+        /// Whether live status is on for the session's execution agent; a session without one answers to no switch.
         public let liveStatus: Bool
         public let phase: SessionPhase
 
@@ -226,13 +226,18 @@ public struct ReportView: Sendable {
     public func accountNotice(for section: AccountSection) -> String? {
         guard let account = section.account else { return nil }
         let reason = assessment(of: account).status.reason
-        let client = account.account.isBillingPool ? nil :
-            report?.sourceNotices[ClientHome.sourceKey(provider: account.account.provider, home: account.home)]
-                ?? (account.isCurrent ? report?.sourceNotices[account.account.provider] : nil)
+        let client = accountSourceNotice(for: section)
         var parts: [String] = []
         if let reason, !(client?.contains(reason) ?? false) { parts.append(reason) }
         if let client { parts.append(client) }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// Source details are independent of the account's failed quota reading and can be displayed with their own style.
+    public func accountSourceNotice(for section: AccountSection) -> String? {
+        guard let account = section.account, !account.account.isBillingPool else { return nil }
+        return report?.sourceNotices[ClientHome.sourceKey(provider: account.account.provider, home: account.home)]
+            ?? (account.isCurrent ? report?.sourceNotices[account.account.provider] : nil)
     }
 
     /// Tokens per hour over the observed part of this quota window's current cycle. Token history before the local ledger
@@ -257,8 +262,18 @@ public struct ReportView: Sendable {
 
     // MARK: Sessions
 
-    /// The session with this id, the first listed where several share it.
-    public func session(_ id: String) -> Session? { sessions.first { $0.id == id } }
+    /// The session with this id, including agents below the listed root sessions.
+    public func session(_ id: String) -> Session? {
+        if let root = sessions.first(where: { $0.id == id }) { return root }
+        return sessions.lazy.flatMap { $0.session.descendantSessions }.first { $0.id == id }.map { session(for: $0) }
+    }
+
+    /// The session that directly started an agent; nil for a root session or one no longer reported.
+    public func parentSession(of id: String) -> LiveSession? {
+        sessions.lazy.flatMap { [$0.session] + $0.session.descendantSessions }.first {
+            $0.subagentSessions?.contains { $0.id == id } == true
+        }
+    }
 
     /// A session as this view reads it, one that is not among `sessions` included, such as a copy from an earlier report.
     public func session(for session: LiveSession) -> Session {
@@ -287,18 +302,36 @@ public struct ReportView: Sendable {
     /// How long after its last event a vendor still belongs in a logo queue.
     static let queueRecency: TimeInterval = 24 * 3600
 
-    /// What a logo queue shows: every row's vendor, in row order, then any vendor with a session whose last event is at
+    /// What a logo queue shows: every row's vendor, in row order, then any agent with a session whose last event is at
     /// most `queueRecency` old and has no row on that list, most recently used first. An agent used this morning belongs
     /// in the queue whether or not its quota is followed; one nobody has run for a day and nobody watches does not. A
     /// vendor whose live status is off is not counted as having run, since that switch is what says its runs may be
-    /// reported at all.
+    /// reported at all. Grok's shared account rows use its recent execution clients' marks, or an idle account mark
+    /// when there is no client to show; each client's own sessions decide whether its mark is working.
     public var queueVendors: [(vendor: String, isWorking: Bool)] {
-        let working = workingVendors
-        var order = rows.map(\.agent.vendor)
-        var seen = Set(order)
+        let working = Set(liveSessions.compactMap(\.source.agentVendor))
         let cutoff = now.addingTimeInterval(-Self.queueRecency)
-        for session in sessions where session.lastEventAt >= cutoff {
-            guard session.liveStatus, let vendor = session.source.vendor, seen.insert(vendor).inserted else { continue }
+        let recent = sessions.filter { $0.liveStatus && $0.lastEventAt >= cutoff }
+        var grokSeen = Set<String>()
+        let grokAgents = recent.compactMap { session -> String? in
+            guard session.source.vendor == "Grok", let agent = session.source.agentVendor,
+                  grokSeen.insert(agent).inserted else { return nil }
+            return agent
+        }
+        var order: [String] = []
+        var grokAdded = false
+        for row in rows {
+            if row.agent.vendor == "Grok" {
+                guard !grokAdded else { continue }
+                grokAdded = true
+                order += grokAgents.isEmpty ? ["Grok"] : grokAgents
+            } else {
+                order.append(row.agent.vendor)
+            }
+        }
+        var seen = Set(order)
+        for session in recent {
+            guard let vendor = session.source.agentVendor, seen.insert(vendor).inserted else { continue }
             order.append(vendor)
         }
         return order.map { (vendor: $0, isWorking: working.contains($0)) }
@@ -342,12 +375,13 @@ public struct ReportView: Sendable {
 
     private static func read(_ session: LiveSession, index: Index, settings: Settings, now: Date) -> Session {
         let vendor = index.vendors[session.agentId] ?? SessionSource.vendor(impliedBy: session.agentId)
+        let source = SessionSource(vendor: vendor, client: session.client)
         let provider = vendor?.lowercased()
         let turns = (index.turns[session.id] ?? []).filter { provider == nil || $0.provider.lowercased() == provider }
         let turn = newest(turns)
         let asked = index.requests[session.id]
         var lastEventAt = max(session.lastEvent(turnAt: index.lastTurnEvents[session.id]), asked ?? .distantPast)
-        let liveStatus = settings.liveStatusEnabled(for: vendor ?? "")
+        let liveStatus = settings.liveStatusEnabled(for: source.agentVendor ?? "")
         var phase = SessionPhase(session: session, turn: turn, lastEventAt: lastEventAt, liveStatus: liveStatus, now: now)
         var message = newest(turns.filter { $0.message != nil })?.message
         if liveStatus, let hook = index.hooks[session.id],
@@ -357,7 +391,7 @@ public struct ReportView: Sendable {
             message = hook.message ?? message
         }
         if liveStatus, asked != nil { phase = phase.awaitingApproval(session, turn: turn) }
-        return Session(session: session, source: SessionSource(vendor: vendor, client: session.client), turn: turn,
+        return Session(session: session, source: source, turn: turn,
                        lastEventAt: lastEventAt, message: liveStatus ? message : nil, liveStatus: liveStatus, phase: phase)
     }
 }

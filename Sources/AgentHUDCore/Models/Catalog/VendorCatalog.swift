@@ -43,6 +43,7 @@ public enum VendorCatalog {
                       "codex-tui": "CLI", "codex_cli_rs": "CLI", "codex-cli": "CLI", "codex_exec": "CLI · exec"],
             windows: ["gpt-reserve": "Luna Reserve"], windowWords: ["gpt-reserve": "Reserve"]),
         "Cursor": Entry(bundleIDs: ["com.todesktop.230313mzl4w4u92"]),
+        "Grok Bot": Entry(bundleIDs: ["com.anysphere.sand"]),
         // An API balance, not a subscription: its rows stay out of the HUD until switched on.
         "DeepSeek": Entry(startsHidden: true),
     ]

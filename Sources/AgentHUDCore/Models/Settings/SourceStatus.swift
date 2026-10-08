@@ -11,12 +11,18 @@ public struct SourceStatus: Hashable, Sendable, Identifiable {
 
     public let id: String
     public let name: String
+    /// The account provider, shared by execution clients that use the same service.
+    public let provider: String
+    /// Whether this build can read the client's session state.
+    public let supportsLiveStatus: Bool
     public let detail: String
     public let state: State
 
-    public init(id: String, name: String, detail: String, state: State) {
+    public init(id: String, name: String, detail: String, state: State, provider: String? = nil, supportsLiveStatus: Bool = true) {
         self.id = id
         self.name = name
+        self.provider = provider ?? name
+        self.supportsLiveStatus = supportsLiveStatus
         self.detail = detail
         self.state = state
     }

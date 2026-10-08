@@ -111,8 +111,8 @@ final class SessionSurfaceTests: XCTestCase {
             cardSince: now.addingTimeInterval(-2 * hour + 10), headerLabel: "ended 1h 59m ago"))
     }
 
-    /// The island summarizes recent sessions — those with work in flight first, the ones waiting for the user ahead
-    /// of the ones still running, and up to three ended after them — and counts every running one for the header. One still
+    /// The island summarizes up to five sessions — those with work in flight first, the ones waiting for the user ahead
+    /// of the ones still running, then those last active in the past day — and counts every running one for the header. One still
     /// in flight that the Mac can no longer vouch for sits with the ended.
     @MainActor
     func testTheIslandListsWaitingThenRunningThenTheRecentlyEnded() throws {
@@ -121,14 +121,14 @@ final class SessionSurfaceTests: XCTestCase {
         let unvouched = session("unvouched", observed: -1800)
         let running = (1...4).map { session("running-\($0)", observed: -Double($0) * 60) }
         let waiting = turn("running-2", .waitingForApproval, started: -600, observed: -100)
-        // The sessions shown; the running ones, which the header counts; the rows' dots; how many are left out.
+        // The sessions shown; the running ones, which the header counts; the rows' dots; hidden summary sessions.
         let cases: [(String, [LiveSession], shown: [String], running: Int, dots: [SessionDot], more: Int)] = [
             ("nothing running", ended + [unvouched],
-             ["unvouched", "ended-1", "ended-2"], 0,
-             [.ended, .ended, .ended], 2),
+             ["unvouched", "ended-1", "ended-2", "ended-3", "ended-4"], 0,
+             [.ended, .ended, .ended, .ended, .ended], 0),
             ("four running", ended + [unvouched] + running,
-             ["running-2", "running-1", "running-3", "running-4", "unvouched", "ended-1", "ended-2"], 4,
-             [.waiting, .running, .running, .running, .ended, .ended, .ended], 2),
+             ["running-2", "running-1", "running-3", "running-4", "unvouched"], 4,
+             [.waiting, .running, .running, .running, .ended], 4),
             ("two running", ended + Array(running.prefix(2)),
              ["running-2", "running-1", "ended-1", "ended-2", "ended-3"], 2,
              [.waiting, .running, .ended, .ended, .ended], 1),
@@ -160,9 +160,9 @@ final class SessionSurfaceTests: XCTestCase {
         XCTAssertEqual(rows.more, 0)
     }
 
-    /// Five active rows and three ended rows leave room for the account picture; the full list holds the rest.
+    /// The limit applies to the entire summary and the remaining count includes both active and recently ended work.
     @MainActor
-    func testTheIslandKeepsActiveAndEndedSummariesSmallAndCountsTheRest() throws {
+    func testTheIslandLimitsTotalRowsAndCountsEveryHiddenSummarySession() throws {
         let store = try makeStore()
         let ended: [LiveSession] = (0..<30).map { index in
             let offset = -Double(index + 1) * 60
@@ -175,11 +175,59 @@ final class SessionSurfaceTests: XCTestCase {
         show(running + ended,
              turns: [turn("running-7", .waitingForApproval, started: -600, observed: -100)], in: store)
         let rows = HoverPanelView.sessionRows(store)
-        XCTAssertEqual(rows.shown.count, HoverPanelView.activeSessionRowLimit + HoverPanelView.endedSessionRowLimit)
-        XCTAssertEqual(rows.shown.map(\.id), ["running-7", "running-0", "running-1", "running-2", "running-3",
-                                             "ended-0", "ended-1", "ended-2"])
-        XCTAssertEqual(rows.more, 30)
+        XCTAssertEqual(rows.shown.count, HoverPanelView.sessionRowLimit)
+        XCTAssertEqual(rows.shown.map(\.id), ["running-7", "running-0", "running-1", "running-2", "running-3"])
+        XCTAssertEqual(rows.more, running.count + ended.count - rows.shown.count)
         XCTAssertEqual(rows.running.count, 8)
+    }
+
+    /// Seven-day history remains in statistics; only last-day activity belongs in this summary and its count.
+    @MainActor
+    func testTheIslandCountsRecentEndedRowsButExcludesExpiredHistory() throws {
+        let store = try makeStore()
+        let recent = (0..<5).map { index in
+            session("recent-\(index)", ended: -Double(index + 1) * 60, observed: -Double(index + 1) * 60)
+        }
+        let boundary = session("day-boundary", started: -48 * hour, ended: -24 * hour, observed: -24 * hour)
+        let history = (0..<111).map { index in
+            session("history-\(index)", started: -48 * hour, ended: -24 * hour - Double(index + 1),
+                    observed: -24 * hour - Double(index + 1))
+        }
+        show(recent + [boundary] + history, in: store)
+        let rows = HoverPanelView.sessionRows(store)
+        XCTAssertEqual(rows.shown.map(\.id), recent.map(\.id))
+        XCTAssertEqual(rows.more, 1, "The exact day boundary is included; older history cannot inflate +N more")
+        XCTAssertEqual(store.statsSessions.count, recent.count + 1 + history.count,
+                       "The compact summary must not remove history from statistics")
+    }
+
+    @MainActor
+    func testAccountWideReceiptsCannotDisplaceTheLocalBotSummaryButRemainInStatistics() throws {
+        let store = try makeStore()
+        let bots = (0..<3).map { index in
+            session("bot-\(index)", agent: "grok-model:grok-4", started: -hour,
+                    ended: -Double(index + 1) * 600, observed: -Double(index + 1) * 600, client: "Grok Bot")
+        }
+        let receipts = (0..<9).map { index in
+            session("receipt-\(index)", agent: "cursor-model:api", started: -hour,
+                    ended: -Double(index + 1), observed: -Double(index + 1), accountWide: true)
+        }
+        show(receipts + bots, in: store)
+        let rows = HoverPanelView.sessionRows(store)
+        XCTAssertEqual(rows.shown.map(\.id), bots.map(\.id))
+        XCTAssertEqual(rows.running.count, 0)
+        XCTAssertEqual(rows.more, 0)
+        XCTAssertEqual(store.statsSessions.count, bots.count + receipts.count,
+                       "Account-wide billing remains available in the full statistics list")
+    }
+
+    @MainActor
+    func testASessionWithoutATerminalShowsItsTitleWithoutAPlaceholder() {
+        let bot = session("New Bot working on the next task", observed: -60, client: "Grok Bot")
+        XCTAssertEqual(HoverPanelView.sessionTitle(bot), bot.task)
+        let local = LiveSession(id: "terminal-session", agentId: "claude-model:opus", task: "Fix auth bug in middleware",
+                                terminal: "project", startedAt: now, pctOfWindow: nil, tokensIn: 0, tokensOut: 0)
+        XCTAssertEqual(HoverPanelView.sessionTitle(local), "Fix auth bug · project")
     }
 
     /// A row's badge counts only the questions put to that exact session: another session's questions and a plain
@@ -312,10 +360,10 @@ final class SessionSurfaceTests: XCTestCase {
 
     /// Times are seconds from now.
     private func session(_ id: String, agent: String = "claude-model:opus", started: TimeInterval = -5 * 3600, ended: TimeInterval? = nil,
-                         observed: TimeInterval) -> LiveSession {
+                         observed: TimeInterval, client: String? = nil, accountWide: Bool = false) -> LiveSession {
         LiveSession(id: id, agentId: agent, task: id, terminal: nil, startedAt: now.addingTimeInterval(started),
                     endedAt: ended.map { now.addingTimeInterval($0) }, pctOfWindow: nil, tokensIn: 1, tokensOut: 1,
-                    observedAt: now.addingTimeInterval(observed))
+                    client: client, accountWide: accountWide, observedAt: now.addingTimeInterval(observed))
     }
 
     private func turn(_ session: String, _ state: SessionTurn.State, id: String = "1", provider: String = "claude", started: TimeInterval?,

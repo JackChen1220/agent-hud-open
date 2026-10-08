@@ -316,7 +316,8 @@ final class UsageCollector {
         store.isRefreshing = true
         defer { store.isRefreshing = false }
         do {
-            let fetched = try await provider.fetchUsage(agents: settings.agents, historyHours: hooks.historyHours(), sources: names)
+            let agents = settings.agents
+            let fetched = try await provider.fetchUsage(agents: agents, historyHours: hooks.historyHours(), sources: names)
             let read = names ?? Set(sources.map(\.name))
             signalled.subtract(read)
             for name in read { readAt[name] = date }
@@ -324,12 +325,14 @@ final class UsageCollector {
             mergeRequested = false
             let report = await hooks.merge?(fetched) ?? fetched
             guard store.isAccessAllowed, !Task.isCancelled else { needsFetch = true; return }
+            let agentsUnchanged = settings.agents == agents
             settings.mergeDiscovered(from: report)
+            // This pass consumed its captured input and its own discoveries, but not an edit made while it awaited.
+            fetchedAgents = agentsUnchanged ? settings.agents : agents
             generation += 1
             local = (fetched, generation)
             store.collected(report)
             fetchedAt = date
-            fetchedAgents = settings.agents
         } catch {
             // Every source failed; the retry reads them all again instead of spinning on the same signals.
             signalled = []

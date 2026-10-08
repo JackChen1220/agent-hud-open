@@ -169,7 +169,8 @@ public struct CombinedUsageProvider: UsageProvider {
     /// Where each session's tokens went. A session is read again when its counts move or when the ledger has written any
     /// log it is made of since its breakdown was read: sub-agents spend without the session's own log changing, and a
     /// source can record a session's events a pass or more after first reporting it.
-    private func breakdowns(of sessions: [LiveSession]) async -> [String: SessionUsage] {
+    private func breakdowns(of roots: [LiveSession]) async -> [String: SessionUsage] {
+        let sessions = roots.flatMap { [$0] + $0.descendantSessions }
         let (known, mark) = await results.breakdowns(generation: await ledger.generation)
         let changed = await ledger.changedKeys(after: mark), now = await ledger.writeMark
         var kept: [String: Results.Breakdown] = [:], requests: [SessionUsageRequest] = []

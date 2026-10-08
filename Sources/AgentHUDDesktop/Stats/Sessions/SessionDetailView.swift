@@ -16,6 +16,7 @@ struct SessionDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             header
             figures(usage)
+            if let children = session.subagentSessions { agents(children) }
             if let usage {
                 tokens(usage)
                 if let index = store.focusedTurn, !usage.turns.isEmpty {
@@ -39,11 +40,14 @@ struct SessionDetailView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Circle().fill(dot).frame(width: 8, height: 8)
-                if let vendor = source.vendor { AgentLogo(vendor: vendor, size: 14) }
+                if let vendor = source.agentVendor { AgentLogo(vendor: vendor, size: 14) }
                 Text(store.consumerName(session.agentId)).font(.ui(12, .semibold))
                 Text(source.name).font(.ui(12)).foregroundStyle(theme.secondary)
                 Spacer(minLength: 8)
                 Text(Self.statusLabel(session, store: store)).font(.tabular(12)).foregroundStyle(theme.secondary)
+            }
+            if let name = session.agentName, name != session.task {
+                Text(name).font(.ui(12, .semibold)).foregroundStyle(theme.secondary).textSelection(.enabled)
             }
             Text(session.task)
                 .font(.ui(16, .semibold))
@@ -81,6 +85,43 @@ struct SessionDetailView: View {
          L10n.text("开始于 ", "Started ") + ChartData.weekdayTime(session.startedAt),
          L10n.text("时长 ", "Duration ") + Countdown.format(session.duration(now: store.now))]
             .compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// Direct children open the same detail surface; its selection resolves against every fresh report.
+    private func agents(_ children: [LiveSession]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L10n.text("子 agent（\(children.count)）", "Sub-agents (\(children.count))"))
+                .font(.ui(12, .semibold))
+            ForEach(children) { child in
+                Button {
+                    store.focusedSessionID = child.id
+                } label: {
+                    HStack(alignment: .top, spacing: 8) {
+                        let kind = Self.dot(child, store: store)
+                        Circle().fill(kind == .waiting ? theme.status(.warning)
+                            : kind == .running ? AgentPalette.swiftUIColor(index: store.consumerPaletteIndex(child.agentId)) : theme.dotEnded)
+                            .frame(width: 6, height: 6).padding(.top, 4)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(child.agentName ?? child.task).font(.ui(12, .semibold)).lineLimit(1)
+                            if child.agentName != nil && child.agentName != child.task {
+                                Text(child.task).font(.ui(11)).foregroundStyle(theme.secondary).lineLimit(2)
+                            }
+                            Text(store.consumerName(child.agentId) + " · " + TokenFormat.short(store.sessionTokens(child).total)
+                                 + L10n.text(" Token", " tokens"))
+                                .font(.ui(10)).foregroundStyle(theme.secondary)
+                        }
+                        Spacer(minLength: 8)
+                        Text(Self.statusLabel(child, store: store)).font(.ui(10)).foregroundStyle(theme.secondary)
+                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(theme.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("session-subagent-\(child.id)")
+            }
+        }
+        .card(theme, padding: EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14))
     }
 
     // MARK: Figures

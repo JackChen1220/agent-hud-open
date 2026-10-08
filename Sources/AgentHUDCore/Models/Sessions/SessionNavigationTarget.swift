@@ -7,8 +7,9 @@ public enum SessionNavigationTarget: Hashable, Codable, Sendable {
     case claudeCoworkSession(id: String)
     case iTermSession(id: String)
     case antigravityConversation(id: String)
+    case grokBotAgent(id: String)
 
-    private enum Kind: String, Codable { case codexThread, claudeDesktopSession, claudeCoworkSession, iTermSession, antigravityConversation }
+    private enum Kind: String, Codable { case codexThread, claudeDesktopSession, claudeCoworkSession, iTermSession, antigravityConversation, grokBotAgent }
     private enum CodingKeys: String, CodingKey { case kind, id }
 
     public init(from decoder: Decoder) throws {
@@ -20,6 +21,7 @@ public enum SessionNavigationTarget: Hashable, Codable, Sendable {
         case .claudeCoworkSession: self = .claudeCoworkSession(id: id)
         case .iTermSession: self = .iTermSession(id: id)
         case .antigravityConversation: self = .antigravityConversation(id: id)
+        case .grokBotAgent: self = .grokBotAgent(id: id)
         }
     }
 
@@ -40,6 +42,9 @@ public enum SessionNavigationTarget: Hashable, Codable, Sendable {
             try values.encode(id, forKey: .id)
         case .antigravityConversation(let id):
             try values.encode(Kind.antigravityConversation, forKey: .kind)
+            try values.encode(id, forKey: .id)
+        case .grokBotAgent(let id):
+            try values.encode(Kind.grokBotAgent, forKey: .kind)
             try values.encode(id, forKey: .id)
         }
     }

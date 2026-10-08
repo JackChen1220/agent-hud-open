@@ -250,20 +250,26 @@ final class AgentSettingsTests: XCTestCase {
 
     func testEverySupportedSourceRemainsListedWhenNoneIsInstalledWithoutInventingReadings() {
         // The detector uses these existing catalogs plus the core clients; no second table of supported names.
-        let enumerated = Set(AdditionalSource.allCases.map(\.vendor) + OpenAgentSource.allCases.map(\.name))
+        let enumerated = Set(AdditionalSource.allCases.map(\.vendor) + OpenAgentSource.allCases.map(\.name) + ["Grok CLI", "Grok Bot"])
         let coreClients = SessionSource.agentVendors.filter { !enumerated.contains($0) }
         let sources = coreClients.map {
             SourceStatus(id: $0.lowercased(), name: $0, detail: "", state: .notDetected)
-        } + AdditionalSource.allCases.map {
-            SourceStatus(id: $0.rawValue, name: $0.vendor, detail: $0.detail, state: .notDetected)
+        } + AdditionalSource.allCases.flatMap { source -> [SourceStatus] in
+            guard source == .grok else {
+                return [SourceStatus(id: source.rawValue, name: source.vendor, detail: source.detail, state: .notDetected)]
+            }
+            return [SourceStatus(id: "grok", name: "Grok CLI", detail: "", state: .notDetected, provider: "Grok"),
+                    SourceStatus(id: "grok-bot", name: "Grok Bot", detail: "", state: .notDetected, provider: "Grok", supportsLiveStatus: false)]
         } + OpenAgentSource.allCases.map {
             SourceStatus(id: $0.rawValue, name: $0.name, detail: $0.detail, state: .notDetected)
         }
-        XCTAssertEqual(sources.count, 17)
+        XCTAssertEqual(sources.count, 18)
         XCTAssertEqual(Set(sources.map(\.name)).count, sources.count)
         let groups = AgentSettingsGroup.make(sources: sources, agents: [])
-        XCTAssertEqual(groups.map(\.id), sources.map(\.name), "Every supported source has a selectable settings group")
-        XCTAssertEqual(groups.compactMap(\.source), sources)
+        var seen = Set<String>()
+        let providers = sources.filter { seen.insert($0.provider).inserted }
+        XCTAssertEqual(groups.map(\.id), providers.map(\.provider), "Execution clients share their account provider's settings group")
+        XCTAssertEqual(groups.compactMap(\.source), providers)
         XCTAssertTrue(groups.allSatisfy { $0.agents.isEmpty && $0.accounts.isEmpty && $0.billingAccounts.isEmpty
             && $0.unobservedAccounts.isEmpty && $0.plans.isEmpty && $0.apiProviders.isEmpty
             && $0.displayedCount(settings: Settings()) == 0 }, "An undetected source is not a quota window or an observed account")

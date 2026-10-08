@@ -146,7 +146,7 @@ private struct AgentProviderDetail: View {
         let observer = ClientObserverStatus(vendor: group.id, clientHooks: settings.settings.clientHooks, report: report)
         let hasClientReadings = observer != nil || group.id == AdditionalSource.copilot.vendor
         VStack(alignment: .leading, spacing: 24) {
-            if !hasAccounts && group.agents.isEmpty && !group.hasLiveStatus && !hasClientReadings {
+            if !hasAccounts && group.agents.isEmpty && !group.hasLiveStatus && !hasClientReadings && group.clients.isEmpty {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(group.source?.statusLabel ?? L10n.text("暂无可配置项", "No settings available yet"))
                         .font(.ui(13, .medium))
@@ -209,6 +209,29 @@ private struct AgentProviderDetail: View {
             if group.hasLiveStatus {
                 SettingsSection(title: L10n.text("会话与提醒", "Sessions & reminders"), theme: theme) {
                     AgentLiveStatusSettings(vendor: group.id, settings: settings)
+                }
+            }
+            if !group.clients.isEmpty {
+                SettingsSection(title: "Agent", theme: theme) {
+                    ForEach(group.clients) { client in
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 8) {
+                                AgentLogo(vendor: client.name, size: 18)
+                                Text(client.name).font(.ui(12, .medium))
+                                Spacer(minLength: 8)
+                                Text(client.state == .installed ? L10n.text("已安装", "Installed") : client.statusLabel)
+                                    .font(.ui(10)).foregroundStyle(theme.secondary)
+                            }
+                            Text(client.detail).font(.ui(11)).foregroundStyle(theme.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if client.supportsLiveStatus {
+                                AgentLiveStatusSettings(vendor: client.name, settings: settings)
+                            }
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 12)
+                        .accessibilityIdentifier("agent-client-\(client.id)")
+                        if client.id != group.clients.last?.id { SettingsDivider(theme: theme) }
+                    }
                 }
             }
             if hasClientReadings {

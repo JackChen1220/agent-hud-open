@@ -6,6 +6,9 @@ public struct SessionCompletion: Codable, Hashable, Sendable, Identifiable {
     public let id: String
     public let sessionID: String
     public let vendor: String
+    /// Execution client, distinct from the account provider.
+    public var client: String?
+    public var agentVendor: String { SessionSource(vendor: vendor, client: client).agentVendor ?? vendor }
     public var task: String
     public let model: String
     public let startedAt: Date?
@@ -16,9 +19,11 @@ public struct SessionCompletion: Codable, Hashable, Sendable, Identifiable {
     public var navigationTarget: SessionNavigationTarget?
 
     public init(sessionID: String, vendor: String, turnID: String, task: String, model: String,
-                startedAt: Date?, completedAt: Date, message: String? = nil, navigationTarget: SessionNavigationTarget? = nil) {
+                startedAt: Date?, completedAt: Date, message: String? = nil, navigationTarget: SessionNavigationTarget? = nil,
+                client: String? = nil) {
         id = RecordCoding.hash([vendor, sessionID, turnID])
         self.sessionID = sessionID; self.vendor = vendor; self.task = task; self.model = model
+        self.client = client
         self.startedAt = startedAt; self.completedAt = completedAt
         self.message = Self.lastParagraph(message)
         self.navigationTarget = navigationTarget
@@ -40,7 +45,7 @@ public struct SessionCompletion: Codable, Hashable, Sendable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, sessionID, vendor, task, model, startedAt, completedAt
+        case id, sessionID, vendor, client, task, model, startedAt, completedAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -48,6 +53,7 @@ public struct SessionCompletion: Codable, Hashable, Sendable, Identifiable {
         id = try values.decode(String.self, forKey: .id)
         sessionID = try values.decode(String.self, forKey: .sessionID)
         vendor = try values.decode(String.self, forKey: .vendor)
+        client = try values.decodeIfPresent(String.self, forKey: .client)
         task = try values.decode(String.self, forKey: .task)
         model = try values.decode(String.self, forKey: .model)
         startedAt = try values.decodeIfPresent(Date.self, forKey: .startedAt)

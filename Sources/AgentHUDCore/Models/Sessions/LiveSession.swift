@@ -22,6 +22,10 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
     public let workingDirectory: String?
     /// Logs of the sub-agents this session started that do not lie under its own log's directory, such as Codex's.
     public let subagentTranscripts: [String]?
+    /// The readable name assigned to a spawned agent by its source.
+    public let agentName: String?
+    /// The agents this session directly started, each with its own descendants.
+    public let subagentSessions: [LiveSession]?
     /// When the session's source last recorded anything for it, a log's last line or newest event, where the provider
     /// reads that. Unlike `observedAt`, reading the log again does not move it.
     public let lastActivityAt: Date?
@@ -45,6 +49,8 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
         observedAt: Date? = nil,
         workingDirectory: String? = nil,
         subagentTranscripts: [String]? = nil,
+        agentName: String? = nil,
+        subagentSessions: [LiveSession]? = nil,
         lastActivityAt: Date? = nil,
         navigationTarget: SessionNavigationTarget? = nil
     ) {
@@ -64,6 +70,8 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
         self.accountWide = accountWide
         self.workingDirectory = workingDirectory
         self.subagentTranscripts = subagentTranscripts.flatMap { $0.isEmpty ? nil : $0 }
+        self.agentName = agentName
+        self.subagentSessions = subagentSessions.flatMap { $0.isEmpty ? nil : $0 }
         self.lastActivityAt = lastActivityAt
         self.navigationTarget = navigationTarget
     }
@@ -81,7 +89,7 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, agentId, task, terminal, startedAt, endedAt, observedAt, pctOfWindow, tokensIn, tokensOut, client, transcriptPath, cacheReadTokens, accountWide
-        case workingDirectory, subagentTranscripts, lastActivityAt
+        case workingDirectory, subagentTranscripts, agentName, subagentSessions, lastActivityAt
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -96,7 +104,14 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
             observedAt: try c.decodeIfPresent(Date.self, forKey: .observedAt),
             workingDirectory: try c.decodeIfPresent(String.self, forKey: .workingDirectory),
             subagentTranscripts: try c.decodeIfPresent([String].self, forKey: .subagentTranscripts),
+            agentName: try c.decodeIfPresent(String.self, forKey: .agentName),
+            subagentSessions: try c.decodeIfPresent([LiveSession].self, forKey: .subagentSessions),
             lastActivityAt: try c.decodeIfPresent(Date.self, forKey: .lastActivityAt))
+    }
+
+    /// Every descendant, in the order of the tree; the top-level session list keeps only the roots.
+    public var descendantSessions: [LiveSession] {
+        (subagentSessions ?? []).flatMap { [$0] + $0.descendantSessions }
     }
 
     /// The working directory with the home folder written as `~`, or the project's name where only that is known.

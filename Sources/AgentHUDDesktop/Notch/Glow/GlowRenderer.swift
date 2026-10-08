@@ -4,7 +4,7 @@ import AgentHUDCore
 
 /// A pre-rendered, blurred glow bitmap. Rendering once per parameter change keeps the always-on breathing
 /// animation a pure opacity composite instead of a live blur filter.
-struct GlowImage {
+struct GlowImage: Sendable {
     let image: CGImage
     /// Extra points on every side so the blur is not clipped by the bitmap edge.
     let padding: CGFloat
@@ -41,6 +41,7 @@ enum GlowRenderer {
             } else {
                 drawFalloff(glow: glow, islandSize: islandSize, islandRadius: islandRadius, in: rect, context: context, scale: scale)
             }
+            guard !Task.isCancelled else { return }
             context.setBlendMode(.sourceIn)
             drawGradient(stops, in: rect, context: context, space: space)
         }
@@ -67,6 +68,7 @@ enum GlowRenderer {
         let steps = max(1, Int(ceil(featherWidth * scale * 2)))
         context.setBlendMode(.copy)
         for step in stride(from: steps, through: 0, by: -1) {
+            guard !Task.isCancelled else { return }
             let t = CGFloat(step) / CGFloat(steps)
             let inset = featherWidth * (1 - t)
             let contour = CGRect(
@@ -99,6 +101,7 @@ enum GlowRenderer {
         let steps = max(1, Int(ceil(reach * scale * 2)))
         context.setBlendMode(.copy)
         for step in stride(from: steps, through: 0, by: -1) {
+            guard !Task.isCancelled else { return }
             let t = CGFloat(step) / CGFloat(steps)
             let distance = reach * t
             let contourRadius = radius + distance
@@ -129,6 +132,7 @@ enum GlowRenderer {
         colorSpace: CGColorSpace? = nil,
         draw: (CGRect, CGContext, CGColorSpace) -> Void
     ) -> GlowImage? {
+        guard !Task.isCancelled else { return nil }
         let totalWidth = width + padding * 2
         let totalHeight = height + padding * 2
         let pixelWidth = Int((totalWidth * scale).rounded(.up))
@@ -145,7 +149,7 @@ enum GlowRenderer {
         let rect = CGRect(x: padding, y: padding, width: width, height: height)
         draw(rect, context, space)
 
-        guard let base = context.makeImage() else { return nil }
+        guard !Task.isCancelled, let base = context.makeImage() else { return nil }
         let size = CGSize(width: totalWidth, height: totalHeight)
         guard blur > 0, let filter = CIFilter(name: "CIGaussianBlur") else {
             return GlowImage(image: base, padding: padding, size: size)

@@ -94,9 +94,10 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
         do {
             let result = try await readQuota()
             try Task.checkCancellation()
-            lastQuota = (now, .success(result))
+            let observedAt = result.observedAt ?? now
+            lastQuota = (observedAt, .success(result))
             if result.forgetAccounts { await history.removeAll() }
-            await history.append(result.scopedWindows(source).map { .init(agentId: $0.id, timestamp: now, remainingPct: $0.remaining) }, now: now)
+            await history.append(result.scopedWindows(source).map { .init(agentId: $0.id, timestamp: observedAt, remainingPct: $0.remaining) }, now: now)
         } catch {
             if Task.isCancelled { return }
             lastQuota = (now, .failure(UsageProviderError(error.localizedDescription)))
@@ -107,6 +108,15 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
         let now = clock(), weekAgo = now.addingTimeInterval(-AlertPolicy.insightsLookback)
         let since = min(weekAgo, now.addingTimeInterval(-Double(historyHours) * 3600))
         var local = await readSessions(since)
+        if source == .grok {
+            let targets = GrokSessionOrigins.read(sessionIDs: Set(local.sessions.filter { $0.client == "Grok CLI" }.map(\.id)))
+            for index in local.sessions.indices where local.sessions[index].client == "Grok CLI" {
+                local.sessions[index].navigationTarget = targets[local.sessions[index].id]
+                for completion in local.sessions[index].completions.indices {
+                    local.sessions[index].completions[completion].navigationTarget = targets[local.sessions[index].id]
+                }
+            }
+        }
         var hookCompletions: [SessionCompletion] = [], hookNotice: String?
         do { hookCompletions = try readCompletions(since) }
         catch { hookNotice = L10n.text("完成提醒记录读取失败", "Turn completion records could not be read") }
@@ -149,7 +159,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
                                tokensIn: item.events.reduce(0) { $0 + $1.input }, tokensOut: item.events.reduce(0) { $0 + $1.output },
                                client: item.client, transcriptPath: item.path,
                                cacheReadTokens: item.events.reduce(0) { $0 + $1.cacheRead }, accountWide: item.accountWide, observedAt: now,
-                               workingDirectory: item.workspace, lastActivityAt: end)
+                               workingDirectory: item.workspace, lastActivityAt: end, navigationTarget: item.navigationTarget)
         }
         let snapshots = windows.map {
             UsageSnapshot(agentId: $0.id, remainingPct: $0.remaining, resetAt: $0.reset, windowDuration: $0.duration, updatedAt: observedAt)
@@ -160,22 +170,31 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
             insights[snapshot.agentId] = QuotaMath.insights(snapshot: snapshot, samples: readings, now: now)
         }
         // Every notice is shown; only a quota reading that failed holds back the vendor's alerts, levels and retained sessions.
-        let notice = [quotaNotice, quota.displayNotice, local.notice, hookNotice].compactMap { $0 }.joined(separator: " · ")
+        let displayNotice = [quota.displayNotice, local.notice, hookNotice].compactMap { $0 }.joined(separator: " · ")
+        let notice = [quotaNotice, displayNotice.isEmpty ? nil : displayNotice].compactMap { $0 }.joined(separator: " · ")
         let descriptors = windows.map {
             AgentDescriptor(id: $0.id, vendor: source.vendor, model: $0.label, shortModel: $0.shortLabel ?? $0.label,
                             source: L10n.sourceAdditionalUsage, enabled: true, account: account, allModels: $0.allModels)
         }
         let consumerIDs = Set(consumers.map(\.id))
         let quotaIDs = Set(windows.map(\.id) + agents.filter { $0.vendor == source.vendor }.map(\.id))
+        let accounts: [String: [AccountObservation]]?
+        if quota.isSignedIn {
+            accounts = [source.vendor: [AccountObservation(account: account, client: quota.client, label: quota.label,
+                plan: quota.plan, observedAt: observedAt,
+                quotaWindowIDs: quota.quotaWindowIDs.map { Set($0.map(account.windowID)) })]]
+        } else if quota.signedOut, quotaNotice == nil {
+            // A successful signed-out/absent client read confirms that previously retained accounts are no longer current.
+            accounts = [source.vendor: []]
+        } else { accounts = nil }
         return UsageReport(generatedAt: now, snapshots: snapshots, sessions: sessions,
             notice: notice.isEmpty ? nil : notice, discoveredAgents: descriptors, consumers: consumers,
             indexing: local.indexing, insightsByAgent: insights, subscriptions: quota.plan.map { [source.vendor: $0] } ?? [:],
-            sourceNotices: notice.isEmpty ? [:] : [source.vendor: notice], quotaNotices: quotaNotice.map { [source.vendor: $0] } ?? [:],
+            sourceNotices: displayNotice.isEmpty ? [:] : [source.vendor: displayNotice], quotaNotices: quotaNotice.map { [source.vendor: $0] } ?? [:],
             readingIssues: quotaNotice.map { [source.vendor: .readFailed($0)] } ?? [:],
             consumerIdsByQuota: Dictionary(uniqueKeysWithValues: quotaIDs.map { ($0, consumerIDs) }),
             completions: local.sessions.flatMap(\.completions) + hookCompletions, turns: local.sessions.flatMap(\.turns),
-            accounts: quota.isSignedIn ? [source.vendor: [AccountObservation(account: account, label: quota.label, plan: quota.plan, observedAt: observedAt,
-                quotaWindowIDs: quota.quotaWindowIDs.map { Set($0.map(account.windowID)) })]] : nil,
+            accounts: accounts,
             forgottenAccountProviders: quota.forgetAccounts ? [source.vendor] : nil)
     }
 }

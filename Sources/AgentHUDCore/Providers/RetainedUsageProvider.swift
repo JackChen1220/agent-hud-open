@@ -126,7 +126,11 @@ extension UsageReport {
         let knownAgents = UsageAggregation.consumersUnion([discoveredAgents, consumers, previous.discoveredAgents, previous.consumers])
         // A source whose read or quota reading failed keeps its last sessions; a notice about its local logs or hooks does not.
         let failedIDs = Set(knownAgents.filter { !vendorStatus($0.vendor).isNormal }.map(\.id))
-        let retainedSessions = UsageAggregation.sessionsUnion([sessions, previous.sessions.filter { failedIDs.contains($0.agentId) }])
+        // Bot's account-scoped local inventory owns its sessions; an unrelated CLI quota failure must not restore a
+        // roster that a sign-out or account switch removed. Its file reader already retains unreadable files.
+        let retainedSessions = UsageAggregation.sessionsUnion([sessions, previous.sessions.filter {
+            failedIDs.contains($0.agentId) && $0.client != "Grok Bot"
+        }])
         let retainedSnapshots = reportedSnapshots + previous.snapshots.filter { !currentIDs.contains($0.agentId) && !retiredWindowIDs.contains($0.agentId) }
         let rows = AntigravityClient.summaryNames(UsageAggregation.consumersUnion([reportedRows, previous.discoveredAgents.filter(isRetained)]),
                                                  snapshots: retainedSnapshots)

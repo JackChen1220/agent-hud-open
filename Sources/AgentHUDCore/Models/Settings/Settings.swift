@@ -170,6 +170,10 @@ public struct Settings: Hashable, Codable, Sendable {
                 liveStatusPreferences[vendor.lowercased()] = false
             }
         }
+        // The former Grok switch belonged to the CLI. Keep one stored choice after clients split.
+        if let legacy = liveStatusPreferences.removeValue(forKey: "grok"), liveStatusPreferences["grok cli"] == nil {
+            liveStatusPreferences["grok cli"] = legacy
+        }
         readCopilotQuota = try c.decodeIfPresent(Bool.self, forKey: .readCopilotQuota) ?? d.readCopilotQuota
         clientHooks = try c.decodeIfPresent(Bool.self, forKey: .clientHooks) ?? d.clientHooks
         approvalWaitMinutes = (try c.decodeIfPresent(Int.self, forKey: .approvalWaitMinutes))
@@ -248,11 +252,16 @@ public struct Settings: Hashable, Codable, Sendable {
     }
 
     public func liveStatusEnabled(for vendor: String) -> Bool {
-        liveStatusPreferences[vendor.lowercased()] ?? true
+        liveStatusPreferences[Self.liveStatusKey(vendor)] ?? true
     }
 
     public mutating func setLiveStatus(for vendor: String, enabled: Bool) {
-        liveStatusPreferences[vendor.lowercased()] = enabled
+        liveStatusPreferences[Self.liveStatusKey(vendor)] = enabled
+    }
+
+    private static func liveStatusKey(_ vendor: String) -> String {
+        let key = vendor.lowercased()
+        return key == "grok" ? "grok cli" : key
     }
 
     /// A client not detected on this Mac starts with live status off. A later detection never overrides a saved choice.
@@ -260,7 +269,7 @@ public struct Settings: Hashable, Codable, Sendable {
         for source in sources where SessionSource.agentVendors.contains(source.name) {
             let vendor = source.name.lowercased()
             if liveStatusPreferences[vendor] == nil {
-                liveStatusPreferences[vendor] = source.state != .notDetected
+                liveStatusPreferences[vendor] = source.supportsLiveStatus && source.state != .notDetected
             }
         }
     }

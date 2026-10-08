@@ -24,6 +24,33 @@ final class CollectionSignalTests: XCTestCase, @unchecked Sendable {
         }
     }
 
+    private actor PausingSource: UsageProvider {
+        nonisolated let watchedDirectories: [URL]? = []
+        nonisolated let accountRefreshSteps: [AccountRefreshStep] = []
+        private let pausesFirstRead: Bool
+        private let discovered: [AgentDescriptor]
+        private var continuation: CheckedContinuation<Void, Never>?
+        private(set) var inputs: [[AgentDescriptor]] = []
+
+        init(pausesFirstRead: Bool, discovered: [AgentDescriptor] = []) {
+            self.pausesFirstRead = pausesFirstRead
+            self.discovered = discovered
+        }
+
+        func fetchUsage(agents: [AgentDescriptor], historyHours: Int) async throws -> UsageReport {
+            inputs.append(agents)
+            if pausesFirstRead && inputs.count == 1 {
+                await withCheckedContinuation { continuation = $0 }
+            }
+            return UsageReport(generatedAt: Date(), snapshots: [], sessions: [], discoveredAgents: discovered)
+        }
+
+        func release() {
+            continuation?.resume()
+            continuation = nil
+        }
+    }
+
     private func directory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("agenthud-signals-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -133,6 +160,43 @@ final class CollectionSignalTests: XCTestCase, @unchecked Sendable {
         store.settings.updateAgents { $0 + [AgentDescriptor(id: "b-window", vendor: "B", model: "Window", source: "Fixture", enabled: true)] }
         let reread = try await wait { let x = await copilot.fetches; let y = await b.fetches; return x == 4 && y == 3 }
         XCTAssertTrue(reread, "a changed agent list is read from every source at once")
+    }
+
+    @MainActor
+    func testAnAgentChangeDuringASuspendedReadReadsEverySourceWithTheNewInput() async throws {
+        let first = PausingSource(pausesFirstRead: true), second = PausingSource(pausesFirstRead: false)
+        let store = try await start(CombinedUsageProvider([.init("A", first), .init("B", second)]))
+        addTeardownBlock { await first.release() }
+        let started = try await wait { await first.inputs.count == 1 }
+        XCTAssertTrue(started)
+        XCTAssertTrue(store.isRefreshing, "the old-input pass is suspended inside the first provider")
+        let original = store.settings.agents
+        store.settings.updateAgents { $0 + [AgentDescriptor(id: "b-window", vendor: "B", model: "Window", source: "Fixture", enabled: true)] }
+        let changed = store.settings.agents
+        await first.release()
+        let reread = try await wait {
+            let inputs = (await first.inputs, await second.inputs)
+            return inputs.0.count >= 2 && inputs.1.count >= 2
+        }
+        XCTAssertTrue(reread, "an edit while the old pass waits must remain due for the next full read")
+        let inputs = (await first.inputs, await second.inputs)
+        XCTAssertEqual(inputs.0.first, original)
+        XCTAssertEqual(inputs.1.first, original)
+        XCTAssertEqual(inputs.0.last, changed)
+        XCTAssertEqual(inputs.1.last, changed)
+    }
+
+    @MainActor
+    func testARowsOwnDiscoveryDoesNotScheduleAnotherRead() async throws {
+        let discovered = AgentDescriptor(id: "a-window", vendor: "A", model: "Window", source: "Fixture", enabled: true)
+        let source = PausingSource(pausesFirstRead: false, discovered: [discovered])
+        let store = try await start(CombinedUsageProvider([.init("A", source)]))
+        let collected = try await wait { store.report != nil && !store.isRefreshing }
+        XCTAssertTrue(collected)
+        XCTAssertTrue(store.settings.agents.contains { $0.id == discovered.id })
+        try await Task.sleep(for: .seconds(UsageRefresh.readSpacing + 0.5))
+        let reads = await source.inputs.count
+        XCTAssertEqual(reads, 1, "rows discovered by the completed pass are already consumed")
     }
 
     func testNamedSourcesAreReadAndTheOthersKeepTheirLastResult() async throws {

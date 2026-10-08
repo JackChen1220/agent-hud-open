@@ -24,13 +24,14 @@ Claude, OpenAI (shown as ChatGPT), Antigravity, DeepSeek, Grok, GitHub Copilot, 
 
 The PNG files are unchanged (640 × 640); only the names differ: the `-color` suffix is dropped, and `openai.png`, `githubcopilot.png` and `hermesagent.png` are stored as `chatgpt.png`, `copilot.png` and `hermes.png`. Codex rows reuse the ChatGPT artwork under their own name. Claude, Antigravity, DeepSeek, OpenClaw, CodeBuddy and Qwen Code keep their source colors; the OpenAI mark is stored as shipped and tinted green (`#10A37F`) at render time for ChatGPT; the monochrome Grok, GitHub Copilot and Hermes Agent marks are rendered as template images, so they follow the foreground color in light and dark appearance. Qoder ships one file per background, because the light half of its mark is the background's own colour; the three Qoder builds share both files. The package's MIT license is bundled as `LobeIcons-LICENSE.txt`.
 
-## Cursor, OpenCode, Kimi, GLM, Pi, ZCode and WorkBuddy
+## Cursor, Grok Bot, OpenCode, Kimi, GLM, Pi, ZCode and WorkBuddy
 
-These seven use the clients' official artwork instead of SF Symbols.
+These clients use official artwork instead of SF Symbols.
 
 | Client | Source | Bundled file | Rendering |
 | --- | --- | --- | --- |
 | Cursor | [Official brand assets](https://cursor.com/brand), `General Logos/Cube/SVG/CUBE_2D_DARK.svg` in the downloadable archive | `cursor.png` | Monochrome template |
+| Grok Bot | [Official Grok Bot desktop application](https://docs.x.ai/grok-bot/overview), `icon.icns` from version `0.68.1` | `grok-bot.png` | Original application icon, independent of the Grok mark |
 | OpenCode / OpenCode Go | [Official brand page](https://opencode.ai/brand); [square logos at commit 830d5eb](https://github.com/anomalyco/opencode/tree/830d5eb5354874105cc31599635a80c1662609e8/packages/console/app/src/asset/brand) | `opencode.png`, `opencode-dark.png` | Original artwork; the light or dark file is chosen by the current appearance |
 | Kimi | [Official branding guide](https://moonshotai.github.io/Branding-Guide/), `scenarios/04-k-only/k-only-color.svg` | `kimi.png` | Monochrome template |
 | GLM | [Z.ai](https://chat.z.ai/) linked [brand icon](https://z-cdn.chatglm.cn/z-ai/static/logo.svg) | `glm.png` | Original artwork |
@@ -38,11 +39,11 @@ These seven use the clients' official artwork instead of SF Symbols.
 | ZCode | [Official site](https://zcode.z.ai/en), the Z mark inside the header logo (inline SVG) | `zcode.png` | Monochrome template |
 | WorkBuddy | [Official site](https://www.workbuddy.ai/), its [site icon](https://download.codebuddy.ai/web/workbuddy/35f50f59737cd16a3a0f458d5719ce972b630a2f/assets/logo.svg) | `workbuddy.png` | Original artwork |
 
-The bundled files are 256 × 256 transparent PNG renders of those SVGs, fitted and centered without changing their proportions. Pi's excess transparent canvas is trimmed before fitting, without changing the mark's geometry. The original SVGs are not distributed in this repository.
+Grok Bot's 256 × 256 PNG is extracted unchanged from the application's icon set. The other bundled files are 256 × 256 transparent PNG renders of those SVGs, fitted and centered without changing their proportions. Pi's excess transparent canvas is trimmed before fitting, without changing the mark's geometry. The original SVGs are not distributed in this repository.
 
 ## Rendering rules
 
-Every logo is drawn into a 16 × 16 point image. Grok, Cursor, Kimi, Pi, GitHub Copilot, Hermes Agent and ZCode are template images (monochrome, foreground-colored); Claude, ChatGPT (tinted), Antigravity, DeepSeek, GLM, OpenCode, OpenClaw, CodeBuddy, WorkBuddy, Qwen Code and Qoder are drawn as original images. SwiftUI views and the status-item menu use the same images.
+Every logo is drawn into a 16 × 16 point image. Grok, Cursor, Kimi, Pi, GitHub Copilot, Hermes Agent and ZCode are template images (monochrome, foreground-colored); Claude, ChatGPT (tinted), Antigravity, DeepSeek, Grok Bot, GLM, OpenCode, OpenClaw, CodeBuddy, WorkBuddy, Qwen Code and Qoder are drawn as original images. SwiftUI views and the status-item menu use the same images.
 
 ## Licenses and trademarks
 

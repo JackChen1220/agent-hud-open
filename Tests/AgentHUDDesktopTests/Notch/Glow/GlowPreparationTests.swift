@@ -5,6 +5,26 @@ import AgentHUDCore
 
 final class GlowPreparationTests: XCTestCase {
     @MainActor
+    func testACancelledWorkerDoesNotRasterizeItsMaterials() async {
+        _ = NSApplication.shared
+        let geometry = geometry()
+        let controller = GlowWindowController(geometry: geometry)
+        defer { controller.close() }
+        let island = geometry.expandedFrame(size: CGSize(width: 240, height: 120))
+        let settings = GlowSettings()
+        let glow = settings.geometry(islandWidth: island.width, islandHeight: island.height, islandRadius: 26)
+        let captured = controller.capturePreparation(geometry: geometry, island: island, islandRadius: 26,
+            glow: glow, outwardOnly: true, appearance: .idle())
+        let images = await Task.detached {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return GlowWindowController.render(captured)
+        }.value
+        XCTAssertNil(images.soft)
+        XCTAssertNil(images.shadow)
+        XCTAssertNil(images.renderer)
+    }
+
+    @MainActor
     func testMatchingPreparationInstallsThePreparedSoftGlowAndShadow() throws {
         _ = NSApplication.shared
         let geometry = geometry()

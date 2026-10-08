@@ -1,14 +1,154 @@
 import AppKit
 import SwiftUI
 import XCTest
-import AgentHUDCore
+@testable import AgentHUDCore
 @testable import AgentHUDDesktop
 
 /// Preparing a future panel must leave the current windows alone and follow the hover's lifetime.
 final class HoverPreparationLifecycleTests: XCTestCase {
     @MainActor
+    func testCollapseCommitsItsWindowWithoutWaitingForItsBackgroundRaster() async throws {
+        let gate = HoverRasterGate()
+        let fixture = try await HoverPreparationFixture(quotaCount: 8, renderMaterials: { inputs in
+            await gate.render(inputs, onMainThread: HoverRasterGate.onMainThread)
+        })
+        defer { fixture.close() }
+        await gate.blockFutureRenders()
+        fixture.hud.forceOpen()
+        try await waitUntilAsync("opening reaches the raster gate") { await gate.count == 1 }
+        await gate.resume(0)
+        try await waitUntil("the open surface receives its materials") { !fixture.hud.glow.shadowLayer.isHidden }
+        let expandedShadow = fixture.hud.glow.shadowLayer.contents as AnyObject?
+
+        fixture.hud.forceCollapse()
+        try await waitUntilAsync("collapse reaches the raster gate") { await gate.count == 2 }
+        let onMainThread = await gate.wasOnMainThread(1)
+        XCTAssertFalse(onMainThread)
+        try await waitUntil("the window finishes collapsing while the raster is withheld") {
+            fixture.hud.island.panel.frame == fixture.hud.geometry.islandFrame
+        }
+        XCTAssertTrue(fixture.hud.glow.shadowLayer.isHidden)
+        XCTAssertTrue(fixture.hud.glow.shadowLayer.contents as AnyObject? === expandedShadow,
+                      "Collapse must not fall back to repainting its shadow synchronously")
+        await gate.resume(1)
+        let preparedShadow = await gate.shadow(1)
+        let collapsedShadow = try XCTUnwrap(preparedShadow)
+        try await waitUntil("the collapsed surface receives only its own materials") {
+            !fixture.hud.glow.shadowLayer.isHidden
+                && fixture.hud.glow.shadowLayer.contents as AnyObject? === collapsedShadow
+        }
+        XCTAssertEqual(fixture.hud.island.panel.frame, fixture.hud.geometry.islandFrame)
+    }
+
+    @MainActor
+    func testALateCollapseRasterCannotReplaceAReopenedSurface() async throws {
+        let gate = HoverRasterGate()
+        let fixture = try await HoverPreparationFixture(quotaCount: 8, renderMaterials: { inputs in
+            await gate.render(inputs, onMainThread: HoverRasterGate.onMainThread)
+        })
+        defer { fixture.close() }
+        await gate.blockFutureRenders()
+        fixture.hud.forceOpen()
+        try await waitUntilAsync("opening reaches the raster gate") { await gate.count == 1 }
+        await gate.resume(0)
+        try await waitUntil("opening receives its materials") { !fixture.hud.glow.shadowLayer.isHidden }
+        let expandedShadow = fixture.hud.glow.shadowLayer.contents as AnyObject?
+        fixture.hud.forceCollapse()
+        try await waitUntilAsync("collapse reaches the raster gate") { await gate.count == 2 }
+        fixture.hud.forceOpen()
+        XCTAssertFalse(fixture.hud.glow.shadowLayer.isHidden,
+                       "Reopening can reuse the matching expanded materials still installed in the layers")
+        await gate.resume(1)
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertFalse(fixture.hud.glow.shadowLayer.isHidden)
+        XCTAssertTrue(fixture.hud.glow.shadowLayer.contents as AnyObject? === expandedShadow)
+        XCTAssertGreaterThan(fixture.hud.island.panel.frame.height, fixture.hud.geometry.islandFrame.height)
+        let count = await gate.count
+        XCTAssertEqual(count, 2, "Matching installed keys must not launch another full raster when reopening")
+    }
+
+    @MainActor
+    func testAnExpiredHoverWaitsForTheBackgroundMaterialsWithoutBlockingTheMainThread() async throws {
+        let gate = HoverRasterGate()
+        let fixture = try await HoverPreparationFixture(quotaCount: 4, renderMaterials: { inputs in
+            await gate.render(inputs, onMainThread: HoverRasterGate.onMainThread)
+        })
+        defer { fixture.close() }
+        await gate.blockFutureRenders()
+        fixture.settings.update { $0.hoverDelayMs = 0 }
+        fixture.hud.apply(animated: false)
+        fixture.enter()
+        try await waitUntilAsync("the worker reaches the raster gate") { await gate.count == 1 }
+        let onMainThread = await gate.wasOnMainThread(0)
+        XCTAssertFalse(onMainThread, "The raster closure must execute away from the UI thread")
+        // Give the ordinary timer a run-loop turn. The ready content must not trigger a synchronous raster fallback.
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(fixture.hud.island.panel.frame, fixture.hud.geometry.islandFrame)
+        await gate.resume(0)
+        try await waitUntil("the prepared hover opens") {
+            fixture.hud.island.panel.frame.height > fixture.hud.geometry.islandFrame.height
+        }
+        let preparedImage = await gate.shadow(0)
+        let image = try XCTUnwrap(preparedImage)
+        XCTAssertTrue(fixture.hud.glow.shadowLayer.contents as AnyObject? === image)
+    }
+
+    @MainActor
+    func testALateRasterFromACancelledHoverCannotInstallIntoTheNextOpening() async throws {
+        let gate = HoverRasterGate()
+        let fixture = try await HoverPreparationFixture(quotaCount: 8, renderMaterials: { inputs in
+            await gate.render(inputs, onMainThread: HoverRasterGate.onMainThread)
+        })
+        defer { fixture.close() }
+        await gate.blockFutureRenders()
+        let collapsedShadow = fixture.hud.glow.shadowLayer.contents as AnyObject?
+        fixture.enter()
+        try await waitUntilAsync("the first hover starts its raster") { await gate.count == 1 }
+        fixture.leave()
+        fixture.settings.update { $0.showIslandQuota = false }
+        fixture.hud.apply(animated: false)
+        fixture.enter()
+        try await waitUntilAsync("the next hover starts its own raster") { await gate.count == 2 }
+        fixture.hud.forceOpen()
+        XCTAssertEqual(fixture.hud.island.panel.frame.height, fixture.expectedHeight(), accuracy: 1,
+                       "An explicit opening commits its content synchronously even while the worker is waiting")
+        XCTAssertTrue(fixture.hud.glow.shadowLayer.isHidden)
+        await gate.resume(0)
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertTrue(fixture.hud.glow.shadowLayer.isHidden, "The old result cannot reveal the next opening's materials")
+        XCTAssertTrue(fixture.hud.glow.shadowLayer.contents as AnyObject? === collapsedShadow)
+
+        await gate.resume(1)
+        let currentImage = await gate.shadow(1)
+        let current = try XCTUnwrap(currentImage)
+        try await waitUntil("only the next opening's own shadow is installed") {
+            !fixture.hud.glow.shadowLayer.isHidden
+                && fixture.hud.glow.shadowLayer.contents as AnyObject? === current
+        }
+        let oldImage = await gate.shadow(0)
+        let old = try XCTUnwrap(oldImage)
+        XCTAssertFalse(fixture.hud.glow.shadowLayer.contents as AnyObject? === old)
+    }
+
+    @MainActor
+    func testAClockRefreshKeepsMatchingInstalledMaterialsVisible() async throws {
+        let fixture = try await HoverPreparationFixture(quotaCount: 4)
+        defer { fixture.close() }
+        fixture.hud.forceOpen()
+        try await waitUntil("the immediate opening receives its materials") { !fixture.hud.glow.shadowLayer.isHidden }
+        let shadow = fixture.hud.glow.shadowLayer.contents as AnyObject?
+        let glow = fixture.hud.glow.glowLayer.contents as AnyObject?
+        fixture.store.now = fixture.store.now.addingTimeInterval(10)
+        fixture.hud.apply(animated: false)
+        XCTAssertFalse(fixture.hud.glow.shadowLayer.isHidden)
+        XCTAssertFalse(fixture.hud.glow.glowLayer.isHidden)
+        XCTAssertTrue(fixture.hud.glow.shadowLayer.contents as AnyObject? === shadow)
+        XCTAssertTrue(fixture.hud.glow.glowLayer.contents as AnyObject? === glow)
+    }
+
+    @MainActor
     func testPreparationKeepsTheCollapsedWindowsAndLeavingCancelsTheOpen() async throws {
-        let fixture = try HoverPreparationFixture(quotaCount: 32)
+        let fixture = try await HoverPreparationFixture(quotaCount: 32)
         defer { fixture.close() }
         let hud = fixture.hud
         let collapsedFrame = hud.island.panel.frame
@@ -40,7 +180,7 @@ final class HoverPreparationLifecycleTests: XCTestCase {
 
     @MainActor
     func testHoverDeadlineOpensAtTheCurrentMeasuredHeight() async throws {
-        let fixture = try HoverPreparationFixture(quotaCount: 32)
+        let fixture = try await HoverPreparationFixture(quotaCount: 32)
         defer { fixture.close() }
         let expected = fixture.expectedHeight()
 
@@ -55,7 +195,7 @@ final class HoverPreparationLifecycleTests: XCTestCase {
 
     @MainActor
     func testSettingsChangedDuringTheDelayReplaceThePreparedHeight() async throws {
-        let fixture = try HoverPreparationFixture(quotaCount: 32)
+        let fixture = try await HoverPreparationFixture(quotaCount: 32)
         defer { fixture.close() }
         let original = fixture.expectedHeight()
         fixture.enter()
@@ -76,7 +216,7 @@ final class HoverPreparationLifecycleTests: XCTestCase {
 
     @MainActor
     func testReportChangedDuringTheDelayUsesTheNewSessionRowsHeight() async throws {
-        let fixture = try HoverPreparationFixture(quotaCount: 4, showsTokens: true, showsSessions: true)
+        let fixture = try await HoverPreparationFixture(quotaCount: 4, showsTokens: true, showsSessions: true)
         defer { fixture.close() }
         let original = fixture.expectedHeight()
         fixture.enter()
@@ -97,7 +237,7 @@ final class HoverPreparationLifecycleTests: XCTestCase {
 
     @MainActor
     func testReportChangedWithoutACoordinatorApplyIsCheckedBeforeOpening() async throws {
-        let fixture = try HoverPreparationFixture(quotaCount: 4, showsTokens: true, showsSessions: true)
+        let fixture = try await HoverPreparationFixture(quotaCount: 4, showsTokens: true, showsSessions: true)
         defer { fixture.close() }
         let original = fixture.expectedHeight()
         fixture.enter()
@@ -116,8 +256,8 @@ final class HoverPreparationLifecycleTests: XCTestCase {
     }
 
     @MainActor
-    func testForceOpenCommitsAPendingHoverWithoutAnotherDelay() throws {
-        let fixture = try HoverPreparationFixture(quotaCount: 8)
+    func testForceOpenCommitsAPendingHoverWithoutAnotherDelay() async throws {
+        let fixture = try await HoverPreparationFixture(quotaCount: 8)
         defer { fixture.close() }
         let expected = fixture.expectedHeight()
         fixture.enter()
@@ -131,7 +271,7 @@ final class HoverPreparationLifecycleTests: XCTestCase {
     @MainActor
     func testImmediateHoverPathsDoNotGainAPreparationDelay() async throws {
         for opensAtTop in [false, true] {
-            let fixture = try HoverPreparationFixture(quotaCount: 8)
+            let fixture = try await HoverPreparationFixture(quotaCount: 8)
             defer { fixture.close() }
             fixture.settings.update {
                 $0.hoverDelayMs = opensAtTop ? 1500 : 0
@@ -163,6 +303,18 @@ final class HoverPreparationLifecycleTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(25))
         }
     }
+
+    @MainActor
+    private func waitUntilAsync(_ description: String, condition: () async -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(5)
+        while !(await condition()) {
+            guard Date() < deadline else {
+                XCTFail("Timed out waiting until \(description)")
+                throw HoverPreparationTimeout()
+            }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+    }
 }
 
 @MainActor
@@ -176,7 +328,9 @@ private final class HoverPreparationFixture {
     private let pointer: HoverPreparationPointer
     private let outside: CGPoint
 
-    init(quotaCount: Int, showsTokens: Bool = false, showsSessions: Bool = false) throws {
+    init(quotaCount: Int, showsTokens: Bool = false, showsSessions: Bool = false,
+         renderMaterials: @escaping @Sendable (GlowWindowController.PreparationInputs) async -> GlowWindowController.PreparedImages
+            = { GlowWindowController.render($0) }) async throws {
         _ = NSApplication.shared
         let screen = try XCTUnwrap(NSScreen.main)
         let domain = "app.agenthud.tests.hover-preparation.\(UUID().uuidString)"
@@ -210,7 +364,12 @@ private final class HoverPreparationFixture {
         // Populate the store before constructing the HUD, without starting a real provider.
         store.replace(report: Self.report(agents: agents, consumerCount: showsTokens ? 1 : 0))
         hud = ScreenHUD(key: ScreenIdentity.key(for: screen), screen: screen, store: store,
-                        settings: settings, mouseLocation: { pointer.point })
+                        settings: settings, mouseLocation: { pointer.point }, renderMaterials: renderMaterials)
+        let deadline = Date().addingTimeInterval(5)
+        while hud.glow.shadowLayer.isHidden || hud.glow.shadowLayer.contents == nil {
+            guard Date() < deadline else { throw HoverPreparationTimeout() }
+            try await Task.sleep(for: .milliseconds(5))
+        }
     }
 
     func enter(atTop: Bool = false) {
@@ -270,3 +429,32 @@ private final class HoverPreparationPointer {
 }
 
 private struct HoverPreparationTimeout: Error {}
+
+/// A deliberately non-cooperative raster makes a cancelled task finish late, exercising the owner check too.
+private actor HoverRasterGate {
+    nonisolated static var onMainThread: Bool { Thread.isMainThread }
+    private struct Pending {
+        let images: GlowWindowController.PreparedImages
+        let onMainThread: Bool
+        var continuation: CheckedContinuation<GlowWindowController.PreparedImages, Never>?
+    }
+    private var pending: [Pending] = []
+    private var blocks = false
+    var count: Int { pending.count }
+    func blockFutureRenders() { blocks = true }
+
+    func render(_ inputs: GlowWindowController.PreparationInputs, onMainThread: Bool) async -> GlowWindowController.PreparedImages {
+        let images = GlowWindowController.render(inputs)
+        if !blocks { return images }
+        return await withCheckedContinuation { continuation in
+            pending.append(Pending(images: images, onMainThread: onMainThread, continuation: continuation))
+        }
+    }
+
+    func wasOnMainThread(_ index: Int) -> Bool { pending[index].onMainThread }
+    func shadow(_ index: Int) -> CGImage? { pending[index].images.shadow?.image }
+    func resume(_ index: Int) {
+        pending[index].continuation?.resume(returning: pending[index].images)
+        pending[index].continuation = nil
+    }
+}

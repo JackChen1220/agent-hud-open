@@ -24,7 +24,7 @@ public enum AdditionalSource: String, CaseIterable, Sendable {
         switch self {
         case .antigravity: L10n.text("本地服务额度与会话用量", "Local server quota and session usage")
         case .cursor: L10n.text("账户额度与跨设备用量", "Account quota and usage across devices")
-        case .grok: L10n.text("Grok CLI 额度与本地会话", "Grok CLI quota and local sessions")
+        case .grok: L10n.text("Grok 额度与 CLI / Bot 本地会话", "Grok quota and local CLI / Bot sessions")
         case .copilot: L10n.text("Copilot CLI 额度与本地会话", "Copilot CLI quota and local sessions")
         case .openclaw: L10n.text("OpenClaw 本地会话与用量", "OpenClaw local sessions and usage")
         case .hermes: L10n.text("Hermes Agent 本地会话用量", "Hermes Agent local session usage")
@@ -47,7 +47,7 @@ public enum AdditionalSource: String, CaseIterable, Sendable {
         let paths: [String]
         switch self {
         case .cursor: paths = ["Library/Application Support/Cursor/User/globalStorage/state.vscdb", "Applications/Cursor.app"]
-        case .antigravity, .grok: paths = layout?.installPaths ?? []
+        case .antigravity: paths = layout?.installPaths ?? []
         // A same-named desktop app is not the CLI these clients read, and it must not trigger hook installation.
         default: return layout?.installPaths.contains { FileManager.default.fileExists(atPath: home.appendingPathComponent($0).path) } ?? false
         }
@@ -84,8 +84,14 @@ struct ProviderQuota: Sendable {
     var account: ProviderAccount? = nil
     /// An email or name from the same response or login record, shown to this Mac's user.
     var label: String? = nil
+    /// A persisted reading keeps the time its client received it, rather than the time HUD opened its cache.
+    var observedAt: Date? = nil
+    /// The execution client that supplied a shared vendor's quota.
+    var client: String? = nil
     /// The user withdrew access: the vendor's accounts, rows and quota history are forgotten, not kept as last readings.
     var forgetAccounts = false
+    /// An explicit sign-out or absent-client result, rather than a response that merely omitted readable values.
+    var signedOut = false
 
     /// Whether the service answered for a signed-in account, as opposed to finding no client.
     var isSignedIn: Bool { account != nil || !windows.isEmpty }
@@ -117,6 +123,7 @@ struct ProviderSession: Sendable {
     var turns: [SessionTurn] = []
     var completions: [SessionCompletion] = []
     var accountWide = false
+    var navigationTarget: SessionNavigationTarget? = nil
 }
 
 struct ProviderEvent: Hashable, Sendable {

@@ -4,6 +4,8 @@ import Foundation
 public struct AgentSettingsGroup: Identifiable, Equatable, Sendable {
     public let id: String
     public let source: SourceStatus?
+    /// Execution clients configured separately under this account provider.
+    public let clients: [SourceStatus]
     public let agents: [AgentDescriptor]
     public let plans: [String]
     public let apiProviders: [String]
@@ -59,17 +61,19 @@ public struct AgentSettingsGroup: Identifiable, Equatable, Sendable {
     }
     public var hasLiveStatus: Bool { SessionSource.agentVendors.contains(id) }
 
-    /// One group per source supplied by the host, including sources not detected on this Mac, plus present rows and
+    /// One group per account provider, including sources not detected on this Mac, plus present rows and
     /// reported services. Undetected sources follow other groups, preserving order within both sections. A source alone
     /// creates no windows or accounts; existing windows keep their manual order.
     public static func make(sources: [SourceStatus], agents: [AgentDescriptor], report: UsageReport? = nil) -> [Self] {
         let agents = agents.filter { ReportView.isPresent($0, in: report) }
         let existing = agents.agentGroups
         var ids = existing.map(\.id)
-        for id in sources.map(\.name) + agents.map(\.vendor) + (report?.services ?? []).map(\.client)
+        for id in sources.map(\.provider) + agents.map(\.vendor) + (report?.services ?? []).map(\.client)
             where !ids.contains(id) { ids.append(id) }
         let groups = ids.map { id in
-            let source = sources.first { $0.name == id }
+            let family = sources.filter { $0.provider == id }
+            let source = family.first { $0.state != .notDetected } ?? family.first
+            let clients = family.filter { $0.name != id }
             let windows = existing.first { $0.id == id }?.agents ?? []
             let services = (report?.services ?? []).filter { $0.client == id }
             // Observations retain client-home history; display one summary per account, as quota rows do.
@@ -94,7 +98,7 @@ public struct AgentSettingsGroup: Identifiable, Equatable, Sendable {
             api += (report?.billing ?? []).filter {
                 ($0.billingPool?.provider ?? $0.vendor) == id && (!$0.balances.isEmpty || !$0.costs.isEmpty)
             }.map { $0.billingPool?.provider ?? $0.vendor }
-            return Self(id: id, source: source, agents: windows, plans: Array(Set(plans)).sorted(),
+            return Self(id: id, source: source, clients: clients, agents: windows, plans: Array(Set(plans)).sorted(),
                         apiProviders: Array(Set(api)).sorted(), accounts: accounts,
                         billingAccounts: (report?.billing ?? []).filter { ($0.billingPool?.provider ?? $0.vendor) == id })
         }

@@ -12,7 +12,7 @@ struct UsageChartsCard: View {
     }
 }
 
-/// The statistics chart keeps its model controls; the island can show just a compact strip of its bars.
+/// Dashboard controls belong to its chart; HUD history always shows the latest day in quarter-hour bars.
 struct TokenConsumptionChart: View {
     enum Context { case stats, island }
 
@@ -48,8 +48,9 @@ struct TokenConsumptionChart: View {
     var body: some View {
         let consumers = context == .stats ? store.consumers.filter { modelFilter.includes($0.id) } : store.consumers
         let ids = context == .stats ? modelFilter.consumerIDs : nil
-        let allColumns = store.tokenColumns
+        let allColumns = context == .stats ? store.tokenColumns : store.hudTokenColumns
         let columns = ids == nil ? allColumns : store.tokenColumns(consumerIDs: ids)
+        let interval = context == .stats ? store.statsInterval : store.hudTokenInterval
         let models = context == .stats ? Self.modelTotals(consumers: store.consumers, columns: allColumns) : []
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
@@ -57,8 +58,8 @@ struct TokenConsumptionChart: View {
                     .font(.ui(13, .semibold))
                 Spacer()
                 if context == .island {
-                    Text(store.report == nil ? "\(store.tokenBucketSize.label) · —"
-                         : "\(store.tokenBucketSize.label) · \(TokenFormat.short(columns.reduce(0) { $0 + $1.total })) tok")
+                    Text(store.report == nil ? "24h · —"
+                         : "24h · \(TokenFormat.short(columns.reduce(0) { $0 + $1.total })) tok")
                         .font(.tabular(12))
                         .foregroundStyle(theme.secondary)
                 } else {
@@ -99,12 +100,13 @@ struct TokenConsumptionChart: View {
                     .accessibilityIdentifier("island-more-token-models")
                 }
             }
-            TokenBarsChart(columns: columns, interval: store.statsInterval,
+            TokenBarsChart(columns: columns, interval: interval,
                            colors: consumers.map { AgentPalette.swiftUIColor(index: store.consumerPaletteIndex($0.id)) },
                            consumers: consumers, theme: theme, isLoading: store.report == nil,
                            noModelsSelected: context == .stats && modelFilter.consumerIDs?.isEmpty == true,
                            inspectedColumnID: inspectedColumnID, compact: compact)
-                .id([store.statsRange.hours, store.tokenBucketSize.rawValue, store.tokenDimensions.rawValue])
+                .id(context == .stats ? [store.statsRange.hours, store.tokenBucketSize.rawValue, store.tokenDimensions.rawValue]
+                                     : [24, TokenBucketSize.minutes15.rawValue, TokenDimensions.all.rawValue])
                 .frame(height: compact ? 40 : (context == .island ? 72 : 100))
                 .padding(.horizontal, context == .stats ? 12 : 6)
                 .padding(.top, compact ? 8 : 12)
@@ -112,7 +114,7 @@ struct TokenConsumptionChart: View {
 
             if !compact {
                 HStack {
-                    let labels = ChartData.axisLabels(range: store.statsRange, now: store.dataDate)
+                    let labels = ChartData.axisLabels(range: context == .stats ? store.statsRange : .hours24, now: store.dataDate)
                     ForEach(Array(labels.enumerated()), id: \.offset) { index, label in
                         if index > 0 { Spacer() }
                         Text(label)

@@ -51,8 +51,12 @@ public struct IslandEventTracker: Sendable {
             guard completion.completedAt > startedAt, completion.completedAt <= now,
                   seenCompletions.insert(completion.id).inserted else { continue }
             // Consume suppressed events as well, so enabling live status never replays them.
-            guard settings.liveStatusEnabled(for: completion.vendor) else { continue }
-            result.completions.append(completion)
+            var event = completion
+            if event.vendor == "Grok", event.client == nil {
+                event.client = report.sessions.first { $0.id == event.sessionID }?.client
+            }
+            guard settings.liveStatusEnabled(for: event.agentVendor) else { continue }
+            result.completions.append(event)
         }
         let quota = quotas.update(report: report, agents: agents, now: now)
         result.quotaAlerts = quota.alerts
