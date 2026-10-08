@@ -121,17 +121,17 @@ final class SessionSurfaceTests: XCTestCase {
         let unvouched = session("unvouched", observed: -1800)
         let running = (1...4).map { session("running-\($0)", observed: -Double($0) * 60) }
         let waiting = turn("running-2", .waitingForApproval, started: -600, observed: -100)
-        // The sessions shown; the running ones, which the header counts; the rows' dots; how many are left out.
+        // The sessions shown; the running ones, which the header counts; the rows' dots; hidden active sessions.
         let cases: [(String, [LiveSession], shown: [String], running: Int, dots: [SessionDot], more: Int)] = [
             ("nothing running", ended + [unvouched],
              ["unvouched", "ended-1", "ended-2"], 0,
-             [.ended, .ended, .ended], 2),
+             [.ended, .ended, .ended], 0),
             ("four running", ended + [unvouched] + running,
              ["running-2", "running-1", "running-3", "running-4", "unvouched", "ended-1", "ended-2"], 4,
-             [.waiting, .running, .running, .running, .ended, .ended, .ended], 2),
+             [.waiting, .running, .running, .running, .ended, .ended, .ended], 0),
             ("two running", ended + Array(running.prefix(2)),
              ["running-2", "running-1", "ended-1", "ended-2", "ended-3"], 2,
-             [.waiting, .running, .ended, .ended, .ended], 1),
+             [.waiting, .running, .ended, .ended, .ended], 0),
         ]
         for (name, sessions, shown, count, dots, more) in cases {
             show(sessions, turns: [waiting], in: store)
@@ -160,9 +160,9 @@ final class SessionSurfaceTests: XCTestCase {
         XCTAssertEqual(rows.more, 0)
     }
 
-    /// Five active rows and three ended rows leave room for the account picture; the full list holds the rest.
+    /// Five active rows and three ended rows leave room for the account picture; only hidden active sessions count.
     @MainActor
-    func testTheIslandKeepsActiveAndEndedSummariesSmallAndCountsTheRest() throws {
+    func testTheIslandKeepsSummariesSmallAndCountsOnlyHiddenActiveSessions() throws {
         let store = try makeStore()
         let ended: [LiveSession] = (0..<30).map { index in
             let offset = -Double(index + 1) * 60
@@ -178,8 +178,37 @@ final class SessionSurfaceTests: XCTestCase {
         XCTAssertEqual(rows.shown.count, HoverPanelView.activeSessionRowLimit + HoverPanelView.endedSessionRowLimit)
         XCTAssertEqual(rows.shown.map(\.id), ["running-7", "running-0", "running-1", "running-2", "running-3",
                                              "ended-0", "ended-1", "ended-2"])
-        XCTAssertEqual(rows.more, 30)
+        XCTAssertEqual(rows.more, 3)
         XCTAssertEqual(rows.running.count, 8)
+    }
+
+    @MainActor
+    func testAccountWideReceiptsCannotDisplaceTheLocalBotSummaryButRemainInStatistics() throws {
+        let store = try makeStore()
+        let bots = (0..<3).map { index in
+            session("bot-\(index)", agent: "grok-model:grok-4", started: -hour,
+                    ended: -Double(index + 1) * 600, observed: -Double(index + 1) * 600, client: "Grok Bot")
+        }
+        let receipts = (0..<9).map { index in
+            session("receipt-\(index)", agent: "cursor-model:api", started: -hour,
+                    ended: -Double(index + 1), observed: -Double(index + 1), accountWide: true)
+        }
+        show(receipts + bots, in: store)
+        let rows = HoverPanelView.sessionRows(store)
+        XCTAssertEqual(rows.shown.map(\.id), bots.map(\.id))
+        XCTAssertEqual(rows.running.count, 0)
+        XCTAssertEqual(rows.more, 0)
+        XCTAssertEqual(store.statsSessions.count, bots.count + receipts.count,
+                       "Account-wide billing remains available in the full statistics list")
+    }
+
+    @MainActor
+    func testASessionWithoutATerminalShowsItsTitleWithoutAPlaceholder() {
+        let bot = session("New Bot working on the next task", observed: -60, client: "Grok Bot")
+        XCTAssertEqual(HoverPanelView.sessionTitle(bot), bot.task)
+        let local = LiveSession(id: "terminal-session", agentId: "claude-model:opus", task: "Fix auth bug in middleware",
+                                terminal: "project", startedAt: now, pctOfWindow: nil, tokensIn: 0, tokensOut: 0)
+        XCTAssertEqual(HoverPanelView.sessionTitle(local), "Fix auth bug · project")
     }
 
     /// A row's badge counts only the questions put to that exact session: another session's questions and a plain
@@ -312,10 +341,10 @@ final class SessionSurfaceTests: XCTestCase {
 
     /// Times are seconds from now.
     private func session(_ id: String, agent: String = "claude-model:opus", started: TimeInterval = -5 * 3600, ended: TimeInterval? = nil,
-                         observed: TimeInterval) -> LiveSession {
+                         observed: TimeInterval, client: String? = nil, accountWide: Bool = false) -> LiveSession {
         LiveSession(id: id, agentId: agent, task: id, terminal: nil, startedAt: now.addingTimeInterval(started),
                     endedAt: ended.map { now.addingTimeInterval($0) }, pctOfWindow: nil, tokensIn: 1, tokensOut: 1,
-                    observedAt: now.addingTimeInterval(observed))
+                    client: client, accountWide: accountWide, observedAt: now.addingTimeInterval(observed))
     }
 
     private func turn(_ session: String, _ state: SessionTurn.State, id: String = "1", provider: String = "claude", started: TimeInterval?,

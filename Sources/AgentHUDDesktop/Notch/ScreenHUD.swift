@@ -28,14 +28,17 @@ final class ScreenHUD {
     private var answeringSessionID: String?
     private let mouseLocation: @MainActor () -> CGPoint
     private let additionalHUDControls: @MainActor (@escaping @MainActor () -> Void) -> AnyView
+    private let renderMaterials: @Sendable (GlowWindowController.PreparationInputs) async -> GlowWindowController.PreparedImages
     private(set) var geometry: NotchGeometry
     /// Set by the coordinator, which watches the system appearance once for every screen.
     var systemIsLight = SystemAppearance.isLight
     let glow: GlowWindowController
     let island: IslandWindowController
     private var machine = HoverMachine()
-    /// Only the measurements and bitmaps survive the hover's preparation, not a hidden panel.
-    private var openingPreparation: OpeningPreparation?
+    /// One owner for the next surface's measurements and bitmaps, including opening and collapse.
+    private var materialPreparation: MaterialPreparation? {
+        didSet { oldValue?.task?.cancel() }
+    }
     private var timer: Timer?
     private var targetWindowFrame: CGRect?
     /// The card whose geometry is still interpolating; canvas-only changes share its completion.
@@ -71,7 +74,7 @@ final class ScreenHUD {
 
     /// Inputs that can change the natural layout while a hover is waiting, including token data that
     /// need not change the coordinator's quota rows or glow appearance.
-    private struct OpeningInputs: Equatable {
+    private struct PanelInputs: Equatable {
         let report: UsageReport?
         let settings: AgentHUDCore.Settings
         let agents: [AgentDescriptor]
@@ -92,16 +95,31 @@ final class ScreenHUD {
         let pendingIDs: [String]
         let sessionNavigationFailed: Bool
         let failedListedSessionID: String?
+        let answeringSessionID: String?
+        let reduceMotion: Bool
+        let colorSpace: CGColorSpace?
     }
 
-    private struct OpeningPreparation {
-        let inputs: OpeningInputs
+    private final class MaterialPreparation {
+        let inputs: PanelInputs
+        let open: Bool
+        let surface: Surface
         let height: CGFloat
-        let images: GlowWindowController.PreparedImages
+        let task: Task<GlowWindowController.PreparedImages?, Never>?
+        var images: GlowWindowController.PreparedImages?
+
+        init(inputs: PanelInputs, open: Bool, surface: Surface, height: CGFloat,
+             task: Task<GlowWindowController.PreparedImages?, Never>?) {
+            self.inputs = inputs
+            self.open = open
+            self.surface = surface
+            self.height = height
+            self.task = task
+        }
     }
 
-    private var openingInputs: OpeningInputs {
-        OpeningInputs(report: store.report, settings: settings.settings, agents: settings.agents,
+    private var panelInputs: PanelInputs {
+        PanelInputs(report: store.report, settings: settings.settings, agents: settings.agents,
                       hookTurns: store.hookTurns, now: store.now, dataDate: store.dataDate,
                       error: store.lastError, loading: store.isLoading, range: store.statsRange,
                       bucketSize: store.tokenBucketSize, dimensions: store.tokenDimensions,
@@ -109,7 +127,10 @@ final class ScreenHUD {
                       appearance: store.glowAppearance(light: systemIsLight, on: key),
                       alertID: activeAlert?.id, alertDetails: alerts.current?.inUsagePanel == false,
                       pendingIDs: alerts.pendingIDs,
-                      sessionNavigationFailed: sessionNavigationFailed, failedListedSessionID: failedListedSessionID)
+                      sessionNavigationFailed: sessionNavigationFailed, failedListedSessionID: failedListedSessionID,
+                      answeringSessionID: answeringSessionID,
+                      reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+                      colorSpace: glow.panel.screen?.colorSpace?.cgColorSpace)
     }
 
     var onOpenStats: (() -> Void)?
@@ -120,13 +141,16 @@ final class ScreenHUD {
     init(key: String, screen: NSScreen?, store: UsageStore, settings: SettingsStore,
          mouseLocation: @escaping @MainActor () -> CGPoint = { NSEvent.mouseLocation },
          openSession: @escaping @MainActor (SessionNavigationTarget) async -> Bool = SessionNavigator.open,
-         additionalHUDControls: @escaping @MainActor (@escaping @MainActor () -> Void) -> AnyView = { _ in AnyView(EmptyView()) }) {
+         additionalHUDControls: @escaping @MainActor (@escaping @MainActor () -> Void) -> AnyView = { _ in AnyView(EmptyView()) },
+         renderMaterials: @escaping @Sendable (GlowWindowController.PreparationInputs) async -> GlowWindowController.PreparedImages
+            = { GlowWindowController.render($0) }) {
         self.key = key
         self.store = store
         self.settings = settings
         self.openSession = openSession
         self.mouseLocation = mouseLocation
         self.additionalHUDControls = additionalHUDControls
+        self.renderMaterials = renderMaterials
         // The stored placement decides notch or queue before the first frame, so the HUD never flashes
         // the wrong shape on launch.
         let placement = screen.map { ScreenIdentity.placement(for: $0, in: settings.settings) }
@@ -262,7 +286,7 @@ final class ScreenHUD {
         guard !silenced else { return }
         guard alerts.show(alert, inUsagePanel: inUsagePanel ?? machine.isOpen) else {
             if alerts.contains(id: alert.id) {
-                openingPreparation = nil
+                materialPreparation = nil
                 apply(animated: true)
             }
             return
@@ -270,7 +294,7 @@ final class ScreenHUD {
         // An event owns the brief expansion; a pending hover must not open the full panel underneath it.
         timer?.invalidate()
         timer = nil
-        openingPreparation = nil
+        materialPreparation = nil
         if !machine.isOpen { machine = HoverMachine() }
         if hoverOpens {
             transition(machine.reduce(.pointerEntered(at: Date()), config: config))
@@ -300,7 +324,7 @@ final class ScreenHUD {
         if !alerts.contains(id: id) { onClaimRequest?(id) }
         guard alerts.promote(id: id) else { return }
         stopTyping()
-        openingPreparation = nil
+        materialPreparation = nil
         apply(animated: true)
     }
 
@@ -359,7 +383,7 @@ final class ScreenHUD {
     private func closeAfterLastAlert(wasInUsagePanel: Bool) {
         if ScreenHUD.closesAfterLastAlert(wasInUsagePanel: wasInUsagePanel, pointerInside: pointerInside) {
             machine = HoverMachine()
-            openingPreparation = nil
+            materialPreparation = nil
             timer?.invalidate()
             timer = nil
         }
@@ -479,7 +503,7 @@ final class ScreenHUD {
         if case .opening = machine.state {
             prepareOpening()
         } else if !machine.isOpen {
-            openingPreparation = nil
+            materialPreparation = nil
             answeringSessionID = nil
         }
         if wasOpen != machine.isOpen {
@@ -490,6 +514,16 @@ final class ScreenHUD {
     }
 
     private func timerFired() {
+        if case .opening(let deadline) = machine.state {
+            // Validate even when a report changed without a coordinator apply. The worker, rather than a
+            // synchronous raster fallback, finishes an opening whose delay expired before its images were ready.
+            prepareOpening()
+            if Date() >= deadline, materialPreparation?.images == nil {
+                timer?.invalidate()
+                timer = nil
+                return
+            }
+        }
         transition(machine.reduce(.timerFired(at: Date()), config: config))
     }
 
@@ -558,7 +592,7 @@ final class ScreenHUD {
     }
 
     private func grabHUD() {
-        openingPreparation = nil
+        materialPreparation = nil
         timer?.invalidate()
         timer = nil
         if !machine.isOpen { machine = HoverMachine(); hoverOpens = false }
@@ -571,7 +605,7 @@ final class ScreenHUD {
     }
 
     func beginMoving(at point: CGPoint? = nil) {
-        openingPreparation = nil
+        materialPreparation = nil
         if let point {
             let run = geometry.edge.isHorizontal ? geometry.rect.width : geometry.rect.height
             let grip = geometry.edge.isHorizontal ? point.x - geometry.rect.minX : geometry.rect.maxY - point.y
@@ -642,7 +676,7 @@ final class ScreenHUD {
     /// Takes this HUD's windows off screen; the display it belonged to is gone.
     func close() {
         cancelSessionNavigation()
-        openingPreparation = nil
+        materialPreparation = nil
         modifierWatch?.invalidate()
         timer?.invalidate()
         targetWindowFrame = nil
@@ -694,16 +728,53 @@ final class ScreenHUD {
     private func prepareOpening() {
         guard case .opening = machine.state else { return }
         geometry = resolveGeometry()
-        let inputs = openingInputs
-        guard openingPreparation?.inputs != inputs else { return }
+        let inputs = panelInputs
+        guard materialPreparation?.inputs != inputs || materialPreparation?.open != true else { return }
         let root = makeRoot(open: true, animated: false)
         let height = max(80, min(island.contentHeight(for: root).rounded(), maximumContentHeight))
         let surface = surface(open: true, height: height)
-        let images = glow.prepare(geometry: geometry, island: surface.glowIsland,
-                                  islandRadius: surface.glowRadius, glow: surface.glowGeometry,
-                                  outwardOnly: surface.glowSettings.outwardOnly, appearance: inputs.appearance,
-                                  pattern: surface.glowSettings.pattern(), drawsGlow: surface.drawsGlow)
-        openingPreparation = OpeningPreparation(inputs: inputs, height: height, images: images)
+        beginMaterialPreparation(inputs: inputs, open: true, height: height, surface: surface)
+    }
+
+    @discardableResult
+    private func captureMaterials(inputs: PanelInputs, surface: Surface) -> GlowWindowController.PreparationInputs {
+        glow.capturePreparation(geometry: geometry, island: surface.glowIsland,
+            islandRadius: surface.glowRadius, glow: surface.glowGeometry,
+            outwardOnly: surface.glowSettings.outwardOnly, appearance: inputs.appearance,
+            pattern: surface.glowSettings.pattern(), drawsGlow: surface.drawsGlow)
+    }
+
+    @discardableResult
+    private func beginMaterialPreparation(inputs: PanelInputs, open: Bool, height: CGFloat, surface: Surface,
+                                         captured: GlowWindowController.PreparationInputs? = nil) -> MaterialPreparation {
+        let captured = captured ?? captureMaterials(inputs: inputs, surface: surface)
+        let render = renderMaterials
+        let installed = glow.installedPreparation(matching: captured)
+        let task: Task<GlowWindowController.PreparedImages?, Never>? = installed == nil
+            ? Task.detached(priority: .userInitiated) {
+                guard !Task.isCancelled else { return nil }
+                let images = await render(captured)
+                return Task.isCancelled ? nil : images
+            } : nil
+        let preparation = MaterialPreparation(inputs: inputs, open: open, surface: surface, height: height, task: task)
+        preparation.images = installed
+        materialPreparation = preparation
+        guard let task else { return preparation }
+        Task { [weak self, weak preparation] in
+            guard let images = await task.value, let self, let preparation,
+                  self.materialPreparation === preparation else { return }
+            guard preparation.inputs == self.panelInputs else {
+                self.apply(animated: false)
+                return
+            }
+            preparation.images = images
+            if preparation.open, case .opening(let deadline) = self.machine.state, Date() >= deadline {
+                self.timerFired()
+            } else if preparation.open == self.machine.isOpen {
+                self.apply(animated: self.previewPlacement == nil)
+            }
+        }
+        return preparation
     }
 
     func apply(animated: Bool) {
@@ -722,8 +793,8 @@ final class ScreenHUD {
         var root = makeRoot(open: open, animated: animated)
         // A report can change the token legend without changing the coordinator's observed quota rows.
         // Validate at consumption as well as when the coordinator applies an update during the delay.
-        let prepared = open && openingPreparation?.inputs == openingInputs ? openingPreparation : nil
-        if open { openingPreparation = nil }
+        let inputs = panelInputs
+        var prepared = materialPreparation?.inputs == inputs && materialPreparation?.open == open ? materialPreparation : nil
         if open {
             let height = prepared?.height
                 ?? max(80, min(island.contentHeight(for: root).rounded(), maximumContentHeight))
@@ -731,6 +802,14 @@ final class ScreenHUD {
             else { panelHeight = height }
         }
         let surface = surface(open: open, height: showsAlertDetails ? alertDetailHeight : panelHeight)
+        if prepared?.surface != surface { prepared = nil }
+        let captured = captureMaterials(inputs: inputs, surface: surface)
+        let installed = glow.installedPreparation(matching: captured)
+        let preparingFutureOpening: Bool = if case .opening = machine.state { true } else { false }
+        if prepared == nil, installed == nil, !preparingFutureOpening {
+            prepared = beginMaterialPreparation(inputs: inputs, open: open,
+                height: showsAlertDetails ? alertDetailHeight : panelHeight, surface: surface, captured: captured)
+        }
         var windowFrame = surface.windowFrame
         let expanded = surface.expanded
         alertFrame = (activeAlert != nil && !open && expanded) ? windowFrame : nil
@@ -787,8 +866,10 @@ final class ScreenHUD {
             pattern: surface.glowSettings.pattern(),
             backdrop: surface.backdrop ? geometry.rect : nil,
             drawsGlow: surface.drawsGlow,
-            prepared: prepared?.images
+            prepared: prepared?.images ?? installed,
+            materialsPending: prepared?.images == nil && installed == nil
         )
+        if !preparingFutureOpening, prepared?.images != nil || installed != nil { materialPreparation = nil }
         // The strip's place on screen is fixed; the window around it is not, so the offset between them is
         // measured rather than assumed to be the window's own top edge — which moves when the panel opens.
         let canvas = island.panel.frame
@@ -824,7 +905,7 @@ final class ScreenHUD {
     }
 
     /// Both preparation and presentation use the same parked edge, clamping and glow dimensions.
-    private struct Surface {
+    private struct Surface: Equatable {
         let windowFrame: CGRect
         let cardFrame: CGRect
         let expanded: Bool

@@ -33,7 +33,7 @@ final class GlowWindowController {
     static let panelWidth: CGFloat = 1000
 
     /// Inputs of the soft glow bitmap.
-    fileprivate struct SoftKey: Hashable {
+    fileprivate struct SoftKey: Hashable, Sendable {
         let glow: GlowGeometry
         let islandSize: CGSize
         let islandRadius: CGFloat
@@ -42,7 +42,7 @@ final class GlowWindowController {
         let scale: CGFloat
     }
 
-    fileprivate struct ShadowKey: Hashable {
+    fileprivate struct ShadowKey: Hashable, Sendable {
         let size: CGSize
         let radius: CGFloat
         let scale: CGFloat
@@ -56,13 +56,24 @@ final class GlowWindowController {
     }
 
     /// Materials for one pending opening. The hover owner retains these until the panel opens or the pointer leaves.
-    struct PreparedImages {
+    struct PreparedImages: Sendable {
         fileprivate let softKey: SoftKey
         let soft: GlowImage?
         fileprivate let shadowKey: ShadowKey
         let shadow: GlowImage?
         let renderer: GlowFrameRenderer?
         let resting: GlowImage?
+    }
+
+    /// Screen, accessibility and font queries happen before this value is handed to the raster worker.
+    struct PreparationInputs: Sendable {
+        fileprivate let softKey: SoftKey
+        fileprivate let shadowKey: ShadowKey
+        fileprivate let rendersSoft: Bool
+        fileprivate let rendersShadow: Bool
+        fileprivate let rendererKey: GlowFrameRenderer.Key?
+        fileprivate let glyphs: GlyphSet?
+        fileprivate let rendersResting: Bool
     }
 
     init(geometry: NotchGeometry) {
@@ -189,34 +200,63 @@ final class GlowWindowController {
         pattern: GlowPattern = GlowPattern(),
         drawsGlow: Bool = true
     ) -> PreparedImages {
+        Self.render(capturePreparation(geometry: geometry, island: island, islandRadius: islandRadius,
+            glow: glow, outwardOnly: outwardOnly, appearance: appearance, pattern: pattern, drawsGlow: drawsGlow))
+    }
+
+    func capturePreparation(
+        geometry: NotchGeometry, island: CGRect, islandRadius: CGFloat, glow: GlowGeometry,
+        outwardOnly: Bool, appearance: GlowAppearance, pattern: GlowPattern = GlowPattern(), drawsGlow: Bool = true
+    ) -> PreparationInputs {
         let local = Self.canonicalIslandFrame(island, panel: Self.panelFrame(for: geometry), edge: geometry.edge)
         let scale = geometry.backingScale
         let softKey = SoftKey(glow: glow, islandSize: local.size, islandRadius: islandRadius,
                               outwardOnly: outwardOnly, stops: appearance.stops, scale: scale)
         let shadowKey = ShadowKey(size: local.size, radius: islandRadius, scale: scale)
         let visible = !appearance.hidden
-        let soft = visible && drawsGlow && !pattern.usesGrid
-            ? GlowRenderer.render(glow: glow, islandSize: local.size, islandRadius: islandRadius,
-                                  outwardOnly: outwardOnly, stops: appearance.stops, scale: scale)
-            : nil
-        let shadow = visible
-            ? GlowRenderer.renderShadow(width: local.width, height: local.height, cornerRadius: islandRadius, scale: scale)
-            : nil
-        let renderer: GlowFrameRenderer?
+        let rendererKey: GlowFrameRenderer.Key?
         if visible && drawsGlow && (pattern.usesGrid || pattern.effect != .breathe) {
-            renderer = GlowFrameRenderer(.init(glow: glow, islandRadius: islandRadius, stops: appearance.stops,
+            rendererKey = .init(glow: glow, islandRadius: islandRadius, stops: appearance.stops,
                 scale: scale, pattern: pattern, colorSpace: panel.screen?.colorSpace?.cgColorSpace,
-                islandSize: pattern.usesGrid ? .zero : local.size, outwardOnly: pattern.usesGrid ? true : outwardOnly))
+                islandSize: pattern.usesGrid ? .zero : local.size, outwardOnly: pattern.usesGrid ? true : outwardOnly)
         } else {
-            renderer = nil
+            rendererKey = nil
         }
         let motion = Self.playsMotion(pattern: pattern, appearance: appearance,
                                       reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
-        let resting = pattern.usesGrid && !motion
-            ? renderer?.render(time: 0, blend: 0, breathSeconds: 0, breathAmplitude: 0)
+        return PreparationInputs(softKey: softKey, shadowKey: shadowKey,
+            rendersSoft: visible && drawsGlow && !pattern.usesGrid, rendersShadow: visible,
+            rendererKey: rendererKey, glyphs: rendererKey.flatMap(GlowFrameRenderer.glyphs),
+            rendersResting: pattern.usesGrid && !motion)
+    }
+
+    /// Only immutable Core Graphics/Core Text values reach this function; no window or AppKit queries occur here.
+    nonisolated static func render(_ inputs: PreparationInputs) -> PreparedImages {
+        let key = inputs.softKey, shadowKey = inputs.shadowKey
+        let soft = inputs.rendersSoft
+            ? GlowRenderer.render(glow: key.glow, islandSize: key.islandSize, islandRadius: key.islandRadius,
+                                  outwardOnly: key.outwardOnly, stops: key.stops, scale: key.scale)
             : nil
-        return PreparedImages(softKey: softKey, soft: soft, shadowKey: shadowKey, shadow: shadow,
+        let shadow = inputs.rendersShadow
+            ? GlowRenderer.renderShadow(width: shadowKey.size.width, height: shadowKey.size.height,
+                                        cornerRadius: shadowKey.radius, scale: shadowKey.scale)
+            : nil
+        let renderer = Task.isCancelled ? nil : inputs.rendererKey.map { GlowFrameRenderer($0, glyphs: inputs.glyphs) }
+        let resting = inputs.rendersResting
+            ? renderer?.render(time: 0, blend: 0, breathSeconds: 0, breathAmplitude: 0) : nil
+        return PreparedImages(softKey: key, soft: soft, shadowKey: shadowKey, shadow: shadow,
                               renderer: renderer, resting: resting)
+    }
+
+    /// A clock or data refresh can change panel inputs without changing any of the installed materials.
+    /// Reuse the controller's existing keys so those refreshes neither draw again nor briefly hide the glow.
+    func installedPreparation(matching inputs: PreparationInputs) -> PreparedImages? {
+        guard !inputs.rendersSoft || softKey == inputs.softKey,
+              !inputs.rendersShadow || shadowKey == inputs.shadowKey,
+              inputs.rendererKey == nil || frameRenderer?.key == inputs.rendererKey,
+              !inputs.rendersResting || restingKey == inputs.rendererKey else { return nil }
+        return PreparedImages(softKey: inputs.softKey, soft: nil, shadowKey: inputs.shadowKey, shadow: nil,
+                              renderer: inputs.rendererKey == nil ? nil : frameRenderer, resting: nil)
     }
 
     /// - island: the island's current frame in screen coordinates.
@@ -237,7 +277,8 @@ final class GlowWindowController {
         /// is no backdrop left to draw, so the field stops rather than following the new shape around. The
         /// panel keeps its shadow, which lives here too.
         drawsGlow: Bool = true,
-        prepared: PreparedImages? = nil
+        prepared: PreparedImages? = nil,
+        materialsPending: Bool = false
     ) {
         let frame = Self.panelFrame(for: geometry)
         if panel.frame != frame { panel.setFrame(frame, display: false) }
@@ -255,6 +296,13 @@ final class GlowWindowController {
             return
         }
         if !panel.isVisible { panel.orderFrontRegardless() }
+
+        // Opening and collapse commit their window geometry immediately; the worker supplies correctly shaped materials.
+        // A previous surface's contour must not be stretched over a different panel while that result is pending.
+        glowLayer.isHidden = materialsPending
+        shadowLayer.isHidden = materialsPending
+        alertLayer.isHidden = materialsPending
+        if materialsPending { return }
 
         // Bitmaps and shader geometry retain their top-edge convention, including on a vertical dock.
         let local = Self.canonicalIslandFrame(island, panel: frame, edge: geometry.edge)

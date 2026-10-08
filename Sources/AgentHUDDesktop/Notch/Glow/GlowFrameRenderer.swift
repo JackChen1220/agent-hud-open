@@ -7,8 +7,8 @@ import AgentHUDCore
 /// marks, dots in one path per colour and characters through Core Text's glyph cache. The soft style keeps its
 /// blurred bitmap and multiplies it by a coarse gain field that the context scales up smoothly, recolouring it for
 /// flow, so each frame is two image draws.
-final class GlowFrameRenderer {
-    struct Key: Hashable {
+final class GlowFrameRenderer: Sendable {
+    struct Key: Hashable, Sendable {
         let glow: GlowGeometry
         let islandRadius: CGFloat
         let stops: [GradientStop]
@@ -50,7 +50,18 @@ final class GlowFrameRenderer {
     private let glyphs: GlyphSet?
     private let brailleDots: [[GlowMatrix.Cell]]
 
-    init(_ key: Key) {
+    convenience init(_ key: Key) {
+        self.init(key, glyphs: Self.glyphs(for: key))
+    }
+
+    /// AppKit chooses the system font on the main thread before the immutable raster inputs leave it.
+    static func glyphs(for key: Key) -> GlyphSet? {
+        let scale = max(1, key.scale)
+        let pitch = max(1 / scale, (key.pattern.pitch * scale).rounded() / scale)
+        return GlyphSet(style: key.pattern.style, size: pitch, density: key.pattern.density)
+    }
+
+    init(_ key: Key, glyphs: GlyphSet?) {
         self.key = key
         let scale = max(1, key.scale)
         // Whole device pixels keep every mark the same size.
@@ -79,7 +90,7 @@ final class GlowFrameRenderer {
         centers = matrix.cells.map { cell in
             CGPoint(x: (cell.x * scale).rounded() / scale, y: ((key.glow.height - cell.y) * scale).rounded() / scale)
         }
-        glyphs = GlyphSet(style: key.pattern.style, size: pitch, density: key.pattern.density)
+        self.glyphs = glyphs
         brailleDots = key.pattern.style == .braille
             ? matrix.cells.map { matrix.brailleDots(of: $0, glow: key.glow, islandRadius: key.islandRadius).map(\.dot) }
             : []
@@ -358,7 +369,8 @@ final class GlowFrameRenderer {
 
 /// The glyphs one character style draws, in a font that has them, with offsets that centre each glyph in its cell.
 /// Density scales the font within the fixed grid, so dense glyphs may overlap their neighbours.
-struct GlyphSet {
+// CTFont is immutable and Core Text permits concurrent use; older SDKs omit its Sendable conformance.
+struct GlyphSet: @unchecked Sendable {
     let font: CTFont
     let glyphs: [CGGlyph]
     let advances: [CGFloat]
@@ -411,7 +423,7 @@ struct GlyphSet {
 }
 
 /// The soft glow's resting bitmap plus the coarse field its effects are evaluated on.
-private struct SoftGlow {
+private struct SoftGlow: Sendable {
     let base: GlowImage
     /// The glow's coverage as a grey clipping mask, recoloured by flow.
     let shape: CGImage?

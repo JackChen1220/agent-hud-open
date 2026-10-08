@@ -79,11 +79,6 @@ struct HoverPanelView: View {
                                       waitingRequests: waitingRequests).id(alert.id)
                     .padding(.bottom, 4)
             }
-            // The sessions come first: what is waiting on the user and what is running is what the panel is opened
-            // to see. Quota, balances and the token chart follow as the smaller account picture.
-            if store.settings.settings.showIslandSessions {
-                sessionLine
-            }
             if store.settings.settings.showIslandQuota, !store.rows.isEmpty {
                 quotaBlock
             }
@@ -98,6 +93,9 @@ struct HoverPanelView: View {
                 TokenConsumptionChart(store: store, theme: theme, context: .island, compact: true, onOpenStats: onOpenStats)
                     .padding(.top, 8)
                     .topDivider(theme.divider)
+            }
+            if store.settings.settings.showIslandSessions {
+                sessionLine
             }
         }
     }
@@ -118,8 +116,8 @@ struct HoverPanelView: View {
     }
 
     /// What is waiting, running and recently ended: the sessions with work in flight first — those waiting for the
-    /// user ahead of those still running — up to five, then at most three recently ended sessions, and the rest as a
-    /// count. The statistics window's range never applies here — that
+    /// user ahead of those still running — up to five, then at most three recently ended sessions. Only additional
+    /// active sessions appear in the remaining count. The statistics window's range never applies here — that
     /// range belongs to the session card, which answers a different question. The header opens the session list; each
     /// row's title returns to its agent, or opens its session page where the client names no destination, and its
     /// token count opens usage.
@@ -127,6 +125,8 @@ struct HoverPanelView: View {
         let rows = Self.sessionRows(store)
         let running = rows.running, shown = rows.shown
         let hasAbove = store.lastError != nil || alert.map { !$0.isSessionEvent } == true
+            || (store.settings.settings.showIslandQuota && (!store.rows.isEmpty || !store.enabledBilling.isEmpty))
+            || (store.settings.settings.showIslandTokens && (store.isLoading || store.isIndexing || !store.consumers.isEmpty))
         return VStack(alignment: .leading, spacing: 6) {
             Button { openSessions() } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -151,7 +151,7 @@ struct HoverPanelView: View {
                 }
                 if rows.more > 0 {
                     Button { openSessions() } label: {
-                        Text(L10n.text("还有 \(rows.more) 个", "+\(rows.more) more"))
+                        Text(L10n.text("还有 \(rows.more) 个运行中", "+\(rows.more) more running"))
                             .foregroundStyle(theme.secondary)
                     }
                 }
@@ -174,7 +174,7 @@ struct HoverPanelView: View {
                 Button { open(session) } label: {
                     HStack(spacing: 8) {
                         sessionMark(session, dot: dot)
-                        Text("\(Self.shortTask(session.task)) · \(session.terminal ?? "—")")
+                        Text(Self.sessionTitle(session))
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Spacer(minLength: 0)
@@ -325,8 +325,9 @@ struct HoverPanelView: View {
     /// The island's summary: waiting before running, newest created first, then the most recently ended.
     /// The full session list holds everything beyond those limits.
     static func sessionRows(_ store: UsageStore) -> (running: [LiveSession], shown: [LiveSession], more: Int) {
-        let running = store.liveSessions
-        let candidates = store.view.recentSessions
+        // Account-wide API receipts belong to statistics, not this Mac's local activity summary.
+        let running = store.liveSessions.filter { !$0.accountWide }
+        let candidates = store.view.recentSessions.filter { !$0.session.accountWide }
         let active = candidates.filter(\.phase.isInFlight).sorted {
             let lhsWaiting = $0.phase.state == .waitingForApproval
             let rhsWaiting = $1.phase.state == .waitingForApproval
@@ -337,7 +338,7 @@ struct HoverPanelView: View {
         let ended = candidates.filter { !$0.phase.isInFlight }
         let shown = (Array(active.prefix(activeSessionRowLimit)) + Array(ended.prefix(endedSessionRowLimit)))
             .map(\.session)
-        return (running, shown, max(0, candidates.count - shown.count))
+        return (running, shown, max(0, active.count - activeSessionRowLimit))
     }
 
     /// The questions this session is waiting on: only a question put to this exact session reaches its row.
@@ -391,6 +392,11 @@ struct HoverPanelView: View {
     /// "fix auth bug in middleware" → "fix auth bug"
     static let activeSessionRowLimit = 5
     static let endedSessionRowLimit = 3
+
+    static func sessionTitle(_ session: LiveSession) -> String {
+        guard let terminal = session.terminal, !terminal.isEmpty else { return session.task }
+        return "\(shortTask(session.task)) · \(terminal)"
+    }
 
     static func shortTask(_ task: String) -> String {
         let words = task.split(separator: " ")

@@ -37,7 +37,7 @@ Each display has its own HUD and settings. Notch mode uses the physical notch or
 ### Hovering and events
 
 - A visible dock accepts dragging; with logos hidden, clicks pass through.
-- Hovering opens inward, optionally requiring Option, with the same opening and closing timing on all four edges. During the delay, content height, glow and shadow are prepared without retaining a hidden panel; leaving cancels preparation.
+- Hovering opens inward, optionally requiring Option, with the same opening and closing timing on all four edges. During the delay, content height is measured and glow and shadow bitmaps are drawn off the UI thread without retaining a hidden panel; leaving cancels preparation and discards late results. Opening and collapse commit their window geometry immediately, with materials installed when ready. Matching installed materials are reused without another raster.
 - Events appear once, on the pointer's display.
 - A successfully ended turn shows its conversation title and, for Codex, the last paragraph of its final reply when available, with a blue outlined speech bubble. Replies and permission requests share an event panel, separate from the usage panel, with one card open and the rest selectable. A reply offers session return when an exact target is available and a separate token-usage action; a failed return retains it for retry. See [session navigation](session-navigation.md) for coverage.
 - The completion's token-usage action opens its Sessions statistics page; quota events reveal and highlight their Tokens card, and other events open Tokens. A panel session's title returns to its native agent when available, its token count opens that session's statistics, and the heading opens the list; chart and menu-bar controls open Tokens and reset Sessions to its list.
@@ -47,9 +47,9 @@ Each display has its own HUD and settings. Notch mode uses the physical notch or
 
 ### Usage panel
 
-- The panel opens on a session summary: up to five sessions with work in flight, those waiting for the user ahead of those still running and newest created first within each group, then up to three recently ended sessions by their last event. Each row shows its agent's mark and its state on the mark's corner; the remaining count and header open the full Sessions page.
+- The panel shows quota and balances, then Tokens, then the local session summary: up to five sessions with work in flight, those waiting for the user ahead of those still running and newest created first within each group, then up to three recently ended sessions by their last event. Account-wide API receipts remain in statistics and do not occupy these rows. Each row shows its agent's mark and its state on the mark's corner. The remaining count covers only hidden active sessions; it and the header open the full Sessions page.
 - A session waiting on a question shows a badge on its row. It opens the question right there, answered the same way the island's own card answers it, beside a way back to the agent for answering it in its own dialog instead. A row's title returns to its agent, or opens that session's page where the client names no destination; its token count opens that session's usage.
-- Quota and balances follow as the smaller account picture, and the token chart becomes a compact strip — its legend, axis and peak mark belong to the statistics window. Height follows content up to the display's height minus 80 pt; overflow scrolls above fixed settings, statistics and host controls, clear of the notch and dock.
+- The token chart is a compact strip with the latest 24 hours in 96 quarter-hour bars, including the current quarter, and all token kinds. Dashboard range, bucket, model and token-kind controls do not change it; its legend, axis and peak mark belong to the statistics window. Height follows content up to the display's height minus 80 pt; overflow scrolls above fixed settings, statistics and host controls, clear of the notch and dock.
 
 ### Approvals
 
