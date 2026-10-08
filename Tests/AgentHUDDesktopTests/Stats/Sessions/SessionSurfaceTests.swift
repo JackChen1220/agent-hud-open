@@ -111,20 +111,27 @@ final class SessionSurfaceTests: XCTestCase {
             cardSince: now.addingTimeInterval(-2 * hour + 10), headerLabel: "ended 1h 59m ago"))
     }
 
-    /// The island lists every running session up to three and counts the rest; with none running, the three sessions
-    /// last active take the rows, one still in flight that the Mac can no longer vouch for among them.
+    /// The island lists every recent session — those with work in flight first, the ones waiting for the user ahead
+    /// of the ones still running, and the ended after them — and counts every running one for the header. One still
+    /// in flight that the Mac can no longer vouch for sits with the ended.
     @MainActor
-    func testTheIslandListsRunningSessionsElseTheMostRecentOnes() throws {
+    func testTheIslandListsWaitingThenRunningThenTheRecentlyEnded() throws {
         let store = try makeStore()
         let ended = (1...4).map { session("ended-\($0)", ended: -Double($0) * hour, observed: -Double($0) * hour) }
         let unvouched = session("unvouched", observed: -1800)
         let running = (1...4).map { session("running-\($0)", observed: -Double($0) * 60) }
         let waiting = turn("running-2", .waitingForApproval, started: -600, observed: -100)
-        // The sessions shown; the running ones, which the header counts; the rows' dots; how many running ones are left out.
+        // The sessions shown; the running ones, which the header counts; the rows' dots; how many are left out.
         let cases: [(String, [LiveSession], shown: [String], running: Int, dots: [SessionDot], more: Int)] = [
-            ("nothing running", ended + [unvouched], ["unvouched", "ended-1", "ended-2"], 0, [.ended, .ended, .ended], 0),
-            ("four running", ended + [unvouched] + running, ["running-1", "running-2", "running-3"], 4, [.running, .waiting, .running], 1),
-            ("two running", ended + Array(running.prefix(2)), ["running-1", "running-2"], 2, [.running, .waiting], 0),
+            ("nothing running", ended + [unvouched],
+             ["unvouched", "ended-1", "ended-2", "ended-3", "ended-4"], 0,
+             [.ended, .ended, .ended, .ended, .ended], 0),
+            ("four running", ended + [unvouched] + running,
+             ["running-2", "running-1", "running-3", "running-4", "unvouched", "ended-1", "ended-2", "ended-3", "ended-4"], 4,
+             [.waiting, .running, .running, .running, .ended, .ended, .ended, .ended, .ended], 0),
+            ("two running", ended + Array(running.prefix(2)),
+             ["running-2", "running-1", "ended-1", "ended-2", "ended-3", "ended-4"], 2,
+             [.waiting, .running, .ended, .ended, .ended, .ended], 0),
         ]
         for (name, sessions, shown, count, dots, more) in cases {
             show(sessions, turns: [waiting], in: store)
@@ -134,6 +141,54 @@ final class SessionSurfaceTests: XCTestCase {
             XCTAssertEqual(rows.shown.map { HoverPanelView.sessionDot($0, store: store) }, dots, name)
             XCTAssertEqual(rows.more, more, name)
         }
+    }
+
+    /// Within each group — waiting, running, ended — the newest created takes the row above the older.
+    @MainActor
+    func testTheIslandOrdersEachGroupByCreationNewestFirst() throws {
+        let store = try makeStore()
+        show([
+            session("running-old", started: -10 * hour, observed: -60),
+            session("ended-new", started: -2 * hour, ended: -hour, observed: -hour),
+            session("running-new", started: -hour, observed: -120),
+            session("ended-old", started: -20 * hour, ended: -19 * hour, observed: -19 * hour),
+            session("waiting-new", started: -30 * 60.0, observed: -100),
+        ], turns: [turn("waiting-new", .waitingForApproval, started: -600, observed: -100)], in: store)
+        let rows = HoverPanelView.sessionRows(store)
+        XCTAssertEqual(rows.shown.map(\.id), ["waiting-new", "running-new", "running-old", "ended-new", "ended-old"])
+        XCTAssertEqual(rows.running.count, 3)
+        XCTAssertEqual(rows.more, 0)
+    }
+
+    /// `sessionRowLimit` rows are the panel's fill; a week's sessions beyond them become a count under the rows.
+    @MainActor
+    func testTheIslandShowsTwoDozenSessionsAndCountsTheRest() throws {
+        let store = try makeStore()
+        show((0..<30).map {
+            session("s-\($0)", started: -Double($0 + 1) * 60, ended: -Double($0 + 1) * 60,
+                    observed: -Double($0 + 1) * 60)
+        }, in: store)
+        let rows = HoverPanelView.sessionRows(store)
+        XCTAssertEqual(rows.shown.count, HoverPanelView.sessionRowLimit)
+        XCTAssertEqual(rows.shown.map(\.id), (0..<HoverPanelView.sessionRowLimit).map { "s-\($0)" })
+        XCTAssertEqual(rows.more, 30 - HoverPanelView.sessionRowLimit)
+        XCTAssertEqual(rows.running.count, 0)
+    }
+
+    /// A row's badge counts only the questions put to that exact session: another session's questions and a plain
+    /// permission request on the same session stay off it.
+    @MainActor
+    func testOnlyQuestionsForTheSessionsOwnIDReachItsRow() {
+        let session = session("s1", observed: -60)
+        func request(_ id: String, _ sessionID: String, questions: [PermissionQuestion] = []) -> PermissionRequest {
+            PermissionRequest(id: id, source: .claude, sessionID: sessionID, toolName: questions.isEmpty ? "Bash" : "AskUserQuestion",
+                              summary: "Pick one", detail: nil, cwd: nil, questions: questions, at: now)
+        }
+        let question = request("q1", "s1", questions: [PermissionQuestion(question: "Pick one", options: [.init(label: "A")])])
+        let waiting = [question, request("q2", "s2", questions: [PermissionQuestion(question: "Other", options: [.init(label: "B")])]),
+                       request("p1", "s1")]
+        XCTAssertEqual(HoverPanelView.questionRequests(for: session, waiting: waiting).map(\.id), ["q1"])
+        XCTAssertEqual(HoverPanelView.questionRequests(for: session, waiting: []).map(\.id), [])
     }
 
     /// A day of the list holds the sessions last active on it, and a running session sits under today whenever it

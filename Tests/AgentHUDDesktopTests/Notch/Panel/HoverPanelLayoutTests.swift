@@ -28,7 +28,7 @@ final class HoverPanelLayoutTests: XCTestCase {
     }
 
     @MainActor
-    func testSessionTitleHitAreaReturnsToAgentWhileTokensOpenOnlyThatSessionsUsage() async throws {
+    func testSessionTitleReturnsToAgentOrItsPageWhileTokensOpenOnlyThatSessionsUsage() async throws {
         _ = NSApplication.shared
         let domain = "app.agenthud.tests.panel-actions.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
@@ -48,7 +48,8 @@ final class HoverPanelLayoutTests: XCTestCase {
                                       startedAt: now.addingTimeInterval(-50), pctOfWindow: nil, tokensIn: 200, tokensOut: 100,
                                       observedAt: now)
         store.replace(report: UsageReport(generatedAt: now, snapshots: [], sessions: [available, unavailable], consumers: [agent]))
-        XCTAssertEqual(HoverPanelView.sessionRows(store).shown.map(\.id), [available.id, unavailable.id])
+        // Newest created first: the session without a destination takes the top row.
+        XCTAssertEqual(HoverPanelView.sessionRows(store).shown.map(\.id), [unavailable.id, available.id])
         let observation = PanelActionObservation()
         let width: CGFloat = 420, height: CGFloat = 220
         let panel = HoverPanelView(store: store, onOpenStats: { observation.stats += 1 },
@@ -63,52 +64,55 @@ final class HoverPanelLayoutTests: XCTestCase {
         window.makeKey()
         defer { window.orderOut(nil) }
 
-        // SwiftUI's focus proxies can be nested, and a disabled title need not have a proxy. Find the enabled
-        // title and both enabled token controls; the second token row locates the disabled title below it.
+        // Each row's title spans the row and its token control sits in the trailing column; the two rows are
+        // paired by their vertical centre.
         try await waitUntil("the native session controls have laid-out bounds", hosting: hosting) {
             !self.rowTitleFrames(in: hosting).isEmpty && self.rowTokenFrames(in: hosting).count == 2
         }
-        let titleBounds = try XCTUnwrap(rowTitleFrames(in: hosting).first)
-        let tokenBounds = rowTokenFrames(in: hosting)
-        let tokensBounds = try XCTUnwrap(tokenBounds.first { abs($0.midY - titleBounds.midY) < 1 })
-        let disabledTokensBounds = try XCTUnwrap(tokenBounds.first { abs($0.midY - titleBounds.midY) > 1 })
-        let disabledBounds = CGRect(x: titleBounds.minX, y: disabledTokensBounds.minY,
-                                    width: titleBounds.width, height: disabledTokensBounds.height)
+        let tokens = rowTokenFrames(in: hosting)
+        func titleNear(_ token: CGRect) throws -> CGRect {
+            try XCTUnwrap(rowTitleFrames(in: hosting).first { abs($0.midY - token.midY) < 1 })
+        }
+        let topToken = try XCTUnwrap(tokens.first { token in rowTitleFrames(in: hosting).contains { abs($0.midY - token.midY) < 1 } })
+        let bottomToken = try XCTUnwrap(tokens.first { $0 != topToken })
+        let unavailableTitle = try titleNear(topToken), availableTitle = try titleNear(bottomToken)
+        XCTAssertGreaterThan(availableTitle.width, 180, "The short title keeps a real trailing blank area before the token button")
         func screenFrame(_ bounds: CGRect) -> CGRect { window.convertToScreen(hosting.convert(bounds, to: nil)) }
-        let tokensFrame = screenFrame(tokensBounds), disabledFrame = screenFrame(disabledBounds)
-        let disabledTokensFrame = screenFrame(disabledTokensBounds)
-        let titleFrame = screenFrame(titleBounds)
-        XCTAssertGreaterThan(titleFrame.width, 180, "The short title keeps a real trailing blank area before the token button")
-        let gap = CGPoint(x: titleFrame.minX + 10, y: titleFrame.midY) // The 6 pt dot is followed by an 8 pt gap.
-        let trailingBlank = CGPoint(x: titleFrame.maxX - 4, y: titleFrame.midY)
-        for point in [gap, trailingBlank] {
+        let unavailableTitleFrame = screenFrame(unavailableTitle)
+        let availableTitleFrame = screenFrame(availableTitle)
+        let topTokenFrame = screenFrame(topToken), bottomTokenFrame = screenFrame(bottomToken)
+
+        // A title whose client names no destination opens that session's own page instead of doing nothing.
+        let gapA = CGPoint(x: unavailableTitleFrame.minX + 10, y: unavailableTitleFrame.midY) // The mark sits at the row's start.
+        try click(gapA, in: window)
+        try await waitUntil("a session without a destination opens its own page", hosting: hosting) { observation.stats == 1 }
+        XCTAssertEqual(store.focusedSessionID, unavailable.id)
+        XCTAssertEqual(store.statsTab, .sessions)
+        XCTAssertEqual(observation.sessions, [])
+
+        // A title with a destination returns to the agent and leaves the statistics selection alone.
+        for point in [CGPoint(x: availableTitleFrame.minX + 10, y: availableTitleFrame.midY),
+                      CGPoint(x: availableTitleFrame.maxX - 4, y: availableTitleFrame.midY)] {
             let previous = observation.sessions.count
             try click(point, in: window)
-            try await waitUntil("the title's gap or trailing blank returns to its session", hosting: hosting) {
+            try await waitUntil("the title's mark or trailing blank returns to its session", hosting: hosting) {
                 observation.sessions.count == previous + 1
             }
             XCTAssertEqual(observation.sessions.last, available.id)
-            XCTAssertEqual(observation.stats, 0)
-            XCTAssertNil(store.focusedSessionID)
-            XCTAssertEqual(store.statsTab, .tokens, "Returning to the agent must not alter the statistics selection")
+            XCTAssertEqual(observation.stats, 1)
+            XCTAssertEqual(store.focusedSessionID, unavailable.id, "Returning to the agent must not alter the statistics selection")
+            XCTAssertEqual(store.statsTab, .sessions)
         }
 
-        try click(CGPoint(x: tokensFrame.midX, y: tokensFrame.midY), in: window)
-        try await waitUntil("tokens open the selected session's usage", hosting: hosting) { observation.stats == 1 }
+        // The token buttons open only their own session's usage.
+        try click(CGPoint(x: bottomTokenFrame.midX, y: bottomTokenFrame.midY), in: window)
+        try await waitUntil("tokens open the selected session's usage", hosting: hosting) { observation.stats == 2 }
         XCTAssertEqual(store.focusedSessionID, available.id)
         XCTAssertEqual(store.statsTab, .sessions)
         XCTAssertEqual(observation.sessions, [available.id, available.id], "The token button never invokes native navigation")
-
-        try click(CGPoint(x: disabledFrame.midX, y: disabledFrame.midY), in: window)
-        try await Task.sleep(for: .milliseconds(100))
-        hosting.layoutSubtreeIfNeeded()
-        XCTAssertEqual(observation.stats, 1)
-        XCTAssertEqual(observation.sessions, [available.id, available.id])
-        XCTAssertEqual(store.focusedSessionID, available.id, "A disabled title must not silently open usage")
-        try click(CGPoint(x: disabledTokensFrame.midX, y: disabledTokensFrame.midY), in: window)
-        try await waitUntil("a session without a destination still opens its own usage", hosting: hosting) { observation.stats == 2 }
+        try click(CGPoint(x: topTokenFrame.midX, y: topTokenFrame.midY), in: window)
+        try await waitUntil("a session without a destination still opens its own usage", hosting: hosting) { observation.stats == 3 }
         XCTAssertEqual(store.focusedSessionID, unavailable.id)
-        XCTAssertEqual(store.statsTab, .sessions)
         XCTAssertEqual(observation.sessions, [available.id, available.id])
     }
 

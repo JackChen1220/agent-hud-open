@@ -7,27 +7,27 @@ struct IslandPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
-            SettingsSection(
-                title: L10n.text("展开面板", "Expanded panel"),
-                subtitle: L10n.text("每项展示一个简短示例，开关控制对应内容。", "A small sample for each part. Choose what appears in the panel."),
-                theme: theme
-            ) {
-                SettingsToggleRow(label: L10n.text("额度明细", "Quota details"), isOn: settings.binding(\.showIslandQuota))
-                IslandPartSample(height: 64, enabled: settings.settings.showIslandQuota) {
-                    quotaSample
+                SettingsSection(
+                    title: L10n.text("展开面板", "Expanded panel"),
+                    subtitle: L10n.text("每项展示一个简短示例，开关控制对应内容。", "A small sample for each part. Choose what appears in the panel."),
+                    theme: theme
+                ) {
+                    SettingsToggleRow(label: L10n.text("会话列表", "Session list"), isOn: settings.binding(\.showIslandSessions))
+                    IslandPartSample(height: 56, enabled: settings.settings.showIslandSessions) {
+                        sessionSample
+                    }
+                    SettingsDivider(theme: theme)
+                    SettingsToggleRow(label: L10n.text("额度明细", "Quota details"), isOn: settings.binding(\.showIslandQuota))
+                    IslandPartSample(height: 64, enabled: settings.settings.showIslandQuota) {
+                        quotaSample
+                    }
+                    SettingsToggleRow(label: L10n.text("重置倒计时", "Reset countdown"), isOn: settings.binding(\.showResetCountdown))
+                    SettingsDivider(theme: theme)
+                    SettingsToggleRow(label: L10n.text("Token 消耗", "Token usage"), isOn: settings.binding(\.showIslandTokens))
+                    IslandPartSample(height: 64, enabled: settings.settings.showIslandTokens) {
+                        tokenSample
+                    }
                 }
-                SettingsToggleRow(label: L10n.text("重置倒计时", "Reset countdown"), isOn: settings.binding(\.showResetCountdown))
-                SettingsDivider(theme: theme)
-                SettingsToggleRow(label: L10n.text("Token 消耗", "Token usage"), isOn: settings.binding(\.showIslandTokens))
-                IslandPartSample(height: 92, enabled: settings.settings.showIslandTokens) {
-                    tokenSample
-                }
-                SettingsDivider(theme: theme)
-                SettingsToggleRow(label: L10n.text("活跃会话", "Active sessions"), isOn: settings.binding(\.showIslandSessions))
-                IslandPartSample(height: 56, enabled: settings.settings.showIslandSessions) {
-                    sessionSample
-                }
-            }
             SettingsSection(title: L10n.text("悬停交互", "Hover behavior"), theme: theme) {
                 SettingsToggleRow(
                     label: L10n.text("按 Option 才展开", "Press Option to open"),
@@ -73,36 +73,45 @@ struct IslandPane: View {
     }
 
     private var tokenSample: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack(spacing: 20) {
-                ForEach(Array(IslandSampleData.consumers.enumerated()), id: \.element.id) { index, consumer in
-                    HStack(spacing: 5) {
-                        Circle().fill(IslandSampleData.colors[index]).frame(width: 6, height: 6)
-                        AgentLogo(vendor: consumer.vendor, size: 12)
-                        Text(consumer.model)
-                    }
-                }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text(L10n.text("Token 消耗", "Tokens")).fontWeight(.semibold)
+                Spacer()
+                Text(L10n.text("1 小时 · 46M tok", "1hr · 46M tok"))
+                    .font(.tabular(11)).foregroundStyle(Theme.island.secondary)
             }
-            .font(.ui(11)).foregroundStyle(Theme.island.secondary)
             TokenBarsChart(columns: IslandSampleData.columns, interval: IslandSampleData.interval,
-                           colors: IslandSampleData.colors, consumers: IslandSampleData.consumers, theme: .island)
+                           colors: IslandSampleData.colors, consumers: IslandSampleData.consumers, theme: .island,
+                           compact: true)
                 .frame(height: 42)
         }
+        .font(.ui(11))
     }
 
     private var sessionSample: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Circle().fill(Theme.island.status(.ok)).frame(width: 6, height: 6)
-                Text(L10n.text("1 个运行中", "1 running"))
+                Text(L10n.text("会话", "Sessions")).fontWeight(.semibold)
                 Spacer()
-                Text("60k tok").foregroundStyle(Theme.island.secondary)
+                Text(L10n.text("1 个运行中", "1 running"))
             }
             HStack(spacing: 6) {
-                AgentLogo(vendor: "Claude", size: 12)
+                ZStack(alignment: .bottomTrailing) {
+                    AgentLogo(vendor: "Claude", size: 14)
+                    Circle().fill(Theme.island.status(.ok)).frame(width: 6, height: 6)
+                        .overlay(Circle().stroke(.black, lineWidth: 1.5)).offset(x: 2, y: 2)
+                }
+                .frame(width: 14, height: 14)
                 Text(L10n.text("修复登录问题", "Fix sign-in issue"))
                 Spacer()
-                Text("Terminal")
+                HStack(spacing: 3) {
+                    Image(systemName: "questionmark.bubble.fill").font(.system(size: 9, weight: .semibold))
+                    Text("1").font(.tabular(9, .semibold))
+                }
+                .padding(.horizontal, 6).padding(.vertical, 3)
+                .background(Capsule().fill(Theme.island.status(.warning).opacity(0.16)))
+                .foregroundStyle(Theme.island.status(.warning))
+                Text("60k tok")
             }
             .foregroundStyle(Theme.island.secondary)
         }

@@ -12,13 +12,15 @@ struct UsageChartsCard: View {
     }
 }
 
-/// The same stacked token chart in statistics and the expanded island.
+/// The same stacked token chart in statistics and the expanded island, and a compact strip of it — no legend, no
+/// axis, no peak label — where the sessions carry the panel and the chart is only the small account picture.
 struct TokenConsumptionChart: View {
     enum Context { case stats, island }
 
     let store: UsageStore
     let theme: Theme
     let context: Context
+    var compact = false
 
     var body: some View {
         let columns = store.tokenColumns
@@ -48,7 +50,7 @@ struct TokenConsumptionChart: View {
                     }
                 }
             }
-            if !legendConsumers.isEmpty {
+            if !compact, !legendConsumers.isEmpty {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), alignment: .leading)], alignment: .leading, spacing: 6) {
                     ForEach(legendConsumers, id: \.element.id) { index, consumer in
                         legendLabel(consumer, tokens: totals[index])
@@ -58,23 +60,25 @@ struct TokenConsumptionChart: View {
                 .foregroundStyle(theme.secondary)
             }
             TokenBarsChart(columns: columns, interval: store.statsInterval, colors: barColors,
-                           consumers: store.consumers, theme: theme, isLoading: store.report == nil)
+                           consumers: store.consumers, theme: theme, isLoading: store.report == nil, compact: compact)
                 .id([store.statsRange.hours, store.tokenBucketSize.rawValue, store.tokenDimensions.rawValue])
-                .frame(height: context == .island ? 72 : 100)
+                .frame(height: compact ? 40 : (context == .island ? 72 : 100))
                 .padding(.horizontal, context == .stats ? 12 : 6)
-                .padding(.top, 12)
+                .padding(.top, compact ? 8 : 12)
                 .zIndex(1)
 
-            HStack {
-                let labels = ChartData.axisLabels(range: store.statsRange, now: store.dataDate)
-                ForEach(Array(labels.enumerated()), id: \.offset) { index, label in
-                    if index > 0 { Spacer() }
-                    Text(label)
+            if !compact {
+                HStack {
+                    let labels = ChartData.axisLabels(range: store.statsRange, now: store.dataDate)
+                    ForEach(Array(labels.enumerated()), id: \.offset) { index, label in
+                        if index > 0 { Spacer() }
+                        Text(label)
+                    }
                 }
+                .font(.ui(10))
+                .foregroundStyle(theme.secondary)
+                .padding(.horizontal, context == .stats ? 12 : 6)
             }
-            .font(.ui(10))
-            .foregroundStyle(theme.secondary)
-            .padding(.horizontal, context == .stats ? 12 : 6)
         }
     }
 
@@ -112,6 +116,8 @@ struct TokenBarsChart: View {
     let consumers: [AgentDescriptor]
     let theme: Theme
     var isLoading = false
+    /// A compact strip keeps only the bars: no peak label over them, since at that height it would sit on the header.
+    var compact = false
     @State private var hoveredID: Date?
 
     private var inspectedColumn: TokenColumn? {
@@ -163,7 +169,7 @@ struct TokenBarsChart: View {
                         }
                     }
                 }
-                if peak > 0 || !isLoading {
+                if !compact, peak > 0 || !isLoading {
                     Text(TokenFormat.short(peak))
                         .font(.ui(10))
                         .foregroundStyle(theme.secondary)
