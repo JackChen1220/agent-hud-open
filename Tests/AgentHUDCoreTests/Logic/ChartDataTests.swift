@@ -161,9 +161,30 @@ final class ChartDataTests: XCTestCase {
         // 2026-09-06 (Sunday) 14:32 CST
         let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 6, hour: 14, minute: 32))!
         let labels = ChartData.axisLabels(range: .hours5, now: now, calendar: calendar)
-        XCTAssertEqual(labels, ["周日 09:32", "周日 11:12", "周日 12:52", "现在 14:32"])
+        XCTAssertEqual(labels.count, 4)
+        XCTAssertTrue(labels.allSatisfy { $0.contains("9月6日") })
+        XCTAssertEqual(labels.map { String($0.suffix(5)) }, ["09:32", "11:12", "12:52", "14:32"])
+        XCTAssertTrue(labels.last!.hasPrefix("现在 "))
         XCTAssertEqual(ChartData.axisLabels(range: .days7, now: now, calendar: calendar).count, 4)
         XCTAssertEqual(ChartData.weekdayTime(now, calendar: calendar), "周日 14:32")
+    }
+
+    func testConcreteDatesDistinguishMonthBoundariesAndFollowTheDateLocale() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let before = calendar.date(from: DateComponents(year: 2026, month: 9, day: 30, hour: 23, minute: 45))!
+        let after = calendar.date(from: DateComponents(year: 2026, month: 10, day: 1, hour: 0, minute: 15))!
+        XCTAssertTrue(ChartData.dateTime(before, calendar: calendar).contains("9月30日"))
+        XCTAssertTrue(ChartData.dateTime(after, calendar: calendar).contains("10月1日"))
+        XCTAssertTrue(ChartData.dateTime(after, calendar: calendar).hasSuffix("00:15"))
+        L10n.setLanguage(.en)
+        let english = ChartData.axisLabels(range: .hours5, now: after, calendar: calendar)
+        XCTAssertTrue(english.first!.contains("30 Sep"))
+        XCTAssertTrue(english.last!.hasPrefix("Now "))
+        XCTAssertTrue(english.last!.contains("1 Oct"))
+        XCTAssertTrue(english.last!.hasSuffix("00:15"))
+        XCTAssertTrue(english.first!.contains("Wed"))
+        XCTAssertTrue(english.last!.contains("Thu"), "Concrete dates retain the weekday as an additional cue")
     }
 
     func testStatsRangeLabels() {

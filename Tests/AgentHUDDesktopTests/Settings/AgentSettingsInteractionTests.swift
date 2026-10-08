@@ -4,8 +4,7 @@ import XCTest
 import AgentHUDCore
 @testable import AgentHUDDesktop
 
-/// Native pointer interactions on the Agents settings page. Click positions follow the 760 × 800 Chinese reference
-/// snapshots (`settings-agents-*`).
+/// Native pointer interactions on the Agents settings page, located from its rendered AppKit controls.
 final class AgentSettingsInteractionTests: XCTestCase {
     override func tearDown() {
         L10n.setLanguage(.system)
@@ -13,7 +12,7 @@ final class AgentSettingsInteractionTests: XCTestCase {
     }
 
     @MainActor
-    func testGroupExpandsTogglesAWindowAndCollapses() async throws {
+    func testProviderSelectionKeepsWindowsEditableAndPreservesTheirSettings() async throws {
         _ = NSApplication.shared
         let domain = "app.agenthud.tests.agents.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
@@ -49,11 +48,12 @@ final class AgentSettingsInteractionTests: XCTestCase {
                 .init(client: "Pi", provider: "Anthropic", product: .api),
             ]))
 
+        let size = SettingsWindowLayout.size
         let hosting = NSHostingView(rootView: AnyView(SettingsView(settings: settings, store: store, initialTab: .sources,
-                                                                  sourceStatuses: sources).frame(width: 760, height: 800)))
+                                                                  sourceStatuses: sources).frame(width: size.width, height: size.height)))
         hosting.sizingOptions = []
-        hosting.frame = NSRect(x: 0, y: 0, width: 760, height: 800)
-        let window = AgentSettingsTestWindow(contentRect: NSRect(x: -20000, y: -20000, width: 760, height: 800))
+        hosting.frame = NSRect(origin: .zero, size: size)
+        let window = AgentSettingsTestWindow(contentRect: NSRect(origin: CGPoint(x: -20000, y: -20000), size: size))
         window.contentView = hosting
         window.acceptsMouseMovedEvents = true
         window.orderFrontRegardless()
@@ -73,59 +73,110 @@ final class AgentSettingsInteractionTests: XCTestCase {
                 if reached() || Date() >= deadline { return }
             }
         }
+        func views(in view: NSView) -> [NSView] {
+            [view] + view.subviews.flatMap { views(in: $0) }
+        }
+        func scrollViews() -> [NSScrollView] {
+            views(in: hosting).compactMap { $0 as? NSScrollView }
+                .sorted { $0.convert($0.bounds, to: hosting).minX < $1.convert($1.bounds, to: hosting).minX }
+        }
+        func switches() -> [NSSwitch] {
+            guard let detail = scrollViews().last else { return [] }
+            return views(in: detail).compactMap { $0 as? NSSwitch }
+                .filter { !$0.isHiddenOrHasHiddenAncestor }
+                .sorted {
+                    let lhs = $0.convert($0.bounds, to: hosting), rhs = $1.convert($1.bounds, to: hosting)
+                    return hosting.isFlipped ? lhs.minY < rhs.minY : lhs.maxY > rhs.maxY
+                }
+        }
+        func providerButtons() -> [CGRect] {
+            guard let list = scrollViews().first, let document = list.documentView else { return [] }
+            let viewport = list.convert(list.bounds, to: hosting)
+            var frames: [CGRect] = []
+            for view in views(in: document) where !view.isHiddenOrHasHiddenAncestor {
+                let frame = view.convert(view.bounds, to: hosting)
+                // Plain SwiftUI buttons need not have an NSButton backing. These are the rendered row controls,
+                // narrower than the whole row (which includes its drag handle), with the row's full hit height.
+                guard frame.width >= 70, frame.width < viewport.width - 24,
+                      frame.height >= 40, frame.height <= 70, viewport.contains(frame),
+                      !frames.contains(frame) else { continue }
+                frames.append(frame)
+            }
+            return frames.sorted { hosting.isFlipped ? $0.minY < $1.minY : $0.maxY > $1.maxY }
+        }
+        func hierarchy() -> String {
+            views(in: hosting).map {
+                "\(type(of: $0)) frame=\($0.convert($0.bounds, to: hosting)) hidden=\($0.isHiddenOrHasHiddenAncestor)"
+            }.joined(separator: "\n")
+        }
         var eventNumber = 0
-        func click(x: CGFloat, yFromTop: CGFloat) {
-            func event(_ type: NSEvent.EventType) -> NSEvent? {
+        func click(_ frame: CGRect) throws {
+            let point = hosting.convert(CGPoint(x: frame.midX, y: frame.midY), to: nil)
+            func event(_ type: NSEvent.EventType) throws -> NSEvent {
                 eventNumber += 1
-                return NSEvent.mouseEvent(with: type, location: CGPoint(x: x, y: 800 - yFromTop),
-                    modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-                    context: nil, eventNumber: eventNumber, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0)
+                return try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                    context: nil, eventNumber: eventNumber, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0))
             }
-            guard let moved = event(.mouseMoved), let down = event(.leftMouseDown), let up = event(.leftMouseUp) else {
-                return XCTFail("Could not create mouse events")
-            }
+            let moved = try event(.mouseMoved), down = try event(.leftMouseDown), up = try event(.leftMouseUp)
             window.sendEvent(moved)
-            // AppKit tracks a press synchronously and takes its release from the event queue.
             NSApp.postEvent(up, atStart: false)
             window.sendEvent(down)
+            window.sendEvent(up)
         }
-        func scrollView(_ view: NSView) -> NSScrollView? {
-            if let scroll = view as? NSScrollView { return scroll }
-            return view.subviews.compactMap(scrollView).first
+        func clickFirstSwitch() throws {
+            let control = try XCTUnwrap(switches().first, "Missing native switch\n\(hierarchy())")
+            try click(control.convert(control.bounds, to: hosting))
         }
-        func documentHeight() -> CGFloat { scrollView(hosting)?.documentView?.bounds.height ?? 0 }
+        func selectProvider(_ index: Int) throws {
+            let buttons = providerButtons()
+            guard buttons.indices.contains(index) else {
+                XCTFail("Missing provider row \(index)\n\(hierarchy())")
+                throw NSError(domain: "AgentSettingsInteractionTests", code: 1)
+            }
+            try click(buttons[index])
+        }
 
-        await settle()
-        let collapsedHeight = documentHeight()
-        XCTAssertGreaterThan(collapsedHeight, 0, "Settings content renders")
-        click(x: 450, yFromTop: 130)
-        await settle(until: { documentHeight() > collapsedHeight + 100 })
-        XCTAssertGreaterThan(documentHeight(), collapsedHeight + 100, "The group expands to show its windows")
+        await settle(until: { switches().count == 4 && providerButtons().count >= 2 })
+        XCTAssertEqual(scrollViews().count, 2, "The provider list and details scroll independently")
+        XCTAssertEqual(switches().count, 4, "Claude's three windows and Live status are editable immediately\n\(hierarchy())")
 
-        // The first window switch sits below the group's Live status row.
-        let windowSwitchY: CGFloat = 246
         let agentsBefore = settings.agents
         let liveStatusBefore = settings.settings.liveStatusEnabled(for: "Claude")
-        click(x: 700, yFromTop: windowSwitchY)
-        await settle(until: { settings.agents != agentsBefore
-            || settings.settings.liveStatusEnabled(for: "Claude") != liveStatusBefore })
-        // Name whatever the click toggled, so a moved layout fails with its cause.
+        try clickFirstSwitch()
+        await settle(until: { settings.agents != agentsBefore })
         let toggled = settings.agents.filter { agent in agentsBefore.first { $0.id == agent.id }?.enabled != agent.enabled }.map(\.id)
-            + (settings.settings.liveStatusEnabled(for: "Claude") != liveStatusBefore ? ["Claude live status"] : [])
-        XCTAssertEqual(toggled, ["settings-claude-5h"],
-                       "The display switch at y \(Int(windowSwitchY)) must change the stored window selection; compare settings-agents-expanded-dark.png")
+        XCTAssertEqual(toggled, ["settings-claude-5h"], "The window switch changes only its stored display preference")
+        XCTAssertEqual(settings.settings.liveStatusEnabled(for: "Claude"), liveStatusBefore)
         let group = AgentSettingsGroup.make(sources: sources, agents: settings.agents).first { $0.id == "Claude" }
         XCTAssertEqual(group?.displayedCount(settings: settings.settings), 1)
         XCTAssertEqual(group?.agents.count, 3)
+        let editedAgents = settings.agents
 
-        if let scroll = scrollView(hosting) {
-            scroll.contentView.scroll(to: .zero)
-            scroll.reflectScrolledClipView(scroll.contentView)
-        }
+        try selectProvider(1)
+        await settle(until: { switches().count == 2 })
+        XCTAssertEqual(switches().count, 2, "Selecting Codex replaces Claude's settings with its window and Live status")
+        XCTAssertEqual(settings.agents, editedAgents)
+        try clickFirstSwitch()
+        await settle(until: { settings.agents.first { $0.id == "settings-codex" }?.enabled == false })
+        XCTAssertEqual(settings.agents.first { $0.id == "settings-codex" }?.enabled, false,
+                       "The selected provider's rendered switch edits Codex, not Claude")
+        let editedProviders = settings.agents
+
+        try selectProvider(0)
+        await settle(until: { switches().count == 4 })
+        XCTAssertEqual(switches().count, 4)
+        XCTAssertEqual(settings.agents, editedProviders, "Switching providers preserves both providers' edited windows")
+
+        try selectProvider(0)
         await settle()
-        click(x: 450, yFromTop: 130)
-        await settle(until: { abs(documentHeight() - collapsedHeight) <= 2 })
-        XCTAssertEqual(documentHeight(), collapsedHeight, accuracy: 2, "The group collapses again")
+        XCTAssertEqual(switches().count, 4, "Selecting the current provider does not collapse its details")
+        XCTAssertEqual(settings.agents, editedProviders)
+        try clickFirstSwitch()
+        await settle(until: { settings.agents.first { $0.id == "settings-claude-5h" }?.enabled == true })
+        XCTAssertEqual(settings.agents.first { $0.id == "settings-claude-5h" }?.enabled, true,
+                       "The window remains editable after selecting the current provider again")
+        XCTAssertEqual(settings.agents.first { $0.id == "settings-codex" }?.enabled, false)
     }
 }
 

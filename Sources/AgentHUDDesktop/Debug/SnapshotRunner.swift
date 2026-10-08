@@ -218,6 +218,7 @@ public enum SnapshotRunner {
         save("onboarding-light", OnboardingView(settings: settings, store: store, sources: DemoData.sources, onFinish: {}), folder: folder, scheme: .light)
         save("stats-dark", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .dark)
         save("stats-light", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .light)
+        saveTokenCharts(settings: settings, folder: folder)
         // The Sessions page, and a session's own page as a completion or a session row opens it.
         store.statsTab = .sessions
         save("stats-sessions-dark", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .dark)
@@ -450,8 +451,8 @@ public enum SnapshotRunner {
             ]]))
         save("island-provider-accounts-dark", IslandScene(store: store, settings: settings, open: true, light: false), folder: folder, scheme: .dark)
         save("settings-agents-provider-accounts-dark", SettingsView(settings: settings, store: store, initialTab: .sources,
-            sourceStatuses: [.init(id: "codex-cli", name: "Codex", detail: "", state: .ready(plan: "pro"))], initiallyExpandedAgents: ["Codex"])
-            .frame(width: 760, height: 800), folder: folder, scheme: .dark)
+            sourceStatuses: [.init(id: "codex-cli", name: "Codex", detail: "", state: .ready(plan: "pro"))], initialProviderID: "Codex")
+            .frame(width: SettingsWindowLayout.size.width, height: SettingsWindowLayout.size.height), folder: folder, scheme: .dark)
     }
 
     /// A question half answered: the first of two, one option picked, so the card shows what choosing looks like.
@@ -475,8 +476,54 @@ public enum SnapshotRunner {
         return request
     }
 
+    /// Many recorded models: the folded filter, a model subset and the HUD's ten-label limit use the same full data.
+    private static func saveTokenCharts(settings: SettingsStore, folder: URL) {
+        let now = Date()
+        let models = [
+            ("Claude", "claude-opus-4-5"), ("Claude", "claude-sonnet-4-5"), ("Claude", "claude-haiku-4-5"),
+            ("Codex", "gpt-5"), ("Codex", "gpt-5.4"), ("Codex", "gpt-5.5"), ("Codex", "gpt-5.6-sol"), ("Codex", "gpt-6.1-sol"),
+            ("Antigravity", "gemini-2.5-pro"), ("Cursor", "composer-1"), ("OpenCode", "muse-spark-1.3-contributor"),
+            ("Pi", "gpt-5"), ("DeepSeek", "deepseek-v4-flash"),
+        ]
+        let consumers = models.map { vendor, model in
+            let id = vendor.lowercased() + "-model:" + model
+            return AgentDescriptor(id: id, vendor: vendor, model: ModelCatalog.consumerName(of: id), source: "Snapshot", enabled: true)
+        }
+        let usage = consumers.enumerated().map { index, consumer in
+            UsageBucket(start: now.addingTimeInterval(-Double(index % 5 + 1) * 3600), agentId: consumer.id,
+                        tokensIn: (consumers.count - index) * 18_000, tokensOut: (consumers.count - index) * 2000,
+                        cacheReadTokens: (index + 1) * 5000)
+        }
+        let store = UsageStore(provider: DemoUsageProvider(), settings: settings)
+        store.replace(report: UsageReport(generatedAt: now, snapshots: [], sessions: [], consumers: consumers, usage: usage))
+        let picked = TokenModelFilter(consumerIDs: [consumers[0].id, consumers[12].id])
+        for scheme in [ColorScheme.dark, .light] {
+            let theme = Theme.forScheme(scheme), suffix = scheme == .dark ? "dark" : "light"
+            save("stats-token-models-collapsed-\(suffix)",
+                 TokenConsumptionChart(store: store, theme: theme, context: .stats)
+                    .padding(16).frame(width: 760).background(theme.windowBackground), folder: folder, scheme: scheme)
+            save("stats-token-models-expanded-\(suffix)",
+                 TokenConsumptionChart(store: store, theme: theme, context: .stats, modelsExpanded: true)
+                    .padding(16).frame(width: 760).background(theme.windowBackground), folder: folder, scheme: scheme)
+            save("stats-token-models-filtered-\(suffix)",
+                 TokenConsumptionChart(store: store, theme: theme, context: .stats, modelsExpanded: true, modelFilter: picked)
+                    .padding(16).frame(width: 760).background(theme.windowBackground), folder: folder, scheme: scheme)
+        }
+        let hover = store.tokenColumns(consumerIDs: picked.consumerIDs).max { $0.total < $1.total }?.id
+        save("stats-token-models-filtered-hover-dark",
+             TokenConsumptionChart(store: store, theme: .dark, context: .stats, modelFilter: picked, inspectedColumnID: hover)
+                .padding(16).frame(width: 760).background(Theme.dark.windowBackground), folder: folder, scheme: .dark)
+        save("island-token-models-top10-dark", TokenConsumptionChart(store: store, theme: .island, context: .island)
+            .padding(18).frame(width: 480).background(Color.black), folder: folder, scheme: .dark)
+        store.setStatsRange(.days7)
+        store.tokenBucketSize = .day1
+        save("stats-token-dates-daily-dark", TokenConsumptionChart(store: store, theme: .dark, context: .stats)
+            .padding(16).frame(width: 760).background(Theme.dark.windowBackground), folder: folder, scheme: .dark)
+    }
+
     private static func saveAgentSettings(settings: SettingsStore, store: UsageStore, folder: URL) {
-        if let prefix = ProcessInfo.processInfo.environment["AGENTHUD_SNAPSHOT_PREFIX"], !"settings-agents".hasPrefix(prefix) { return }
+        if let prefix = ProcessInfo.processInfo.environment["AGENTHUD_SNAPSHOT_PREFIX"],
+           !"settings-agents".hasPrefix(prefix) && !prefix.hasPrefix("settings-agents") { return }
         let original = settings.agents
         let preferences = settings.settings
         let originalReport = store.report
@@ -514,21 +561,17 @@ public enum SnapshotRunner {
             ]))
         for scheme in [ColorScheme.dark, .light] {
             let appearance = scheme == .dark ? "dark" : "light"
-            for (state, expanded) in [("collapsed", Set<String>()), ("expanded", ["Claude"]), ("prepaid", ["DeepSeek"]), ("empty", ["Antigravity"])] {
+            for (state, providerID) in [("overview", nil), ("claude", "Claude"), ("prepaid", "DeepSeek"), ("unavailable", "Antigravity")] as [(String, String?)] {
                 let displayOrder = settings.agents
                 if state == "prepaid" { settings.moveAgentGroup(id: "DeepSeek", to: "Claude") }
                 defer { settings.updateAgents { _ in displayOrder } }
                 let view = SettingsView(settings: settings, store: store, initialTab: .sources,
-                                        sourceStatuses: sources, initiallyExpandedAgents: expanded)
-                save("settings-agents-\(state)-\(appearance)", view.frame(width: 760, height: 800), folder: folder, scheme: scheme)
-                if state == "collapsed" {
-                    save("settings-agents-accounts-\(appearance)", view.frame(width: 760, height: 800),
-                         folder: folder, scheme: scheme, scrollOffset: 420)
-                }
-                if state == "expanded" || state == "prepaid" {
-                    save("settings-agents-\(state)-small-\(appearance)", view.frame(width: 680, height: 720), folder: folder, scheme: scheme)
-                    save("settings-agents-\(state)-models-small-\(appearance)", view.frame(width: 680, height: 720),
-                         folder: folder, scheme: scheme, scrollOffset: state == "prepaid" ? 400 : 240)
+                                        sourceStatuses: sources, initialProviderID: providerID)
+                save("settings-agents-\(state)-\(appearance)",
+                     view.frame(width: SettingsWindowLayout.size.width, height: SettingsWindowLayout.size.height), folder: folder, scheme: scheme)
+                if state == "claude" || state == "prepaid" {
+                    save("settings-agents-\(state)-small-\(appearance)",
+                         view.frame(width: SettingsWindowLayout.minimum.width, height: SettingsWindowLayout.minimum.height), folder: folder, scheme: scheme)
                 }
             }
         }
