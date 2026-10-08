@@ -47,7 +47,7 @@ public enum AdditionalSource: String, CaseIterable, Sendable {
         let paths: [String]
         switch self {
         case .cursor: paths = ["Library/Application Support/Cursor/User/globalStorage/state.vscdb", "Applications/Cursor.app"]
-        case .antigravity, .grok: paths = layout?.installPaths ?? []
+        case .antigravity: paths = layout?.installPaths ?? []
         // A same-named desktop app is not the CLI these clients read, and it must not trigger hook installation.
         default: return layout?.installPaths.contains { FileManager.default.fileExists(atPath: home.appendingPathComponent($0).path) } ?? false
         }

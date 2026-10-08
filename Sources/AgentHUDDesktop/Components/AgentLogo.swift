@@ -90,6 +90,7 @@ enum AgentArtwork {
     private static func canonical(_ vendor: String, light: Bool = false) -> String {
         switch vendor {
         case "Codex": return "ChatGPT"
+        case "Grok CLI": return "Grok"
         case "OpenCode", "OpenCode Go": return light ? "OpenCode" : "OpenCode-dark"
         case "Qoder", "Qoder CN", "QoderWork": return light ? "Qoder" : "Qoder-dark"
         default: return vendor

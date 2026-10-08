@@ -51,4 +51,66 @@ final class LogoQueueVendorTests: XCTestCase {
         XCTAssertEqual(store.workingVendors, ["Claude"])
         XCTAssertTrue(store.queueVendors.allSatisfy(\.isWorking))
     }
+
+    /// Shared account windows draw the actual recent execution clients, each with only its own work status.
+    func testGrokQueueAndLiveStatusKeepClientsSeparateFromTheirAccount() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let account = ProviderAccount.identified(provider: "Grok", user: "user", workspace: "team")!
+        let agents = ["grok", "grok:extra"].map {
+            AgentDescriptor(id: account.windowID($0), vendor: "Grok", model: $0, source: "", enabled: true, account: account)
+        }
+        let cli = LiveSession(id: "cli", agentId: "grok-model:test", task: "CLI", terminal: nil,
+            startedAt: now.addingTimeInterval(-60), endedAt: now.addingTimeInterval(-10), pctOfWindow: nil,
+            tokensIn: 10, tokensOut: 2, client: "Grok CLI", observedAt: now)
+        let bot = LiveSession(id: "bot", agentId: "grok-model:test", task: "Bot", terminal: nil,
+            startedAt: now.addingTimeInterval(-60), pctOfWindow: nil, tokensIn: 10, tokensOut: 2,
+            client: "Grok Bot", observedAt: now)
+        let report = UsageReport(generatedAt: now, snapshots: agents.map {
+            .init(agentId: $0.id, remainingPct: 80, updatedAt: now)
+        }, sessions: [cli, bot], accounts: ["Grok": [.init(account: account, observedAt: now)]])
+        var settings = Settings()
+        var view = ReportView(report: report, agents: agents, settings: settings, now: now)
+
+        XCTAssertEqual(view.queueVendors.map(\.vendor), ["Grok Bot", "Grok CLI"], "recent clients appear once, newest first")
+        XCTAssertEqual(view.queueVendors.map(\.isWorking), [true, false], "Bot work must not animate the CLI mark")
+        XCTAssertEqual(view.workingVendors, ["Grok"], "account refresh continues to use the provider identity")
+        XCTAssertEqual(view.rows.map(\.id), agents.map(\.id))
+        XCTAssertEqual(view.rowGroups.map(\.vendor), ["Grok"])
+        XCTAssertEqual(view.accountSections(view.rows).compactMap { $0.account?.account.provider }, ["Grok"])
+
+        settings.setLiveStatus(for: "Grok Bot", enabled: false)
+        view = ReportView(report: report, agents: agents, settings: settings, now: now)
+        XCTAssertFalse(view.session("bot")!.liveStatus)
+        XCTAssertTrue(view.session("cli")!.liveStatus)
+        XCTAssertEqual(view.queueVendors.map(\.vendor), ["Grok CLI"])
+        XCTAssertEqual(view.queueVendors.map(\.isWorking), [false])
+        XCTAssertTrue(view.workingVendors.isEmpty)
+
+        settings.setLiveStatus(for: "Grok CLI", enabled: false)
+        settings.setLiveStatus(for: "Grok Bot", enabled: true)
+        view = ReportView(report: report, agents: agents, settings: settings, now: now)
+        XCTAssertFalse(view.session("cli")!.liveStatus)
+        XCTAssertTrue(view.session("bot")!.liveStatus)
+        XCTAssertEqual(view.queueVendors.map(\.vendor), ["Grok Bot"])
+        XCTAssertEqual(view.queueVendors.map(\.isWorking), [true])
+
+        settings.setLiveStatus(for: "Grok Bot", enabled: false)
+        view = ReportView(report: report, agents: agents, settings: settings, now: now)
+        XCTAssertEqual(view.queueVendors.map(\.vendor), ["Grok"], "the account has a static mark when no client can be shown")
+        XCTAssertEqual(view.queueVendors.map(\.isWorking), [false])
+        XCTAssertEqual(view.rows.map(\.id), agents.map(\.id), "client switches do not hide account windows")
+    }
+
+    func testAnOldGrokClientDoesNotReplaceTheStaticAccountMark() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let watched = AgentDescriptor(id: "grok", vendor: "Grok", model: "Credits", source: "", enabled: true)
+        let old = now.addingTimeInterval(-2 * 86400)
+        let session = LiveSession(id: "bot", agentId: "grok-model:test", task: "Bot", terminal: nil,
+            startedAt: old, endedAt: old.addingTimeInterval(60), pctOfWindow: nil, tokensIn: 10, tokensOut: 2,
+            client: "Grok Bot", observedAt: now)
+        let view = ReportView(report: UsageReport(generatedAt: now, snapshots: [], sessions: [session]),
+                              agents: [watched], settings: Settings(), now: now)
+        XCTAssertEqual(view.queueVendors.map(\.vendor), ["Grok"])
+        XCTAssertEqual(view.queueVendors.map(\.isWorking), [false])
+    }
 }

@@ -21,7 +21,7 @@ enum IslandAlert: Identifiable {
         switch self {
         case .quota(let event): return event.agent.vendor
         case .resetCredits(let event): return event.account.account.provider
-        case .completion(let event): return event.vendor
+        case .completion(let event): return event.agentVendor
         case .permission(let request): return request.vendor
         }
     }

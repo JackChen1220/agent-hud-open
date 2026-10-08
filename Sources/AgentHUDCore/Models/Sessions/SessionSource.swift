@@ -4,7 +4,7 @@ import Foundation
 public struct SessionSource: Hashable, Sendable {
     /// Execution clients, independent of billing services and the models used inside each client.
     public static let agentVendors = ["Claude", "Codex", "DeepSeek"]
-        + AdditionalSource.allCases.map(\.vendor)
+        + AdditionalSource.allCases.flatMap { $0 == .grok ? ["Grok CLI", "Grok Bot"] : [$0.vendor] }
         + OpenAgentSource.allCases.filter { $0 != .glm }.map(\.name)
 
     public let vendor: String?
@@ -22,10 +22,17 @@ public struct SessionSource: Hashable, Sendable {
         case "Claude":
             // Builds before entrypoint detection, and synced peers still on them, carry the plain product name.
             self.client = client == ClaudeEntrypoint.defaultLabel ? nil : client
+        case "Grok":
+            // Existing Grok sessions came from the CLI before another client had to be distinguished.
+            self.client = client ?? "Grok CLI"
         default:
             self.client = client
         }
     }
+
+    /// The execution agent whose live-status switch and artwork this session uses. Grok's clients remain separate
+    /// agents while their account, quota and token-provider identity stays Grok. Unknown client names stay as written.
+    public var agentVendor: String? { vendor == "Grok" ? client : vendor }
 
     public var name: String {
         switch (vendor, client) {

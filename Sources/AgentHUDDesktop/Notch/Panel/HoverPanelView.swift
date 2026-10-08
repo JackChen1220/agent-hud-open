@@ -231,7 +231,7 @@ struct HoverPanelView: View {
     /// while it waits for the user, grey once it ends. A source without a bundled mark falls back to the dot alone.
     private func sessionMark(_ session: LiveSession, dot: SessionDot) -> some View {
         let color = dotColor(dot, session: session)
-        guard let vendor = store.sessionSource(session).vendor, !vendor.isEmpty else {
+        guard let vendor = store.sessionSource(session).agentVendor, !vendor.isEmpty else {
             return AnyView(Circle().fill(color).frame(width: 6, height: 6))
         }
         return AnyView(

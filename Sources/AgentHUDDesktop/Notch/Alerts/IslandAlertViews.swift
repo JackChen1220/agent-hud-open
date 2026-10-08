@@ -21,8 +21,8 @@ struct IslandAlertCompactView: View {
             Button(action: onOpen) {
                 HStack(spacing: 0) {
                     HStack(spacing: 8) {
-                        AgentLogo(vendor: event.vendor, size: 17)
-                        Text(event.vendor).font(.ui(13, .semibold)).lineLimit(1)
+                        AgentLogo(vendor: event.agentVendor, size: 17)
+                        Text(event.agentVendor).font(.ui(13, .semibold)).lineLimit(1)
                     }.frame(width: IslandController.alertWingWidth, alignment: .leading)
                     Color.clear.frame(width: cameraWidth)
                     HStack(spacing: 7) {
@@ -37,7 +37,7 @@ struct IslandAlertCompactView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("island-alert-sessionCompleted")
-            .accessibilityLabel("\(event.vendor) · \(L10n.text("有新回复", "New reply")) · \(event.task)")
+            .accessibilityLabel("\(event.agentVendor) · \(L10n.text("有新回复", "New reply")) · \(event.task)")
             .accessibilityHint(L10n.text("展开会话与 Token 用量操作", "Show session and token usage actions"))
         }
     }
@@ -62,9 +62,9 @@ struct IslandAlertDetailView: View {
         case .completion(let event):
             VStack(alignment: .leading, spacing: 18) {
                 HStack(spacing: 10) {
-                    AgentLogo(vendor: event.vendor, size: 24)
+                    AgentLogo(vendor: event.agentVendor, size: 24)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(event.vendor).font(.ui(13, .semibold))
+                        Text(event.agentVendor).font(.ui(13, .semibold))
                         Text(event.model).font(.ui(10)).foregroundStyle(.white.opacity(0.45))
                     }
                     Spacer()
@@ -177,8 +177,8 @@ private struct CompletionClosedRow: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 8) {
-                AgentLogo(vendor: event.vendor, size: 13).opacity(0.8)
-                Text(event.vendor).font(.ui(12, .medium)).lineLimit(1).minimumScaleFactor(0.8)
+                AgentLogo(vendor: event.agentVendor, size: 13).opacity(0.8)
+                Text(event.agentVendor).font(.ui(12, .medium)).lineLimit(1).minimumScaleFactor(0.8)
                 HStack(spacing: 3) {
                     Image(systemName: "text.bubble").font(.system(size: 8, weight: .bold))
                     Text(L10n.text("有新回复", "New reply")).font(.ui(10, .bold))
@@ -200,8 +200,8 @@ private struct CompletionClosedRow: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .accessibilityIdentifier("island-event-reply-\(event.id)")
-        .accessibilityLabel(L10n.text("打开 \(event.vendor) 的回复：\(event.task)",
-                                      "Open \(event.vendor) reply: \(event.task)"))
+        .accessibilityLabel(L10n.text("打开 \(event.agentVendor) 的回复：\(event.task)",
+                                      "Open \(event.agentVendor) reply: \(event.task)"))
         .help(L10n.text("展开回复与会话操作", "Show reply and session actions"))
     }
 }
@@ -225,7 +225,7 @@ struct IslandAlertInlineView: View {
                 HStack(spacing: 10) {
                     TurnEndedSymbol()
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(L10n.text("\(event.vendor) · 有新回复", "\(event.vendor) · New reply"))
+                        Text(L10n.text("\(event.agentVendor) · 有新回复", "\(event.agentVendor) · New reply"))
                             .font(.ui(12, .medium)).foregroundStyle(Color(alert.accent))
                         Text(event.task).font(.ui(10)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
                         if let message = event.message {

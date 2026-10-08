@@ -39,7 +39,7 @@ struct SessionDetailView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Circle().fill(dot).frame(width: 8, height: 8)
-                if let vendor = source.vendor { AgentLogo(vendor: vendor, size: 14) }
+                if let vendor = source.agentVendor { AgentLogo(vendor: vendor, size: 14) }
                 Text(store.consumerName(session.agentId)).font(.ui(12, .semibold))
                 Text(source.name).font(.ui(12)).foregroundStyle(theme.secondary)
                 Spacer(minLength: 8)

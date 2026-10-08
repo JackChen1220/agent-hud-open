@@ -76,6 +76,25 @@ final class SessionSourceTests: XCTestCase {
         XCTAssertEqual(SessionSource.vendor(impliedBy: "antigravity"), "Antigravity")
     }
 
+    func testGrokExecutionClientsKeepTheirSharedProvider() {
+        let cli = SessionSource(vendor: "Grok", client: "Grok CLI")
+        let bot = SessionSource(vendor: "Grok", client: "Grok Bot")
+        XCTAssertEqual(cli, SessionSource(vendor: "Grok", client: nil), "older sessions belong to the CLI")
+        XCTAssertNotEqual(cli, bot)
+        XCTAssertEqual(cli.vendor, "Grok")
+        XCTAssertEqual(bot.vendor, "Grok")
+        XCTAssertEqual(cli.agentVendor, "Grok CLI")
+        XCTAssertEqual(bot.agentVendor, "Grok Bot")
+        XCTAssertEqual(cli.name, "Grok CLI")
+        XCTAssertEqual(bot.name, "Grok Bot")
+        XCTAssertEqual(SessionSource(vendor: "Grok", client: "Future client").agentVendor, "Future client")
+        XCTAssertEqual(SessionSource(vendor: "Codex", client: "Desktop").agentVendor, "Codex")
+        XCTAssertNil(SessionSource(vendor: nil, client: "Unknown client").agentVendor)
+        XCTAssertTrue(SessionSource.agentVendors.contains("Grok CLI"))
+        XCTAssertTrue(SessionSource.agentVendors.contains("Grok Bot"))
+        XCTAssertFalse(SessionSource.agentVendors.contains("Grok"), "the account provider is not an execution client")
+    }
+
     @MainActor
     func testStoreResolvesSourcesEvenWhenQuotaAgentIsDisabled() {
         let suite = "AgentHUDSessionSourceTests.\(UUID().uuidString)"

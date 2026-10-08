@@ -106,7 +106,7 @@ enum GrokSessions: LocalSessionLayout {
                 startedAtMs: turnStart.map(RecordCoding.milliseconds), observedAtMs: RecordCoding.milliseconds(date)))
             if succeeded {
                 session.completions.append(.init(sessionID: id, vendor: "Grok", turnID: completedID, task: title,
-                    model: model, startedAt: turnStart, completedAt: date))
+                    model: model, startedAt: turnStart, completedAt: date, client: "Grok CLI"))
             }
             turnID = nil; turnStart = nil
         }
