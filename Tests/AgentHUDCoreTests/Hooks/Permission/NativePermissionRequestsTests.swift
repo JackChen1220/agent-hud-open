@@ -47,6 +47,24 @@ final class NativePermissionRequestsTests: XCTestCase {
         XCTAssertTrue(queue.pending.isEmpty, "a refresh while the client applies the answer does not repeat it")
     }
 
+    func testEventStreamDismissalNeedsAnExplicitSettlementFromItsOwnSource() {
+        let queue = PermissionRequests(), item = request()
+        let answer: @MainActor (PermissionRequest, PermissionDecision) async throws -> Void = { _, _ in XCTFail("reading must not answer") }
+        queue.updateNativeRequests([item], source: .antigravity, preservesDismissals: true, answer: answer)
+        queue.resolve(item.id, .leave)
+        queue.updateNativeRequests([], source: .antigravity, preservesDismissals: true, answer: answer)
+        queue.settleNativeRequest(item.id, source: .deepseek)
+        queue.updateNativeRequests([item], source: .antigravity, preservesDismissals: true, answer: answer)
+        XCTAssertTrue(queue.pending.isEmpty, "neither a disconnected stream nor another source settles the prompt")
+        queue.settleNativeRequest(item.id, source: .antigravity)
+        queue.updateNativeRequests([item], source: .antigravity, preservesDismissals: true, answer: answer)
+        XCTAssertEqual(queue.pending, [item])
+        queue.settleNativeRequest(item.id, source: .deepseek)
+        XCTAssertEqual(queue.pending, [item], "settlement does not remove another source's visible card")
+        queue.settleNativeRequest(item.id, source: .antigravity)
+        XCTAssertTrue(queue.pending.isEmpty)
+    }
+
     func testFailedReadingPreservesDismissalUntilACompleteSnapshotSettlesIt() {
         let queue = PermissionRequests(), item = request()
         let answer: @MainActor (PermissionRequest, PermissionDecision) async throws -> Void = { _, _ in XCTFail("reading must not answer") }

@@ -201,7 +201,7 @@ final class AntigravityPermissionsTests: XCTestCase, @unchecked Sendable {
     func testLeavingOrUnsupportedDecisionsNeverMutateTheClient() async throws {
         let transport = Transport([]), client = client(transport), request = try pending()
         try await client.resolve(.leave, for: request)
-        for decision in [PermissionDecision.allowAlways(.object([:])), .answer(["question": "answer"])] {
+        for decision in [PermissionDecision.allowAlways(.object([:])), .answer(["question": .init(custom: "answer")])] {
             do {
                 try await client.resolve(decision, for: request)
                 XCTFail("unsupported native decisions must be refused")

@@ -85,7 +85,7 @@ final class SessionNavigationTests: XCTestCase {
         XCTAssertEqual(fixture.hud.questions.map(\.id), [request.id])
         XCTAssertFalse(fixture.hud.island.panel.canBecomeKey, "Selecting a reply releases the old request's keyboard")
         XCTAssertTrue(QuestionDraft.draft(for: request.id) === draft)
-        XCTAssertEqual(draft.answer(0, of: question), "Continue after review", "Switching cards preserves its answer draft")
+        XCTAssertEqual(draft.answer(0, of: question), .init(custom: "Continue after review"), "Switching cards preserves its answer draft")
         XCTAssertEqual(fixture.statsOpens, 0)
     }
 

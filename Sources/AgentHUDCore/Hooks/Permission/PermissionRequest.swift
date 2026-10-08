@@ -256,6 +256,20 @@ public struct PermissionRequest: Identifiable, Equatable, Sendable {
 /// One question a client asks its user, with the answers it offers. The user can always answer in their own words
 /// instead, the way the client's own dialog lets them.
 public struct PermissionQuestion: Equatable, Sendable {
+    /// Choices and the user's own words stay separate until the client's wire format is written.
+    public struct Answer: Equatable, Sendable {
+        public let selected: [String]
+        public let custom: String?
+
+        public init(selected: [String] = [], custom: String? = nil) {
+            self.selected = selected
+            self.custom = custom
+        }
+
+        /// Hook clients file one string under each question's text.
+        public var text: String { (selected + (custom.map { [$0] } ?? [])).joined(separator: ", ") }
+    }
+
     public struct Option: Equatable, Sendable {
         public let label: String
         public let description: String?
@@ -266,14 +280,18 @@ public struct PermissionQuestion: Equatable, Sendable {
         }
     }
 
-    /// The question in full. It is also what its answer is filed under, so it is kept exactly as the client wrote it.
+    /// A native client's stable question identity; hook clients name answers by the question text.
+    public let id: String?
+    public var answerKey: String { id ?? question }
+    /// The question in full, kept exactly as the client wrote it.
     public let question: String
     /// A word or two naming the question.
     public let header: String?
     public let options: [Option]
     public let multiSelect: Bool
 
-    public init(question: String, header: String? = nil, options: [Option], multiSelect: Bool = false) {
+    public init(id: String? = nil, question: String, header: String? = nil, options: [Option], multiSelect: Bool = false) {
+        self.id = id
         self.question = question
         self.header = header
         self.options = options
@@ -295,7 +313,7 @@ public struct PermissionQuestion: Equatable, Sendable {
                 return Option(label: label, description: option["description"].stringValue.flatMap { $0.isEmpty ? nil : $0 })
             }
             guard !options.isEmpty else { return nil }
-            return PermissionQuestion(question: text, header: item["header"].stringValue.flatMap { $0.isEmpty ? nil : $0 },
+            return PermissionQuestion(id: item["id"].stringValue, question: text, header: item["header"].stringValue.flatMap { $0.isEmpty ? nil : $0 },
                                       options: options, multiSelect: item["multiSelect"].boolValue ?? false)
         }
         return questions.count == list.count ? questions : []
@@ -312,9 +330,8 @@ public enum PermissionDecision: Sendable, Equatable {
     case deny
     /// Allow, and apply what the client offered so it stops asking about calls like this one.
     case allowAlways(JSONValue)
-    /// Answer a question: each answer filed under the question it answers — an offered option's label, several
-    /// joined with a comma, or the user's own words. A question skipped has no entry.
-    case answer([String: String])
+    /// Each answer is filed under its question's answerKey. A question skipped has no entry.
+    case answer([String: PermissionQuestion.Answer])
     /// Say nothing: the request leaves the HUD and the client carries on with its own dialog, as though the HUD had
     /// never been asked.
     case leave
@@ -347,7 +364,11 @@ public enum PermissionDecision: Sendable, Equatable {
     public func response(for request: PermissionRequest) -> Data {
         guard case .answer(let answers) = self else { return response(for: request.source) }
         guard var input = request.questionInput?.objectValue else { return Self.noDecision }
-        input["answers"] = .object(answers.mapValues { .string($0) })
+        var written: [String: JSONValue] = [:]
+        for question in request.questions {
+            if let answer = answers[question.answerKey] { written[question.question] = .string(answer.text) }
+        }
+        input["answers"] = .object(written)
         return Self.encode(["behavior": .string("allow"), "updatedInput": .object(input)])
     }
 

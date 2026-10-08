@@ -75,13 +75,13 @@ final class HoverPreparationLifecycleTests: XCTestCase {
     }
 
     @MainActor
-    func testReportChangedDuringTheDelayUsesTheNewTokenLegendHeight() async throws {
-        let fixture = try HoverPreparationFixture(quotaCount: 4, showsTokens: true)
+    func testReportChangedDuringTheDelayUsesTheNewSessionRowsHeight() async throws {
+        let fixture = try HoverPreparationFixture(quotaCount: 4, showsTokens: true, showsSessions: true)
         defer { fixture.close() }
         let original = fixture.expectedHeight()
         fixture.enter()
 
-        fixture.store.replace(report: fixture.report(consumerCount: 25))
+        fixture.store.replace(report: fixture.report(consumerCount: 25, sessionCount: 12))
         fixture.hud.apply(animated: false)
         let expected = fixture.expectedHeight()
         XCTAssertGreaterThan(expected, original,
@@ -97,13 +97,13 @@ final class HoverPreparationLifecycleTests: XCTestCase {
 
     @MainActor
     func testReportChangedWithoutACoordinatorApplyIsCheckedBeforeOpening() async throws {
-        let fixture = try HoverPreparationFixture(quotaCount: 4, showsTokens: true)
+        let fixture = try HoverPreparationFixture(quotaCount: 4, showsTokens: true, showsSessions: true)
         defer { fixture.close() }
         let original = fixture.expectedHeight()
         fixture.enter()
 
-        fixture.store.replace(report: fixture.report(consumerCount: 25))
-        // Token consumers can change without being part of the coordinator's observed inputs.
+        fixture.store.replace(report: fixture.report(consumerCount: 25, sessionCount: 12))
+        // Sessions can change without being part of the coordinator's observed inputs.
         let expected = fixture.expectedHeight()
         XCTAssertGreaterThan(expected, original)
         XCTAssertEqual(fixture.hud.island.panel.frame, fixture.hud.geometry.islandFrame)
@@ -176,7 +176,7 @@ private final class HoverPreparationFixture {
     private let pointer: HoverPreparationPointer
     private let outside: CGPoint
 
-    init(quotaCount: Int, showsTokens: Bool = false) throws {
+    init(quotaCount: Int, showsTokens: Bool = false, showsSessions: Bool = false) throws {
         _ = NSApplication.shared
         let screen = try XCTUnwrap(NSScreen.main)
         let domain = "app.agenthud.tests.hover-preparation.\(UUID().uuidString)"
@@ -194,7 +194,7 @@ private final class HoverPreparationFixture {
             $0.collapseDelayMs = 0
             $0.showIslandQuota = true
             $0.showIslandTokens = showsTokens
-            $0.showIslandSessions = false
+            $0.showIslandSessions = showsSessions
         }
         // Opening still requests an account refresh; keep the explicitly installed report authoritative.
         let store = UsageStore(provider: DemoUsageProvider(), settings: settings, accessAllowed: { false })
@@ -230,11 +230,11 @@ private final class HoverPreparationFixture {
         return max(80, min(measured.fittingSize.height.rounded(), hud.geometry.screenFrame.height - 80))
     }
 
-    func report(consumerCount: Int) -> UsageReport {
-        Self.report(agents: agents, consumerCount: consumerCount)
+    func report(consumerCount: Int, sessionCount: Int = 0) -> UsageReport {
+        Self.report(agents: agents, consumerCount: consumerCount, sessionCount: sessionCount)
     }
 
-    private static func report(agents: [AgentDescriptor], consumerCount: Int) -> UsageReport {
+    private static func report(agents: [AgentDescriptor], consumerCount: Int, sessionCount: Int = 0) -> UsageReport {
         let now = Date()
         let consumers = (0..<consumerCount).map {
             AgentDescriptor(id: "consumer-\($0)", vendor: "Claude", model: "Model \($0)",
@@ -246,10 +246,15 @@ private final class HoverPreparationFixture {
                             tokensIn: 10000, tokensOut: 1000)
             }
         }
+        let sessions = (0..<sessionCount).map {
+            LiveSession(id: "prep-session-\($0)", agentId: agents.first?.id ?? "consumer-0", task: "Task \($0)",
+                        terminal: "proj", startedAt: now.addingTimeInterval(-Double($0 + 1) * 3600),
+                        pctOfWindow: nil, tokensIn: 1000, tokensOut: 100, observedAt: now)
+        }
         return UsageReport(generatedAt: now, snapshots: agents.map {
             UsageSnapshot(agentId: $0.id, remainingPct: 50, resetAt: now.addingTimeInterval(3600),
                           windowDuration: 5 * 3600, updatedAt: now)
-        }, sessions: [], discoveredAgents: agents, consumers: consumers, usage: usage)
+        }, sessions: sessions, discoveredAgents: agents, consumers: consumers, usage: usage)
     }
 
     func close() {

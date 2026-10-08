@@ -24,6 +24,9 @@ struct IslandRootView: View {
     /// Every request waiting for this user, oldest first and across screens: the expanded card stacks the rest under
     /// the one being decided, and the collapsed island only counts them.
     var waitingRequests: [PermissionRequest] = []
+    /// The screen owner supplies the same expansion to visible content and natural-height measurement.
+    var answeringSessionID: String? = nil
+    var onAnswerSession: (String?) -> Void = { _ in }
     /// Replies and requests share the event surface while quota and tokens keep their own panel.
     var sessionEvents: [IslandAlert] = []
     /// Brings one of the stacked requests to the front.
@@ -175,7 +178,8 @@ struct IslandRootView: View {
                            onOpenListedSession: onOpenListedSession, failedListedSessionID: failedListedSessionID,
                            onDecideAlert: onDecideAlert,
                            waitingRequests: waitingRequests,
-                           insets: hidesSilhouette ? dockInsets : HoverPanelView.notchInsets)
+                           insets: hidesSilhouette ? dockInsets : HoverPanelView.notchInsets,
+                           answeringSessionID: answeringSessionID, onAnswerSession: onAnswerSession)
                 .frame(width: IslandController.expandedWidth, alignment: .top)
                 .fixedSize(horizontal: false, vertical: true)
                 .onPreferenceChange(PanelHeightKey.self, perform: onContentHeight)
