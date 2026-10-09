@@ -14,7 +14,7 @@ enum GrokBotUsage {
 
     static func merge(_ sessions: [LiveSession]) -> [LiveSession] {
         let billed = Dictionary(grouping: sessions.filter {
-            $0.client == "Cursor" && conversationID($0.id) != nil
+            conversationID($0.id) != nil
         }, by: { conversationID($0.id)! })
         let bots = Dictionary(grouping: sessions.filter {
             $0.client == "Grok Bot" && nativeID($0) != nil

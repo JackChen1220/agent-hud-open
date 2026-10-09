@@ -149,6 +149,23 @@ final class GrokBotUsageTests: XCTestCase {
         XCTAssertEqual(Set(report.sessions.map(\.agentId)), ["cursor-model:grok-bot-default"])
     }
 
+    func testSubagentNativeMetadataStillJoinsItsExactBillingIdentity() async throws {
+        let id = "sand-subagent-fixture-child"
+        let billing = try CursorClient.parseEvents([row(conversation: id)], account: "account-a")
+        let report = try await combined(bot: metadata(agent: id), billing: billing)
+            .fetchAccountAndLocalUsage(agents: [], historyHours: 168)
+        let session = try XCTUnwrap(report.sessions.first)
+        XCTAssertEqual(report.sessions.count, 1, "a known child keeps one native session, rather than a separate billing row")
+        XCTAssertEqual(session.id, GrokBotCache.sessionID(account: "bot-account", agent: id))
+        XCTAssertEqual(session.task, "Native title")
+        XCTAssertEqual(session.navigationTarget, .grokBotAgent(id: id))
+        XCTAssertEqual(session.client, "Grok Bot")
+        XCTAssertEqual(session.tokensIn, 12)
+        XCTAssertEqual(session.usageKey, billing.sessions.first?.id)
+        XCTAssertEqual(report.sessionUsage?[session.id]?.calls, 1)
+        XCTAssertNil(session.subagentSessions)
+    }
+
     func testAnExactNativeIDJoinsAnOrdinaryModelWithoutChangingItsIdentity() async throws {
         let billing = try CursorClient.parseEvents([row(conversation: "native-agent", model: "cursor-grok-4.6-medium")], account: "account-a")
         let report = try await combined(bot: metadata(agent: "native-agent"), billing: billing)
