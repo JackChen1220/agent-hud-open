@@ -3,6 +3,26 @@ import Foundation
 
 /// The Bot's schema-2 personal quota cache. Team selection needs a live client response and is not inferred here.
 enum GrokBotQuota {
+    /// Match the account's known cache paths even after a file was deleted, without opening transcript blobs.
+    static func isQuotaChange(_ paths: Set<String>, in directory: URL) -> Bool {
+        guard !paths.isEmpty else { return false }
+        let resolved: [String]
+        if let path = realpath(directory.path, nil) {
+            let actual = String(cString: path)
+            // FSEvents uses the real path; Foundation callers can use its /var or /tmp alias.
+            resolved = [actual, URL(fileURLWithPath: actual).standardizedFileURL.path]
+            free(path)
+        } else { resolved = [] }
+        func contains(_ key: String) -> Bool {
+            let url = GrokBotCache.url(for: key, in: directory)
+            return paths.contains(url.standardizedFileURL.path)
+                || resolved.contains { paths.contains($0 + "/" + url.lastPathComponent) }
+        }
+        if contains(GrokBotCache.accountKey) { return true }
+        guard let slot = GrokBotCache.currentAccount(in: directory) else { return false }
+        return contains(GrokBotCache.quotaKey(account: slot))
+    }
+
     static func fetch(in directory: URL, now: Date) throws -> ProviderQuota? {
         guard FileManager.default.fileExists(atPath: directory.path) else { return nil }
         let marker = try GrokBotCache.value(at: GrokBotCache.url(for: GrokBotCache.accountKey, in: directory),

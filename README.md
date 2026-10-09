@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/approvals.webp" alt="Agent HUD notch with a queue of tool requests and an expanded edit diff" width="800">
+  <img src="docs/videos/agent-hud-loop.gif" alt="Agent HUD notch glow breathing and expanded usage panel" width="800">
 </p>
 
 Agent HUD Open is the macOS core and standalone source edition of [Agent HUD](https://agenthud.app). Local monitoring is free. The official Agent HUD app also offers connections to your iPhone and Apple Watch.
@@ -38,21 +38,17 @@ Choose visible agents and accounts, per-display placement, and a soft glow or ha
 
 Inspect the command, file, tool input or edit diff before answering. Claude Code, Codex, Antigravity and other supported clients keep ownership of their permission flow; available choices depend on the client. Questions from Claude Code, ZCode and compatible DeepSeek Harness hosts can also be answered in the HUD.
 
-<details>
-<summary>See the HUD in motion</summary>
-
 <p align="center">
-  <img src="docs/videos/agent-hud-loop.gif" alt="Agent HUD notch glow breathing and expanded usage panel" width="800">
+  <img src="docs/screenshots/approvals.webp" alt="Agent HUD notch with a queue of tool requests and an expanded edit diff" width="800">
 </p>
-
-</details>
 
 ### See where your tokens go
 
 Compare models, inspect session turns, follow cache usage and view activity heatmaps. Costs at published API prices are estimates, shown separately from subscription quotas and actual account balances.
 
 <p align="center">
-  <img src="docs/screenshots/usage-statistics.webp" alt="Token statistics with model breakdowns, cache usage, API balance and an activity heatmap" width="680">
+  <a href="docs/screenshots/usage-statistics.webp"><img src="docs/screenshots/usage-statistics.webp" alt="Mac usage dashboard with token charts, model breakdowns, balances and an activity heatmap" width="380"></a> <a href="docs/screenshots/mac-session.webp"><img src="docs/screenshots/mac-session.webp" alt="Mac session details with tokens per turn, context usage, cache hits and costs" width="380"></a><br>
+  <sub>Mac usage dashboard and session details · Sample data</sub>
 </p>
 
 ## Local and Remote
@@ -63,10 +59,14 @@ Compare models, inspect session turns, follow cache usage and view activity heat
 | **Local network · Beta** | Pair a compatible phone with your Mac by QR code for read-only viewing on the same network. | Official Mac app with compatible Beta clients. Local pairing does not require an Agent HUD Remote subscription. |
 | **Agent HUD Remote** | View your Macs together on iPhone, read shared recent conversations, and follow quotas and sessions through widgets, Live Activities and the paired Apple Watch. | Paid Remote access on the official Mac app. The iPhone and Apple Watch apps are free to download. |
 
-> [!WARNING]
-> **Critical LAN Beta issue:** LAN-enabled Mac Beta releases conflict with the communication mechanism in existing Agent HUD iOS versions and may disrupt Mac–iPhone communication or synchronization. Use the stable channel for cross-device viewing and wait for a verified compatibility fix before trying LAN. See the [release notes](https://github.com/jazzenchen/agent-hud-open/releases).
+> [!IMPORTANT]
+> **Beta requires Agent HUD Remote for iPhone 1.5 or later.** Update the iPhone app before installing the Mac Beta; use the corresponding TestFlight build if 1.5 is not yet on the App Store. The new Beta includes network recovery fixes. Earlier Mac Betas 0.4.37 and 0.4.38 have critical communication issues; see the [release notes](https://github.com/jazzenchen/agent-hud-open/releases).
 
 [Get Agent HUD on the App Store](https://apps.apple.com/app/id6812113619) for **iPhone and Apple Watch**. Requires iOS 17+ and watchOS 10+; automatic Live Activities require iOS 18+, with watchOS 11+ for the Watch Smart Stack. Remote viewing uses the same Apple Account in your Mac and iPhone system settings; Apple Watch uses its paired iPhone.
+
+<p align="center"><a href="docs/screenshots/iphone-home.webp"><img src="docs/screenshots/iphone-home.webp" alt="Agent HUD Remote on iPhone showing quotas and balances from demo Macs" width="220"></a> <a href="docs/screenshots/iphone-sessions.webp"><img src="docs/screenshots/iphone-sessions.webp" alt="Agent HUD Remote on iPhone showing session activity, token totals and per-turn charts" width="220"></a><br>
+  <sub>Agent HUD Remote on iPhone · Home and Sessions · Sample data</sub>
+</p>
 
 The source edition in this repository provides the local Mac features. Device connections and push services belong to the official Agent HUD app. See [Agent HUD Remote](https://agenthud.app/#pricing) for plans.
 
