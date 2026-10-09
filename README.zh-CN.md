@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="https://agenthud.app/mac"><img src="docs/buttons/mac.zh-CN.svg" alt="下载 Mac 版 Agent HUD" width="180" height="36"></a>
-  <a href="https://apps.apple.com/app/id6812113619"><img src="docs/buttons/app-store.svg" alt="从 App Store 获取 iPhone 和 Apple Watch 应用" width="138" height="36"></a>
+  <a href="https://apps.apple.com/cn/app/agent-hud/id6812113619?uo=4"><img src="docs/buttons/app-store.svg" alt="从 App Store 获取 iPhone 和 Apple Watch 应用" width="138" height="36"></a>
   <a href="#从源码构建"><img src="docs/buttons/source.zh-CN.svg" alt="从源码构建 Agent HUD Open" width="181" height="36"></a>
 </p>
 
@@ -16,7 +16,7 @@
   <a href="#本机与远程">本机与远程</a> ·
   <a href="#支持的客户端">支持的客户端</a> ·
   <a href="#文档">文档</a><br>
-  <sub>原生 macOS 14+ &nbsp;·&nbsp; Swift 6 &nbsp;·&nbsp; Apache-2.0</sub>
+  <a href="#从源码构建"><img src="docs/badges/macos.svg" alt="macOS 14+" height="22"></a> <a href="Package.swift"><img src="docs/badges/swift.svg" alt="Swift 6" height="22"></a> <a href="LICENSE"><img src="docs/badges/license.svg" alt="Apache-2.0 许可证" height="22"></a>
 </p>
 
 <p align="center">
@@ -62,7 +62,7 @@ Agent HUD Open 是 [Agent HUD](https://agenthud.app) 的 macOS 核心与独立�
 > [!IMPORTANT]
 > **Mac 测试版要求 iPhone 版 Agent HUD Remote 1.5 或更新版本。** 安装 Mac 测试版前请先更新 iPhone 应用；若 App Store 尚未提供 1.5，请使用对应的 TestFlight 构建。新版测试版已包含网络恢复修复。早期 Mac 测试版 0.4.37 和 0.4.38 存在严重通信问题，请查看[发行说明](https://github.com/jazzenchen/agent-hud-open/releases)。
 
-从 [App Store 获取 Agent HUD](https://apps.apple.com/app/id6812113619)，适用于 **iPhone 和 Apple Watch**。需要 iOS 17+ 和 watchOS 10+；自动实时活动需要 iOS 18+，Apple Watch 智能叠放需要 watchOS 11+。远程查看要求 Mac 与 iPhone 的系统设置使用同一 Apple 账户；Apple Watch 使用配对的 iPhone。
+从 [App Store 获取 Agent HUD](https://apps.apple.com/cn/app/agent-hud/id6812113619?uo=4)，适用于 **iPhone 和 Apple Watch**。需要 iOS 17+ 和 watchOS 10+；自动实时活动需要 iOS 18+，Apple Watch 智能叠放需要 watchOS 11+。远程查看要求 Mac 与 iPhone 的系统设置使用同一 Apple 账户；Apple Watch 使用配对的 iPhone。
 
 <p align="center"><a href="docs/screenshots/iphone-home.webp"><img src="docs/screenshots/iphone-home.webp" alt="iPhone 上的 Agent HUD Remote 展示示例 Mac 的额度与余额" width="220"></a> <a href="docs/screenshots/iphone-sessions.webp"><img src="docs/screenshots/iphone-sessions.webp" alt="iPhone 上的 Agent HUD Remote 展示会话活动、令牌总量与每轮图表" width="220"></a><br>
   <sub>iPhone 上的 Agent HUD Remote · 首页与会话 · 示例数据</sub>
