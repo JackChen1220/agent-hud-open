@@ -22,7 +22,7 @@ Each display has its own HUD and settings. Notch mode uses the physical notch or
 - Either mode can be chosen for any display; notch mode stays at the physical notch or the screen's top centre.
 - A display keeps its own placement under its UUID; display settings can reset its position to top centre, keeping its mode and logo settings.
 - The dock can sit anywhere along the top, right, bottom or left edge, running horizontally on the top and bottom and vertically on the sides; logo size is 12–24 pt and spacing is 0.1–0.6 of the logo.
-- Drag a visible HUD directly to any edge; dragging a notch switches it to Dynamic Dock. Its bounds appear while it is grabbed or dragged.
+- Drag a visible HUD directly to any edge; dragging a notch switches it to Dynamic Dock. The drag surface stays transparent during clicks, holds and dragging.
 - The marks can be hidden, which leaves the backdrop alone, still where they would have been and as wide.
 
 ### What the queue shows
@@ -47,7 +47,7 @@ Each display has its own HUD and settings. Notch mode uses the physical notch or
 
 ### Usage panel
 
-- The panel shows quota and balances, then Tokens, then the local session summary with at most five rows in total: sessions with work in flight, those waiting for the user ahead of those still running and newest created first within each group, then sessions last active in the past 24 hours by their last event. Account-wide API receipts and older ended sessions remain in statistics and do not occupy these rows or enter their remaining count. Each row shows its agent's mark and its state on the mark's corner. The remaining count covers every hidden session in this summary; it and the header open the full Sessions page.
+- The panel shows quota and balances, then Tokens, then the local session summary with at most five rows in total: sessions with work in flight, those waiting for the user ahead of those still running and newest created first within each group, then sessions last active in the past 24 hours by their last event. Account-wide API receipts and older ended sessions remain in statistics and do not occupy these rows or enter their remaining count. Each row shows its client name, agent mark and state on the mark's corner. The remaining count covers every hidden session in this summary; it and the header open the full Sessions page.
 - A session waiting on a question shows a badge on its row. It opens the question right there, answered the same way the island's own card answers it, beside a way back to the agent for answering it in its own dialog instead. A row's title returns to its agent, or opens that session's page where the client names no destination; its token count opens that session's usage.
 - The token chart is a compact strip with the latest 24 hours in 96 quarter-hour bars, including the current quarter, and all token kinds. Dashboard range, bucket, model and token-kind controls do not change it; its legend, axis and peak mark belong to the statistics window. Height follows content up to the display's height minus 80 pt; overflow scrolls above fixed settings, statistics and host controls, clear of the notch and dock.
 

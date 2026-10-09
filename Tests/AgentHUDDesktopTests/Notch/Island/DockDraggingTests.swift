@@ -6,13 +6,12 @@ import AgentHUDCore
 
 final class DockDraggingTests: XCTestCase {
     @MainActor
-    func testNativeGrabRevealsBoundsAndBeginsOnlyAfterTheMovementThreshold() throws {
+    func testNativeClickHoldAndDragStayBorderlessWhileDraggingStillWorks() throws {
         _ = NSApplication.shared
         let drag = HUDDragWindowController()
-        drag.show(frame: CGRect(x: 200, y: 200, width: 240, height: 32), outlined: false)
+        drag.show(frame: CGRect(x: 200, y: 200, width: 240, height: 32))
         defer { drag.hide() }
         let view = try XCTUnwrap(drag.panel.contentView)
-        let outline = try XCTUnwrap(outline(in: drag.panel))
         var presses = 0
         var releases = 0
         var ends = 0
@@ -25,19 +24,21 @@ final class DockDraggingTests: XCTestCase {
         drag.onEnd = { ends += 1 }
         let down = CGPoint(x: 15, y: 16)
         let initialScreenPoint = drag.panel.convertPoint(toScreen: down)
-        XCTAssertEqual(outline.opacity, 0)
+        XCTAssertNil(outline(in: drag.panel))
 
         view.mouseDown(with: try mouseEvent(.leftMouseDown, at: down, in: drag.panel))
         XCTAssertEqual(presses, 1)
         XCTAssertTrue(drag.isPressed)
         XCTAssertFalse(drag.isDragging)
-        XCTAssertEqual(outline.opacity, 1, "Pressing visible logos must immediately reveal their dashed bounds")
+        XCTAssertNil(outline(in: drag.panel), "An ordinary press must not reveal drag bounds")
         view.mouseDragged(with: try mouseEvent(.leftMouseDragged, at: CGPoint(x: 17, y: 16), in: drag.panel))
         XCTAssertFalse(drag.isDragging, "Two points of hand motion remain an ordinary press")
+        XCTAssertNil(outline(in: drag.panel), "Small click motion must not reveal the outline")
         XCTAssertTrue(starts.isEmpty)
         XCTAssertTrue(movements.isEmpty)
         view.mouseDragged(with: try mouseEvent(.leftMouseDragged, at: CGPoint(x: 19, y: 16), in: drag.panel))
         XCTAssertTrue(drag.isDragging)
+        XCTAssertNil(outline(in: drag.panel), "Dragging must remain borderless")
         XCTAssertEqual(starts, [initialScreenPoint], "Beginning a drag must keep the original grabbed point")
         XCTAssertEqual(movements, [drag.panel.convertPoint(toScreen: CGPoint(x: 19, y: 16))])
         view.mouseDragged(with: try mouseEvent(.leftMouseDragged, at: CGPoint(x: 23, y: 16), in: drag.panel))
@@ -48,18 +49,18 @@ final class DockDraggingTests: XCTestCase {
         XCTAssertFalse(drag.isDragging)
         XCTAssertEqual(ends, 1)
         XCTAssertEqual(releases, 1)
-        XCTAssertEqual(outline.opacity, 0, "Dropping restores the transparent grab surface")
+        XCTAssertNil(outline(in: drag.panel), "Dropping restores the transparent grab surface")
 
-        // A plain click also clears the bounds, without committing a drag or changing its mode.
+        // A plain click never reveals bounds or changes placement.
         view.mouseDown(with: try mouseEvent(.leftMouseDown, at: down, in: drag.panel))
-        XCTAssertEqual(outline.opacity, 1)
+        XCTAssertNil(outline(in: drag.panel))
         view.mouseUp(with: try mouseEvent(.leftMouseUp, at: down, in: drag.panel))
         XCTAssertEqual(presses, 2)
         XCTAssertEqual(releases, 2)
         XCTAssertEqual(starts.count, 1)
         XCTAssertEqual(ends, 1, "A click that never crosses the threshold must not commit a drag")
         XCTAssertFalse(drag.isPressed)
-        XCTAssertEqual(outline.opacity, 0)
+        XCTAssertNil(outline(in: drag.panel))
     }
 
     @MainActor
@@ -83,8 +84,7 @@ final class DockDraggingTests: XCTestCase {
         XCTAssertFalse(surface.ignoresMouseEvents, "Visible logos must be directly draggable")
         XCTAssertFalse(surface.isOpaque)
         XCTAssertEqual(surface.backgroundColor?.alphaComponent ?? 1, 0, accuracy: 0.001)
-        let outline = try XCTUnwrap(outline(in: surface))
-        XCTAssertEqual(outline.opacity, 0, "An idle grab surface must preserve the bare-logo appearance")
+        XCTAssertNil(outline(in: surface), "The grab surface must never contain an outline renderer")
     }
 
     @MainActor
@@ -189,19 +189,18 @@ final class DockDraggingTests: XCTestCase {
         let surface = try XCTUnwrap(visibleMoveSurface())
         assertFrame(surface.frame, equals: ScreenHUD.dragSurfaceFrame(for: hud.geometry),
                     "Showing logos restores the padded grab surface")
-        XCTAssertEqual(try XCTUnwrap(outline(in: surface)).opacity, 0)
+        XCTAssertNil(outline(in: surface))
         hud.beginMoving()
         XCTAssertTrue(surface.isVisible)
-        XCTAssertEqual(try XCTUnwrap(outline(in: surface)).opacity, 1,
-                       "The active drag must keep showing its dashed bounds")
+        XCTAssertNil(outline(in: surface), "The active drag must remain borderless")
         hud.move(to: CGPoint(x: screen.frame.maxX, y: screen.frame.midY))
         XCTAssertEqual(hud.geometry.edge, .right)
         assertFrame(surface.frame, equals: ScreenHUD.dragSurfaceFrame(for: hud.geometry),
-                    "The padded dashed bounds follow the drag preview, allowing AppKit's frame rounding")
+                    "The transparent grab surface follows the drag preview, allowing AppKit's frame rounding")
         XCTAssertEqual(settings.settings.screens[key], placement, "Mouse movements must not persist intermediate positions")
         hud.finishMoving()
         XCTAssertTrue(surface.isVisible, "Dropping keeps visible logos draggable")
-        XCTAssertEqual(try XCTUnwrap(outline(in: surface)).opacity, 0)
+        XCTAssertNil(outline(in: surface))
         let stored = try XCTUnwrap(settings.settings.screens[key])
         XCTAssertEqual(stored.edge, .right)
         XCTAssertTrue(stored.showsLogos)
@@ -236,12 +235,12 @@ final class DockDraggingTests: XCTestCase {
         let view = try XCTUnwrap(surface.contentView)
         let press = CGPoint(x: 15, y: 7)
         view.mouseDown(with: try mouseEvent(.leftMouseDown, at: press, in: surface))
-        XCTAssertEqual(hud.geometry.mode, .notch, "A press reveals bounds without converting Notch to Dock")
+        XCTAssertEqual(hud.geometry.mode, .notch, "An ordinary press keeps Notch mode without showing drag bounds")
         XCTAssertEqual(settings.settings.screens[key]?.mode, .notch)
-        XCTAssertEqual(try XCTUnwrap(outline(in: surface)).opacity, 1)
+        XCTAssertNil(outline(in: surface))
         view.mouseUp(with: try mouseEvent(.leftMouseUp, at: press, in: surface))
         XCTAssertEqual(hud.geometry.mode, .notch, "A click below the drag threshold must retain Notch mode")
-        XCTAssertEqual(try XCTUnwrap(outline(in: surface)).opacity, 0)
+        XCTAssertNil(outline(in: surface))
         hud.beginMoving()
         hud.move(to: CGPoint(x: screen.frame.midX, y: screen.frame.minY))
         hud.finishMoving()

@@ -4,6 +4,11 @@ Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` o
 
 ## Unreleased
 
+## Local fork build 16 — 2026-10-09
+
+- Remove HUD drag outlines entirely; clicks, holds and repositioning all remain borderless while dragging still works.
+- Show the execution client's name beside each Hub session title, so clients without quota rows, such as WorkBuddy, remain identifiable.
+
 ## Local fork — 2026-10-09
 
 - Integrate upstream `f60b0a2` (0.4.39-beta.2), preserving its full commit history and local Mac improvements.

@@ -183,11 +183,15 @@ struct HoverPanelView: View {
         let failed = failedListedSessionID == session.id
         let tokens = "\(TokenFormat.short(session.tokensIn + session.tokensOut)) tok"
         let dot = Self.sessionDot(session, store: store)
+        let clientName = store.sessionSource(session).name
         return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Button { open(session) } label: {
                     HStack(spacing: 8) {
                         sessionMark(session, dot: dot)
+                        Text(clientName)
+                            .font(.ui(10, .semibold))
+                            .fixedSize()
                         Text(Self.sessionTitle(session))
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -196,10 +200,10 @@ struct HoverPanelView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
-                .help(session.task + "\n" + (session.navigationTarget != nil
+                .help(clientName + " · " + session.task + "\n" + (session.navigationTarget != nil
                       ? L10n.text("返回会话", "Return to session")
                       : L10n.text("查看会话详情", "Show session details")))
-                .accessibilityLabel(L10n.text("打开会话：", "Open session: ") + session.task)
+                .accessibilityLabel(L10n.text("打开会话：", "Open session: ") + clientName + " · " + session.task)
                 .accessibilityHint(session.navigationTarget != nil
                                    ? L10n.text("在 agent 中打开", "Open in the agent")
                                    : L10n.text("打开此会话的详情页", "Open this session's detail page"))

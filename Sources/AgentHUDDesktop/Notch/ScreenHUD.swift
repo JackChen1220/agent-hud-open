@@ -626,11 +626,10 @@ final class ScreenHUD {
             dragSurface.hide()
             return
         }
-        dragSurface.show(frame: Self.dragSurfaceFrame(for: geometry),
-                         outlined: previewPlacement != nil || dragSurface.isPressed)
+        dragSurface.show(frame: Self.dragSurfaceFrame(for: geometry))
     }
 
-    /// The dashed bounds leave room at both ends of the queue without moving its marks or backdrop.
+    /// The transparent grab surface leaves room at both ends of the queue without moving its marks or backdrop.
     static func dragSurfaceFrame(for geometry: NotchGeometry) -> CGRect {
         var frame = geometry.rect.insetBy(dx: geometry.edge.isHorizontal ? -8 : 0,
                                          dy: geometry.edge.isHorizontal ? 0 : -8)

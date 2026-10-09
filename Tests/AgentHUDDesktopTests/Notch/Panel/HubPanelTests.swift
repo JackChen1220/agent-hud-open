@@ -62,7 +62,8 @@ final class HubPanelTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(80))
             let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
             host.cacheDisplay(in: host.bounds, to: bitmap)
-            let color = try XCTUnwrap(bitmap.colorAt(x: 50, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.deviceRGB))
+            // Sample the backdrop before the content inset, not a session label.
+            let color = try XCTUnwrap(bitmap.colorAt(x: 8, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.deviceRGB))
             let output = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
                 .appendingPathComponent("build/validation/hub-\(scheme == .light ? "light" : "dark").png")
             try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
