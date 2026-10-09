@@ -42,10 +42,12 @@ public enum PermissionHookClient {
         FileHandle.standardOutput.write(response)
     }
 
-    /// Adds the client's name to the payload. A payload that is not a JSON object is not one of ours to forward.
+    /// Adds the client's name to a request the HUD can answer. Codex runs this hook before choosing its reviewer;
+    /// automatic review and an unknown reviewer go back unanswered, before opening a connection to the HUD.
     static func tagged(_ data: Data, source: PermissionHooks.Source) -> Data? {
         guard !data.isEmpty, data.count <= 1024 * 1024,
               let json = try? ProviderJSON.read(data), var object = json.objectValue else { return nil }
+        guard source != .codex || CodexPermissionReviewer.isUser(payload: json) else { return nil }
         object[sourceKey] = .string(source.rawValue)
         return try? RecordCoding.encoder().encode(ProviderJSON.object(object))
     }
