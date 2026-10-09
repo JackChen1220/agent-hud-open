@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 import AgentHUDCore
 
+// Rendering every screen is a development tool; release builds carry none of it.
+#if DEBUG
 /// `--snapshot <dir>`: renders every screen at 2× to PNG for visual verification against the design.
 /// Views are hosted in a real (off-screen) window so AppKit-backed controls such as sliders render too.
 @MainActor
@@ -16,6 +18,7 @@ public enum SnapshotRunner {
             L10n.setLanguage(language)
         }
         let store = UsageStore(provider: DemoUsageProvider(), settings: settings)
+        store.sampleTurnCalls = { DemoData.turnCalls(session: $0.id, turn: $1) }
         store.replace(report: DemoUsageProvider.report(agents: settings.agents, historyHours: UsageStore.historyHours, now: Date()))
 
         let folder = URL(fileURLWithPath: directory, isDirectory: true)
@@ -36,39 +39,64 @@ public enum SnapshotRunner {
         for vendor in ["Claude", "Codex", "DeepSeek"] {
             let now = Date()
             let completion = SessionCompletion(sessionID: "snapshot", vendor: vendor, turnID: "preview",
-                task: L10n.text("完成本地用量面板", "Build the local usage dashboard"),
-                model: ["Claude": "Fable 5.1", "Codex": "gpt-6-astra"][vendor] ?? "deepseek-v4-flash", startedAt: now.addingTimeInterval(-83), completedAt: now)
+                task: L10n.text("自动更新检查", "Automatic update checks"),
+                model: ["Claude": "Fable 5.1", "Codex": "gpt-6.1-sol"][vendor] ?? "deepseek-v4-flash", startedAt: now.addingTimeInterval(-83), completedAt: now,
+                message: L10n.text("已改好：每次打开应用立即检查更新，之后每小时检查一次。后台发现新版本时，HUD 会显示更新入口。", "The app now checks for updates every time it opens, then once an hour. When a new version is available, the HUD shows an update shortcut."),
+                navigationTarget: vendor == "Claude" ? .iTermSession(id: "snapshot-terminal")
+                    : vendor == "Codex" ? .codexThread(id: "00000000-0000-0000-0000-000000000001") : nil)
             let alert = IslandAlert.completion(completion)
             save("alert-completion-\(vendor)-compact", IslandScene(store: store, settings: settings, open: false, light: false, alert: alert), folder: folder, scheme: .dark)
             save("alert-completion-\(vendor)-detail", IslandScene(store: store, settings: settings, open: true, light: false, alert: alert, showsAlertDetails: true), folder: folder, scheme: .dark)
-            save("alert-completion-\(vendor)-inline", IslandScene(store: store, settings: settings, open: true, light: false, alert: alert), folder: folder, scheme: .dark)
         }
 
         // A tool call waiting for its user: the reminder that holds, and what hovering turns it into.
         for (name, request) in [
             ("bash", PermissionRequest(id: "snapshot-bash", source: .claude, sessionID: "snapshot", toolName: "Bash",
                                        summary: L10n.text("删除构建产物", "Remove the build output"),
-                                       detail: "rm -rf .build/release", cwd: "/Users/me/agent-hud", at: Date())),
+                                       detail: "rm -rf dist", cwd: "/Users/me/Projects/acme-web", at: Date())),
+            ("antigravity", PermissionRequest(id: "snapshot-antigravity", source: .antigravity,
+                                              sessionID: "antigravity:snapshot", toolName: "run_command",
+                                              summary: L10n.text("渲染测试静帧", "Rendering test stills"),
+                                              detail: "node src/render.mjs stills --times 4.5,14,22.6",
+                                              cwd: "/Users/me/Projects/motion", at: Date())),
             ("edit", PermissionRequest(id: "snapshot-edit", source: .claude, sessionID: "snapshot", toolName: "Edit",
-                                       summary: "PermissionRequests.swift", detail: nil,
-                                       cwd: "/Users/me/agent-hud-open", at: Date())),
+                                       summary: "Avatar.tsx", detail: "/Users/me/Projects/acme-web/src/components/Avatar.tsx",
+                                       cwd: "/Users/me/Projects/acme-web", path: "/Users/me/Projects/acme-web/src/components/Avatar.tsx",
+                                       removed: "  const initials = user.name.slice(0, 2)",
+                                       added: "  const initials = user?.name?.slice(0, 2) ?? '?'", at: Date())),
             ("question", snapshotQuestion()),
             ("plan", PermissionRequest(id: "snapshot-plan", source: .claude, sessionID: "snapshot", toolName: "ExitPlanMode",
-                                       summary: L10n.text("在岛上回答 Claude 的提问", "Answer Claude's questions on the island"),
-                                       detail: L10n.text("## 在岛上回答 Claude 的提问\n\n1. 解析问题和选项\n2. 逐题作答，最后一起提交\n3. 在 Claude 里答完时撤下卡片",
-                                                         "## Answer Claude's questions on the island\n\n1. Read the questions and their options\n2. Answer one at a time, send them together\n3. Take the card down when Claude answers first"),
-                                       cwd: "/Users/me/agent-hud-open", at: Date())),
+                                       summary: L10n.text("为登录接口加上限流", "Add rate limiting to the login endpoint"),
+                                       detail: L10n.text("## 为登录接口加上限流\n\n1. 按账号和地址统计尝试次数\n2. 超出上限时返回 429 和 Retry-After\n3. 在接口测试里覆盖这两种情况",
+                                                         "## Add rate limiting to the login endpoint\n\n1. Count attempts per account and address\n2. Answer 429 with Retry-After past the limit\n3. Cover both in the API tests"),
+                                       cwd: "/Users/me/Projects/acme-api", at: Date())),
         ] {
             let alert = IslandAlert.permission(request)
             save("alert-permission-\(name)-compact", IslandScene(store: store, settings: settings, open: false, light: false, alert: alert), folder: folder, scheme: .dark)
             save("alert-permission-\(name)-detail", IslandScene(store: store, settings: settings, open: true, light: false, alert: alert, showsAlertDetails: true), folder: folder, scheme: .dark)
-            save("alert-permission-\(name)-inline", IslandScene(store: store, settings: settings, open: true, light: false, alert: alert), folder: folder, scheme: .dark)
             guard name == "bash" else { continue }
-            let queue = PermissionRequest.demo()
+            let queue = DemoData.permissionRequests()
             let queued = IslandAlert.permission(queue[0])
             save("alert-permission-queued-compact", IslandScene(store: store, settings: settings, open: false, light: false, alert: queued, waitingRequests: queue), folder: folder, scheme: .dark)
             save("alert-permission-queued-detail", IslandScene(store: store, settings: settings, open: true, light: false, alert: queued, showsAlertDetails: true, waitingRequests: queue), folder: folder, scheme: .dark)
         }
+
+        let waiting = DemoData.permissionRequests()
+        let reply = IslandAlert.completion(SessionCompletion(
+            sessionID: "snapshot", vendor: "Codex", turnID: "shared-panel",
+            task: L10n.text("修复会话跳转", "Fix session navigation"), model: "gpt-6.1-sol",
+            startedAt: Date().addingTimeInterval(-60), completedAt: Date(),
+            message: L10n.text("标题返回 agent，token 数字打开会话用量。", "Titles return to the agent; token counts open session usage."),
+            navigationTarget: .codexThread(id: "00000000-0000-0000-0000-000000000001")))
+        let sessionEvents: [IslandAlert] = [.permission(waiting[0]), reply]
+        save("alert-events-permission-selected", IslandScene(store: store, settings: settings, open: true, light: false,
+                                                            alert: sessionEvents[0], showsAlertDetails: true,
+                                                            waitingRequests: waiting, sessionEvents: sessionEvents),
+             folder: folder, scheme: .dark)
+        save("alert-events-reply-selected", IslandScene(store: store, settings: settings, open: true, light: false,
+                                                       alert: reply, showsAlertDetails: true,
+                                                       waitingRequests: waiting, sessionEvents: sessionEvents),
+             folder: folder, scheme: .dark)
 
         save("island-collapsed", IslandScene(store: store, settings: settings, open: false, light: false), folder: folder, scheme: .dark)
         for style in GlowStyle.allCases where style != .blur {
@@ -132,6 +160,33 @@ public enum SnapshotRunner {
         settings.update { $0.glowStyle = .blur; $0.glowEffect = .breathe }
         save("island-expanded-dark", IslandScene(store: store, settings: settings, open: true, light: false), folder: folder, scheme: .dark)
         save("island-expanded-light", IslandScene(store: store, settings: settings, open: true, light: true), folder: folder, scheme: .light)
+        // Session titles and token counts remain separate controls, including unavailable and failed returns.
+        if let codex = settings.agents.first(where: { $0.vendor == "Codex" }) {
+            let saved = settings.settings
+            settings.update { $0.showIslandQuota = false; $0.showIslandTokens = false; $0.showIslandSessions = true }
+            let sessions = UsageStore(provider: DemoUsageProvider(), settings: settings)
+            let now = Date()
+            sessions.replace(report: UsageReport(generatedAt: now, snapshots: [], sessions: [
+                LiveSession(id: "snapshot-native", agentId: codex.id,
+                            task: L10n.text("修复会话跳转", "Fix session navigation"), terminal: "app",
+                            startedAt: now.addingTimeInterval(-60), pctOfWindow: nil,
+                            tokensIn: 250_000, tokensOut: 25_000, observedAt: now,
+                            navigationTarget: .codexThread(id: "00000000-0000-0000-0000-000000000001")),
+                LiveSession(id: "snapshot-unavailable", agentId: codex.id,
+                            task: L10n.text("检查用量统计", "Check usage statistics"), terminal: "workspace",
+                            startedAt: now.addingTimeInterval(-120), pctOfWindow: nil,
+                            tokensIn: 1_600_000, tokensOut: 100_000, observedAt: now)
+            ]))
+            save("island-session-actions", IslandScene(store: sessions, settings: settings, open: true, light: false),
+                 folder: folder, scheme: .dark)
+            save("island-session-actions-failed", IslandScene(store: sessions, settings: settings, open: true, light: false,
+                                                            failedListedSessionID: "snapshot-native"),
+                 folder: folder, scheme: .dark)
+            settings.update { $0 = saved }
+        }
+        let scrollScene = IslandScene(store: store, settings: settings, open: true, light: false, maximumPanelHeight: 420)
+        save("island-scroll-top", scrollScene, folder: folder, scheme: .dark)
+        save("island-scroll-bottom", scrollScene, folder: folder, scheme: .dark, scrollToBottom: true)
         save("menubar-dark", MenuBarStrip(store: store, light: false), folder: folder, scheme: .dark)
         save("menubar-light", MenuBarStrip(store: store, light: true), folder: folder, scheme: .light)
         for tab in SettingsTab.allCases {
@@ -163,10 +218,16 @@ public enum SnapshotRunner {
         save("onboarding-light", OnboardingView(settings: settings, store: store, sources: DemoData.sources, onFinish: {}), folder: folder, scheme: .light)
         save("stats-dark", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .dark)
         save("stats-light", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .light)
+        saveTokenCharts(settings: settings, folder: folder)
         // The Sessions page, and a session's own page as a completion or a session row opens it.
         store.statsTab = .sessions
         save("stats-sessions-dark", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .dark)
         save("stats-sessions-light", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .light)
+        let project = SessionProject.directory(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("work/api-gateway").path)
+        save("stats-sessions-project-search-dark", StatsView(store: store, scrollable: false, project: project, search: "middleware")
+            .frame(width: 760), folder: folder, scheme: .dark)
+        save("stats-sessions-project-small-dark", StatsView(store: store, scrollable: false, project: project)
+            .frame(width: 640), folder: folder, scheme: .dark)
         store.focusedSessionID = "s1"
         save("stats-session-dark", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .dark)
         save("stats-session-light", StatsView(store: store, scrollable: false).frame(width: 760), folder: folder, scheme: .light)
@@ -248,7 +309,8 @@ public enum SnapshotRunner {
         save("island-no-models-dark", IslandScene(store: store, settings: settings, open: true, light: false), folder: folder, scheme: .dark)
 
         settings.updateAgents { _ in DemoData.agents + [
-            AgentDescriptor(id: "codex-spark-preview", vendor: "Codex", model: "GPT-5.3-Codex-Spark · Weekly · all models", source: L10n.sourceCodexAppServer, enabled: false),
+            AgentDescriptor(id: "codex-spark-preview", vendor: "Codex", model: "GPT-5.3-Codex-Spark · Weekly limit", shortModel: "Spark 7d",
+                            source: L10n.sourceCodexAppServer, enabled: false),
         ] }
         save("settings-sources-bottom-dark", SettingsView(settings: settings, store: store, initialTab: .sources).frame(width: SettingsWindowLayout.size.width, height: SettingsWindowLayout.size.height), folder: folder, scheme: .dark, scrollToBottom: true)
         settings.update { $0.glowRange = 20; $0.glowBlur = 20 }
@@ -263,7 +325,8 @@ public enum SnapshotRunner {
             AgentDescriptor(id: "claude-session", vendor: "Claude", model: L10n.windowSession, source: L10n.sourceClaudeSessions, enabled: true),
             AgentDescriptor(id: "claude-weekly", vendor: "Claude", model: L10n.windowWeekly, source: L10n.sourceClaudeSessions, enabled: true),
             AgentDescriptor(id: "claude-weekly-fable", vendor: "Claude", model: L10n.windowWeeklyPrefix + "Fable", source: L10n.sourceClaudeSessions, enabled: true),
-            AgentDescriptor(id: "codex", vendor: "Codex", model: L10n.windowWeekly, source: L10n.sourceCodexAppServer, enabled: true),
+            AgentDescriptor(id: "codex", vendor: "Codex", model: L10n.text("每周额度", "Weekly limit"), shortModel: WindowNames.Period.week.shortName,
+                            source: L10n.sourceCodexAppServer, enabled: true),
         ]
         settings.updateAgents { _ in quotaAgents }
         settings.update {
@@ -289,6 +352,23 @@ public enum SnapshotRunner {
         }
         store.replace(report: UsageReport(generatedAt: resetNow, snapshots: quotaSnapshots, sessions: []))
         save("island-weekly-resets-dark", IslandScene(store: store, settings: settings, open: true, light: false), folder: folder, scheme: .dark)
+        // Full names too long for a row give way to their short names: Claude's weekly window in English, a Codex bucket's
+        // and a pool's with its plan.
+        let pool = BillingPool(provider: "Kimi", realm: "CN", product: .plan, scope: "snapshot", evidence: .account, entitlement: "kimi-code")
+        let longNames = Array(quotaAgents.prefix(3)) + [
+            AgentDescriptor(id: "codex:base_model_inference:primary", vendor: "Codex", model: L10n.text("Luna Reserve · 每周额度", "Luna Reserve · Weekly limit"),
+                            shortModel: "Reserve", source: L10n.sourceCodexAppServer, enabled: true, allModels: false),
+            AgentDescriptor(id: pool.windowID("limit:TIME_UNIT_MINUTE:300.0"), vendor: "Kimi", model: L10n.text("5 小时额度 · Allegretto", "5-hour quota · Allegretto"),
+                            shortModel: WindowNames.Period.fiveHours.shortName, source: "Kimi", enabled: true, billingPool: pool, account: ProviderAccount(pool: pool)),
+            AgentDescriptor(id: pool.windowID("monthly"), vendor: "Kimi", model: L10n.text("月总额度 · Allegretto", "Monthly total quota · Allegretto"),
+                            shortModel: WindowNames.Period.month.shortName, source: "Kimi", enabled: true, billingPool: pool, account: ProviderAccount(pool: pool)),
+        ]
+        settings.updateAgents { _ in longNames }
+        store.replace(report: UsageReport(generatedAt: resetNow, snapshots: longNames.map {
+            UsageSnapshot(agentId: $0.id, remainingPct: 64, resetAt: resetNow.addingTimeInterval(86400), windowDuration: 7 * 86400, updatedAt: resetNow)
+        }, sessions: []))
+        save("island-long-names-dark", IslandScene(store: store, settings: settings, open: true, light: false), folder: folder, scheme: .dark)
+        settings.updateAgents { _ in quotaAgents }
         let resetBalances: [(String, CodexResetCredits?)] = [
             ("available", DemoData.codexResetCredits(now: resetNow)),
             ("count-only", CodexResetCredits(availableCount: 3, credits: nil)),
@@ -345,8 +425,10 @@ public enum SnapshotRunner {
         let previousAccount = ProviderAccount.identified(provider: "Codex", user: "me@example.com", workspace: "personal")!
         let piAccount = ProviderAccount.identified(provider: "Codex", user: "pi@example.com", workspace: "personal-pi")!
         let accountRows = [currentAccount, piAccount, previousAccount].flatMap { account in
-            [("codex", L10n.windowWeekly), ("codex:spark:primary", "GPT-5.3-Codex-Spark · 5h")].map { key, label in
-                AgentDescriptor(id: account.windowID(key), vendor: "Codex", model: label, source: L10n.sourceCodexAppServer, enabled: true, account: account)
+            [("codex", L10n.text("每周额度", "Weekly limit"), WindowNames.Period.week.shortName),
+             ("codex:spark:primary", L10n.text("GPT-5.3-Codex-Spark · 5 小时额度", "GPT-5.3-Codex-Spark · 5h limit"), "Spark 5h")].map { key, label, short in
+                AgentDescriptor(id: account.windowID(key), vendor: "Codex", model: label, shortModel: short, source: L10n.sourceCodexAppServer,
+                                enabled: true, account: account)
             }
         }
         let accountReadings: [(ProviderAccount, String, Double, Date)] = [
@@ -369,8 +451,8 @@ public enum SnapshotRunner {
             ]]))
         save("island-provider-accounts-dark", IslandScene(store: store, settings: settings, open: true, light: false), folder: folder, scheme: .dark)
         save("settings-agents-provider-accounts-dark", SettingsView(settings: settings, store: store, initialTab: .sources,
-            sourceStatuses: [.init(id: "codex-cli", name: "Codex", detail: "", state: .ready(plan: "pro"))], initiallyExpandedAgents: ["Codex"])
-            .frame(width: 760, height: 800), folder: folder, scheme: .dark)
+            sourceStatuses: [.init(id: "codex-cli", name: "Codex", detail: "", state: .ready(plan: "pro"))], initialProviderID: "Codex")
+            .frame(width: SettingsWindowLayout.size.width, height: SettingsWindowLayout.size.height), folder: folder, scheme: .dark)
     }
 
     /// A question half answered: the first of two, one option picked, so the card shows what choosing looks like.
@@ -388,14 +470,60 @@ public enum SnapshotRunner {
                                          .init(label: L10n.text("单据页", "Documents page"))], multiSelect: true),
         ]
         let request = PermissionRequest(id: "snapshot-question", source: .claude, sessionID: "snapshot", toolName: "AskUserQuestion",
-                                        summary: questions[0].question, detail: nil, cwd: "/Users/me/agent-hud-web",
+                                        summary: questions[0].question, detail: nil, cwd: "/Users/me/Projects/acme-web",
                                         questions: questions, at: Date())
         QuestionDraft.draft(for: request.id).pick(0, of: 0, in: questions[0])
         return request
     }
 
+    /// Many recorded models: the folded filter, a model subset and the HUD's ten-label limit use the same full data.
+    private static func saveTokenCharts(settings: SettingsStore, folder: URL) {
+        let now = Date()
+        let models = [
+            ("Claude", "claude-opus-4-5"), ("Claude", "claude-sonnet-4-5"), ("Claude", "claude-haiku-4-5"),
+            ("Codex", "gpt-5"), ("Codex", "gpt-5.4"), ("Codex", "gpt-5.5"), ("Codex", "gpt-5.6-sol"), ("Codex", "gpt-6.1-sol"),
+            ("Antigravity", "gemini-2.5-pro"), ("Cursor", "composer-1"), ("OpenCode", "muse-spark-1.3-contributor"),
+            ("Pi", "gpt-5"), ("DeepSeek", "deepseek-v4-flash"),
+        ]
+        let consumers = models.map { vendor, model in
+            let id = vendor.lowercased() + "-model:" + model
+            return AgentDescriptor(id: id, vendor: vendor, model: ModelCatalog.consumerName(of: id), source: "Snapshot", enabled: true)
+        }
+        let usage = consumers.enumerated().map { index, consumer in
+            UsageBucket(start: now.addingTimeInterval(-Double(index % 5 + 1) * 3600), agentId: consumer.id,
+                        tokensIn: (consumers.count - index) * 18_000, tokensOut: (consumers.count - index) * 2000,
+                        cacheReadTokens: (index + 1) * 5000)
+        }
+        let store = UsageStore(provider: DemoUsageProvider(), settings: settings)
+        store.replace(report: UsageReport(generatedAt: now, snapshots: [], sessions: [], consumers: consumers, usage: usage))
+        let picked = TokenModelFilter(consumerIDs: [consumers[0].id, consumers[12].id])
+        for scheme in [ColorScheme.dark, .light] {
+            let theme = Theme.forScheme(scheme), suffix = scheme == .dark ? "dark" : "light"
+            save("stats-token-models-collapsed-\(suffix)",
+                 TokenConsumptionChart(store: store, theme: theme, context: .stats)
+                    .padding(16).frame(width: 760).background(theme.windowBackground), folder: folder, scheme: scheme)
+            save("stats-token-models-expanded-\(suffix)",
+                 TokenConsumptionChart(store: store, theme: theme, context: .stats, modelsExpanded: true)
+                    .padding(16).frame(width: 760).background(theme.windowBackground), folder: folder, scheme: scheme)
+            save("stats-token-models-filtered-\(suffix)",
+                 TokenConsumptionChart(store: store, theme: theme, context: .stats, modelsExpanded: true, modelFilter: picked)
+                    .padding(16).frame(width: 760).background(theme.windowBackground), folder: folder, scheme: scheme)
+        }
+        let hover = store.tokenColumns(consumerIDs: picked.consumerIDs).max { $0.total < $1.total }?.id
+        save("stats-token-models-filtered-hover-dark",
+             TokenConsumptionChart(store: store, theme: .dark, context: .stats, modelFilter: picked, inspectedColumnID: hover)
+                .padding(16).frame(width: 760).background(Theme.dark.windowBackground), folder: folder, scheme: .dark)
+        save("island-token-models-top10-dark", TokenConsumptionChart(store: store, theme: .island, context: .island)
+            .padding(18).frame(width: 480).background(Color.black), folder: folder, scheme: .dark)
+        store.setStatsRange(.days7)
+        store.tokenBucketSize = .day1
+        save("stats-token-dates-daily-dark", TokenConsumptionChart(store: store, theme: .dark, context: .stats)
+            .padding(16).frame(width: 760).background(Theme.dark.windowBackground), folder: folder, scheme: .dark)
+    }
+
     private static func saveAgentSettings(settings: SettingsStore, store: UsageStore, folder: URL) {
-        if let prefix = ProcessInfo.processInfo.environment["AGENTHUD_SNAPSHOT_PREFIX"], !"settings-agents".hasPrefix(prefix) { return }
+        if let prefix = ProcessInfo.processInfo.environment["AGENTHUD_SNAPSHOT_PREFIX"],
+           !"settings-agents".hasPrefix(prefix) && !prefix.hasPrefix("settings-agents") { return }
         let original = settings.agents
         let preferences = settings.settings
         let originalReport = store.report
@@ -412,18 +540,26 @@ public enum SnapshotRunner {
             AgentDescriptor(id: "settings-deepseek-chat", vendor: "DeepSeek", model: "deepseek-chat", source: L10n.sourceDeepSeekSessions, enabled: true),
             AgentDescriptor(id: "settings-deepseek-reasoner", vendor: "DeepSeek", model: "deepseek-reasoner", source: L10n.sourceDeepSeekSessions, enabled: true),
         ] }
-        let sources: [SourceStatus] = [
+        let configuredSources: [SourceStatus] = [
             .init(id: "claude-code", name: "Claude", detail: L10n.text("额度、会话与用量统计", "Quota, sessions and usage"), state: .ready(plan: "max_20x")),
             .init(id: "codex-cli", name: "Codex", detail: L10n.text("额度、会话与用量统计", "Quota, sessions and usage"), state: .ready(plan: "prolite")),
             .init(id: "deepseek", name: "DeepSeek", detail: L10n.text("Harness 会话、API 余额与费用", "Harness sessions, API balance and costs"), state: .ready(plan: nil)),
             .init(id: "antigravity", name: "Antigravity", detail: L10n.text("启动并登录 Antigravity 或 agy 后读取额度 · 部分本地会话无法读取，用量可能不完整", "Start and sign in to Antigravity or agy to load quota. Some local sessions could not be read; usage may be incomplete."), state: .unavailable),
             .init(id: "cursor", name: "Cursor", detail: L10n.text("账户额度与跨设备用量", "Account quota and usage across devices"), state: .notDetected),
-            .init(id: "grok", name: "Grok", detail: L10n.text("Grok CLI 额度与本地会话", "Grok CLI quota and local sessions"), state: .ready(plan: "X Premium")),
+            .init(id: "grok", name: "Grok CLI", detail: L10n.text("本地会话与用量", "Local sessions and usage"), state: .installed, provider: "Grok"),
+            .init(id: "grok-bot", name: "Grok Bot", detail: L10n.text("本机缓存会话、额度与用量；实时状态暂不可读", "Cached sessions, quota and usage; live status unavailable"),
+                  state: .installed, provider: "Grok", supportsLiveStatus: false),
             .init(id: "opencode", name: "OpenCode", detail: "", state: .installed),
             .init(id: "pi", name: "Pi", detail: "", state: .installed),
             .init(id: "kimi", name: "Kimi", detail: "", state: .ready(plan: "Allegretto")),
-            .init(id: "glm", name: "GLM", detail: "", state: .notDetected),
+            .init(id: "glm", name: "GLM", detail: OpenAgentSource.glm.detail, state: .notDetected),
         ]
+        let otherSources = AdditionalSource.allCases.map {
+            SourceStatus(id: $0.rawValue, name: $0.vendor, detail: $0.detail, state: .notDetected)
+        } + OpenAgentSource.allCases.map {
+            SourceStatus(id: $0.rawValue, name: $0.name, detail: $0.detail, state: .notDetected)
+        }
+        let sources = configuredSources + otherSources.filter { source in !configuredSources.contains { $0.id == source.id } }
         store.replace(report: UsageReport(generatedAt: Date(), snapshots: [], sessions: [],
             subscriptions: ["kimi-plan": "Allegretto"], billing: [DemoData.deepSeekBilling(now: Date())], services: [
                 .init(client: "OpenCode", provider: "Anthropic", product: .api),
@@ -433,23 +569,50 @@ public enum SnapshotRunner {
             ]))
         for scheme in [ColorScheme.dark, .light] {
             let appearance = scheme == .dark ? "dark" : "light"
-            for (state, expanded) in [("collapsed", Set<String>()), ("expanded", ["Claude"]), ("prepaid", ["DeepSeek"]), ("empty", ["Antigravity"])] {
+            for (state, providerID) in [("overview", nil), ("claude", "Claude"), ("grok", "Grok"), ("prepaid", "DeepSeek"), ("unavailable", "Antigravity"), ("unconfigured", "GLM")] as [(String, String?)] {
                 let displayOrder = settings.agents
                 if state == "prepaid" { settings.moveAgentGroup(id: "DeepSeek", to: "Claude") }
                 defer { settings.updateAgents { _ in displayOrder } }
                 let view = SettingsView(settings: settings, store: store, initialTab: .sources,
-                                        sourceStatuses: sources, initiallyExpandedAgents: expanded)
-                save("settings-agents-\(state)-\(appearance)", view.frame(width: 760, height: 800), folder: folder, scheme: scheme)
-                if state == "collapsed" {
-                    save("settings-agents-accounts-\(appearance)", view.frame(width: 760, height: 800),
-                         folder: folder, scheme: scheme, scrollOffset: 420)
-                }
-                if state == "expanded" || state == "prepaid" {
-                    save("settings-agents-\(state)-small-\(appearance)", view.frame(width: 680, height: 720), folder: folder, scheme: scheme)
-                    save("settings-agents-\(state)-models-small-\(appearance)", view.frame(width: 680, height: 720),
-                         folder: folder, scheme: scheme, scrollOffset: state == "prepaid" ? 400 : 240)
+                                        sourceStatuses: sources, initialProviderID: providerID)
+                save("settings-agents-\(state)-\(appearance)",
+                     view.frame(width: SettingsWindowLayout.size.width, height: SettingsWindowLayout.size.height), folder: folder, scheme: scheme)
+                if state == "claude" || state == "grok" || state == "prepaid" {
+                    save("settings-agents-\(state)-small-\(appearance)",
+                         view.frame(width: SettingsWindowLayout.minimum.width, height: SettingsWindowLayout.minimum.height), folder: folder, scheme: scheme)
                 }
             }
+        }
+        saveAntigravitySettings(settings: settings, store: store, sources: sources, folder: folder)
+    }
+
+    private static func saveAntigravitySettings(settings: SettingsStore, store: UsageStore, sources: [SourceStatus], folder: URL) {
+        let now = Date()
+        let current = ProviderAccount.identified(provider: "Antigravity", user: "work@example.com", workspace: nil)!
+        let previous = ProviderAccount.identified(provider: "Antigravity", user: "personal@example.com", workspace: nil)!
+        func row(_ account: ProviderAccount, _ key: String, _ short: String, _ name: String) -> AgentDescriptor {
+            .init(id: account.windowID("antigravity:" + key), vendor: "Antigravity", model: name,
+                  shortModel: short, source: "", enabled: account == current, account: account, allModels: false)
+        }
+        let rows = [
+            row(previous, "gemini-weekly", "Gemini 7d", "Gemini Models · Weekly Limit Remaining"),
+            row(current, "gemini-weekly", "Gemini 7d", "Gemini Models · Weekly Limit Remaining"),
+            row(previous, "3p-weekly", "3rd-party 7d", "Claude and GPT models · Weekly Limit Remaining"),
+            row(current, "gemini-5h", "Gemini 5h", "Gemini Models · Five Hour Limit Remaining"),
+            row(current, "3p-weekly", "3rd-party 7d", "Claude and GPT models · Weekly Limit Remaining"),
+        ]
+        settings.updateAgents { _ in rows }
+        settings.setAccount(id: previous.id, visible: false)
+        store.replace(report: UsageReport(generatedAt: now, snapshots: [], sessions: [], accounts: ["Antigravity": [
+            .init(account: current, label: "work@example.com", observedAt: now),
+            .init(account: previous, label: "personal@example.com", observedAt: now.addingTimeInterval(-86400), isCurrent: false),
+        ]]))
+        for scheme in [ColorScheme.dark, .light] {
+            let view = SettingsView(settings: settings, store: store, initialTab: .sources,
+                                    sourceStatuses: sources, initialProviderID: "Antigravity")
+            let appearance = scheme == .dark ? "dark" : "light"
+            save("settings-agents-antigravity-accounts-\(appearance)",
+                 view.frame(width: SettingsWindowLayout.size.width, height: SettingsWindowLayout.size.height), folder: folder, scheme: scheme)
         }
     }
 
@@ -490,11 +653,12 @@ public enum SnapshotRunner {
         }
 
         let originalAgents = store.settings.agents
-        store.settings.updateAgents { agents in
-            agents + (0..<40).map {
-                AgentDescriptor(id: "sizing-\($0)", vendor: "Preview \($0)", model: "Quota", source: "Snapshot", enabled: true)
-            }
+        let originalPickedAgents = store.pickedAgents
+        let sizingAgents = (0..<40).map {
+            AgentDescriptor(id: "sizing-\($0)", vendor: "Preview \($0)", model: "Quota", source: "Snapshot", enabled: true)
         }
+        store.settings.updateAgents { $0 + sizingAgents }
+        store.pickedAgents = store.shownAgents.union(sizingAgents.map(\.vendor))
         for _ in 0..<6 {
             try? await Task.sleep(for: .milliseconds(50))
             hosting.layoutSubtreeIfNeeded()
@@ -505,6 +669,7 @@ public enum SnapshotRunner {
             print("snapshot adaptive \(capped && overflow > 0 ? "PASS" : "FAILED"): screen cap height=\(window.frame.height) overflow=\(overflow)")
         }
         store.settings.updateAgents { _ in originalAgents }
+        store.pickedAgents = originalPickedAgents
         for _ in 0..<6 {
             try? await Task.sleep(for: .milliseconds(50))
             hosting.layoutSubtreeIfNeeded()
@@ -613,25 +778,36 @@ struct IslandScene: View {
     let settings: SettingsStore
     let open: Bool
     let light: Bool
+    var maximumPanelHeight: CGFloat = (NSScreen.main?.frame.height ?? 900) - 80
     var alert: IslandAlert? = nil
     var showsAlertDetails = false
     var waitingRequests: [PermissionRequest] = []
+    var sessionEvents: [IslandAlert] = []
+    var failedListedSessionID: String? = nil
     /// A fixed effect time for the dot and ASCII glow styles.
     var glowTime: Double? = nil
 
     private var panelHeight: CGFloat {
         if showsAlertDetails, let alert {
-            let hosting = NSHostingView(rootView: IslandAlertDetailView(alert: alert, onOpen: {}, onDecide: { _ in },
-                                                                         waitingRequests: waitingRequests)
+            let detail: AnyView
+            if alert.isSessionEvent {
+                detail = AnyView(IslandEventPanelView(alert: alert, onOpen: {}, onDecide: { _ in },
+                                                     events: sessionEvents, waitingRequests: waitingRequests))
+            } else {
+                detail = AnyView(IslandAlertDetailView(alert: alert, onOpen: {}, onDecide: { _ in },
+                                                      waitingRequests: waitingRequests))
+            }
+            let hosting = NSHostingView(rootView: detail
                             .padding(alert.detailInsets.map {
                     EdgeInsets(top: max($0.top, 38), leading: $0.leading, bottom: $0.bottom, trailing: $0.trailing)
                 } ?? EdgeInsets(top: 38 + alert.detailTopInset, leading: 24, bottom: 22, trailing: 24))
                 .frame(width: alert.detailWidth).fixedSize(horizontal: false, vertical: true))
             return hosting.fittingSize.height
         }
-        let hosting = NSHostingView(rootView: HoverPanelView(store: store, onOpenStats: {}, alert: alert)
+        let hosting = NSHostingView(rootView: HoverPanelView(store: store, onOpenStats: {}, alert: alert,
+                                                            failedListedSessionID: failedListedSessionID)
             .frame(width: IslandController.expandedWidth).fixedSize(horizontal: false, vertical: true))
-        return max(80, hosting.fittingSize.height)
+        return max(80, min(hosting.fittingSize.height, maximumPanelHeight))
     }
 
     var body: some View {
@@ -682,8 +858,9 @@ struct IslandScene: View {
                 store: store, isOpen: open,
                 collapsedSize: CGSize(width: cameraWidth + NotchGeometry.collapsedTopRadius * 2, height: closedHeight),
                 collapsedTopRadius: NotchGeometry.collapsedTopRadius, collapsedBottomRadius: 14,
-                lightBorder: light, onOpenStats: {}, alert: alert, waitingRequests: waitingRequests,
-                showsAlertDetails: showsAlertDetails
+                lightBorder: light, onOpenStats: {}, alert: alert, failedListedSessionID: failedListedSessionID,
+                waitingRequests: waitingRequests, sessionEvents: sessionEvents,
+                showsAlertDetails: showsAlertDetails, presentationSize: islandSize
             )
                 .frame(width: islandSize.width + flare * 2, height: islandSize.height)
                 .shadow(color: Color.black.opacity(0.35), radius: 15, y: 8)
@@ -753,3 +930,12 @@ struct LogoQueueScene: View {
             .background(Color(white: 0.10))
     }
 }
+#else
+/// `--snapshot <dir>` renders the screens in debug builds only; a release build renders nothing and says so.
+@MainActor
+public enum SnapshotRunner {
+    public static func run(language: AppLanguage? = nil, into directory: String) async {
+        FileHandle.standardError.write(Data("Snapshots are rendered by debug builds, such as make snapshot.\n".utf8))
+    }
+}
+#endif

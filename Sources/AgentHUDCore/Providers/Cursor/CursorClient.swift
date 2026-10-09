@@ -5,6 +5,8 @@ import Foundation
 actor CursorClient {
     struct Session: Sendable { let account: String; let cookie: String; var email: String? = nil }
     let database: URL
+    /// The agent CLI's folder, `~/.cursor`, where its chats and ACP sessions keep their names.
+    let agentFolder: URL
     let http: ProviderHTTP
     private var cached: (at: Date, account: String, since: Date, result: ProviderSessions)?
     private var fetches = 0
@@ -12,12 +14,15 @@ actor CursorClient {
     var savedSessions: ProviderSessions {
         var result = cached?.result ?? ProviderSessions()
         result.revision = fetches
+        // The dashboard is asked from local midnight.
+        result.start = cached?.since
         return result
     }
 
     init(database: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb"),
+         agentFolder: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cursor"),
          http: ProviderHTTP = ProviderHTTP()) {
-        self.database = database; self.http = http
+        self.database = database; self.agentFolder = agentFolder; self.http = http
     }
 
     func session(now: Date = Date()) throws -> Session {
@@ -65,8 +70,8 @@ actor CursorClient {
         guard json["individualUsage"].objectValue != nil || json["teamUsage"].objectValue != nil || json["membershipType"].stringValue != nil else {
             throw ProviderFailure.format
         }
-        let end = ProviderDate.iso(json["billingCycleEnd"].stringValue)
-        let start = ProviderDate.iso(json["billingCycleStart"].stringValue)
+        let end = DateParsing.internet(json["billingCycleEnd"].stringValue)
+        let start = DateParsing.internet(json["billingCycleStart"].stringValue)
         let duration = ProviderDate.period(start: start, end: end)
         let plan = json["individualUsage"]["plan"]
         func ratio(_ value: ProviderJSON) -> Double? {
@@ -76,20 +81,28 @@ actor CursorClient {
         }
         var result = ProviderQuota(plan: json["membershipType"].stringValue)
         let main = plan["enabled"].boolValue == false ? nil : plan["totalPercentUsed"].numberValue ?? ratio(plan)
-        let rows: [(String, String, Double?)] = [
-            ("cursor", L10n.text("套餐总额度", "Plan usage"), main),
-            ("cursor:models", L10n.text("Cursor 模型", "Cursor models"), plan["autoPercentUsed"].numberValue),
-            ("cursor:third-party", L10n.text("第三方模型", "Third-party models"), plan["apiPercentUsed"].numberValue),
-            ("cursor:personal", L10n.text("个人预算", "Personal budget"), ratio(json["individualUsage"]["overall"])),
-            ("cursor:team", L10n.text("团队共享额度", "Team pool"), ratio(json["teamUsage"]["pooled"])),
-            ("cursor:extra", L10n.text("额外用量预算", "Extra usage budget"), ratio(json["individualUsage"]["onDemand"]))
+        // Cursor's own names for its usage pools and limits. Its first pool is its own models, which Cursor calls
+        // first-party, so the short name says so, where "Cursor Models" would read as the whole vendor; the other pool,
+        // third-party models, follows. The two pools each limit some of the plan's models; the rest are plan-wide.
+        let rows: [(String, String, String, Double?)] = [
+            ("cursor", L10n.text("包含用量", "Included usage"), L10n.text("包含用量", "Included"), main),
+            ("cursor:models", L10n.text("Cursor 模型", "Cursor Models"), L10n.text("第一方模型", "First-party"),
+             plan["autoPercentUsed"].numberValue),
+            ("cursor:third-party", L10n.text("其他模型", "Other Models"), L10n.text("第三方模型", "Third-party"),
+             plan["apiPercentUsed"].numberValue),
+            ("cursor:personal", L10n.text("个人支出限额", "Individual spending limit"), L10n.text("支出限额", "Spend limit"),
+             ratio(json["individualUsage"]["overall"])),
+            ("cursor:team", L10n.text("共享用量", "Pooled usage"), L10n.text("共享用量", "Pooled"), ratio(json["teamUsage"]["pooled"])),
+            ("cursor:extra", L10n.text("按需用量", "On-demand usage"), L10n.text("按需用量", "On-demand"),
+             ratio(json["individualUsage"]["onDemand"]))
         ]
-        for (id, label, used) in rows {
+        for (id, label, short, used) in rows {
             guard let used, used.isFinite, used >= 0 else { continue }
-            result.windows.append(.init(id: id, label: label, remaining: max(0, 100 - used), reset: end, duration: duration))
+            result.windows.append(.init(id: id, label: label, remaining: QuotaMath.remaining(usedPercent: used), reset: end, duration: duration,
+                                        shortLabel: short, allModels: id != "cursor:models" && id != "cursor:third-party"))
         }
         if result.windows.isEmpty {
-            result.notice = L10n.text("Cursor 已连接，当前计划未提供额度比例", "Cursor is connected; this plan reports no quota percentage")
+            result.displayNotice = L10n.text("Cursor 已连接，当前计划未提供额度比例", "Cursor is connected; this plan reports no quota percentage")
         }
         return result
     }
@@ -104,16 +117,15 @@ actor CursorClient {
             fetches += 1
             return ProviderSessions(notice: error.localizedDescription)
         }
-        if let cached, cached.account == auth.account, cached.since == start, now.timeIntervalSince(cached.at) < UsageRefresh.accountRequestSpacing { return cached.result }
         if cached?.account != auth.account { cached = nil }
         do {
             let events = try await fetchEvents(auth: auth, since: start, until: now)
-            let result = try Self.parseEvents(events, account: auth.account)
+            let result = named(try Self.parseEvents(events, account: auth.account), account: auth.account)
             cached = (now, auth.account, start, result)
             fetches += 1
             return result
         } catch {
-            // Cache retry failures too: polling local sessions every five seconds must not hammer the dashboard.
+            // A failed read keeps the sessions the last one found, with a notice, until the next account step.
             let message = L10n.text("Cursor 账户用量读取失败，稍后自动重试", "Cursor account usage could not be read; retrying shortly")
             var previous = cached?.result ?? ProviderSessions()
             previous.notice = message
@@ -171,6 +183,36 @@ actor CursorClient {
         return result
     }
 
+    /// The names Cursor keeps on this Mac for the conversations the events name, read when the events are: an IDE
+    /// composer's in its header, an agent CLI chat's or ACP session's in its `meta.json`. A conversation that ran on
+    /// another machine or in the cloud keeps its placeholder.
+    func named(_ result: ProviderSessions, account: String) -> ProviderSessions {
+        let prefix = "cursor-account:\(account):"
+        let conversations = result.sessions.map { String($0.id.dropFirst(prefix.count)) }.filter { !$0.hasPrefix("unassigned-") }
+        guard !conversations.isEmpty else { return result }
+        var titles: [String: String] = [:]
+        if let reader = try? ReadOnlySQLite(database), let list = try? JSONSerialization.data(withJSONObject: conversations) {
+            // Only the name leaves the database; a header's other fields and the composers' contents are never read.
+            try? reader.rows("SELECT composerId, json_extract(value, '$.name') FROM composerHeaders WHERE composerId IN (SELECT value FROM json_each(?))",
+                             strings: [String(decoding: list, as: UTF8.self)]) { row in
+                if let id = ReadOnlySQLite.text(row, 0), let title = SessionTitle.named(ReadOnlySQLite.text(row, 1)) { titles[id] = title }
+            }
+        }
+        let chats = (try? FileManager.default.contentsOfDirectory(at: agentFolder.appendingPathComponent("chats"), includingPropertiesForKeys: nil)) ?? []
+        for id in conversations where titles[id] == nil {
+            for folder in [agentFolder.appendingPathComponent("acp-sessions")] + chats {
+                let meta = folder.appendingPathComponent(id).appendingPathComponent("meta.json")
+                guard FileManager.default.fileExists(atPath: meta.path) else { continue }
+                // The agent calls a chat "New Agent" until its title arrives.
+                if let title = SessionTitle.named((try? ProviderFiles.json(meta))?["title"].stringValue), title != "New Agent" { titles[id] = title }
+                break
+            }
+        }
+        var result = result
+        result.sessions = result.sessions.map { var item = $0; if let title = titles[String(item.id.dropFirst(prefix.count))] { item.title = title }; return item }
+        return result
+    }
+
     static func parseEvents(_ rows: [ProviderJSON], account: String) throws -> ProviderSessions {
         var sessions: [String: ProviderSession] = [:], occurrences: [String: Int] = [:]
         for row in rows {
@@ -189,8 +231,11 @@ actor CursorClient {
             // ID-less events remain unassigned; do not invent a multi-request conversation from their timestamps.
             let id = "cursor-account:\(account):\(conversation ?? "unassigned-" + identity + "-" + String(ordinal))"
             if sessions[id] == nil {
-                sessions[id] = ProviderSession(id: id, title: conversation.map { "Cursor · \($0.prefix(8))" }
-                    ?? L10n.text("Cursor 未归属请求", "Cursor unassigned request"), client: "Cursor", accountWide: true)
+                let subagent = conversation.flatMap(GrokBotUsage.subagentID)
+                let title = subagent.map { L10n.text("Grok Bot 子代理", "Grok Bot subagent") + " · " + $0.prefix(8) }
+                    ?? conversation.map { "Cursor · \($0.prefix(8))" }
+                    ?? L10n.text("Cursor 未归属请求", "Cursor unassigned request")
+                sessions[id] = ProviderSession(id: id, title: title, client: subagent == nil ? "Cursor" : "Grok Bot", accountWide: true)
             }
             sessions[id]?.events.append(event)
         }

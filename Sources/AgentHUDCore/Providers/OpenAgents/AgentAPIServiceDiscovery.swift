@@ -62,7 +62,7 @@ enum AgentAPIServiceDiscovery {
             services.append(.init(client: client.name, provider: provider, product: .api, region: region(id, baseURL: base)))
         }
 
-        let configRoot = URL(fileURLWithPath: env["XDG_CONFIG_HOME"] ?? home.appendingPathComponent(".config").path)
+        let configRoot = URL(fileURLWithPath: ClientHome.variable("XDG_CONFIG_HOME", in: env) ?? home.appendingPathComponent(".config").path)
         let configs = ["opencode.json", "opencode.jsonc"].map { configRoot.appendingPathComponent("opencode/" + $0) }
             .filter { FileManager.default.fileExists(atPath: $0.path) }.map { OpenAgentCredentials.read($0, json5: true) }
         if configs.allSatisfy({ $0.objectValue != nil }) {

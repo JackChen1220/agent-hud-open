@@ -1,19 +1,14 @@
 import Foundation
-import Darwin
 
 // Local service discovery and quota schema follow CodexBar (MIT). Only already-running services are queried.
 struct AntigravityClient: Sendable {
-    struct Candidate: Sendable {
-        let pid: Int
-        let token: String
-        let extensionPort: Int?
-        let extensionToken: String?
-        let priority: Int
-    }
     var http = ProviderHTTP()
+    private static let statusRequest: ProviderJSON = .object(["metadata": .object([
+        "ideName": .string("antigravity"), "extensionName": .string("antigravity"), "locale": .string("en"), "ideVersion": .string("unknown")
+    ])])
 
     func fetch() async throws -> ProviderQuota {
-        let candidates = Self.candidates(try await ProviderCommand.run("/bin/ps", ["-U", String(getuid()), "-o", "pid=,command="]))
+        let candidates = try await AntigravityService.running()
         guard !candidates.isEmpty else {
             return ProviderQuota(notice: AdditionalSource.antigravity.isInstalled()
                 ? L10n.text("启动并登录 Antigravity 或 agy 后读取额度", "Start and sign in to Antigravity or agy to load quota") : nil)
@@ -23,28 +18,12 @@ struct AntigravityClient: Sendable {
         for candidate in candidates.prefix(6) {
             try Task.checkCancellation()
             guard Date() < deadline else { break }
-            let ports = (try? await ProviderCommand.run("/usr/sbin/lsof", ["-nP", "-a", "-p", String(candidate.pid), "-iTCP", "-sTCP:LISTEN", "-Fn"]))
-                .map(Self.ports) ?? []
-            var endpoints = ports.map { ("https", $0, candidate.token) }
-            if let port = candidate.extensionPort { endpoints.append(("http", port, candidate.extensionToken ?? candidate.token)) }
-            for (scheme, port, token) in endpoints.prefix(8) {
+            let endpoints = (try? await AntigravityService.endpoints(for: candidate)) ?? []
+            for endpoint in endpoints {
                 try Task.checkCancellation()
                 guard Date() < deadline else { break }
-                let base = "\(scheme)://127.0.0.1:\(port)/exa.language_server_pb.LanguageServerService/"
-                var headers = ["Connect-Protocol-Version": "1"]
-                if !token.isEmpty { headers["X-Codeium-Csrf-Token"] = token }
-                let body: ProviderJSON = .object(["metadata": .object([
-                    "ideName": .string("antigravity"), "extensionName": .string("antigravity"), "locale": .string("en"), "ideVersion": .string("unknown")
-                ])])
-                if let json = try? await http.json(URL(string: base + "RetrieveUserQuotaSummary")!, headers: headers, body: body, timeout: 2),
-                   var result = try? Self.summary(json), !result.windows.isEmpty {
-                    // The IDE and agy can be signed in to different accounts, so identity comes from the same server.
-                    if let status = try? await http.json(URL(string: base + "GetUserStatus")!, headers: headers, body: body, timeout: 2) {
-                        (result.account, result.label) = Self.identity(status)
-                    }
-                    return result
-                }
-                if let json = try? await http.json(URL(string: base + "GetUserStatus")!, headers: headers, body: body, timeout: 2),
+                if let result = try? await quota(from: endpoint) { return result }
+                if let json = try? await endpoint.json("GetUserStatus", body: Self.statusRequest, http: http),
                    var result = try? Self.userStatus(json), !result.windows.isEmpty {
                     (result.account, result.label) = Self.identity(json)
                     fallback = fallback ?? result; break
@@ -55,65 +34,99 @@ struct AntigravityClient: Sendable {
         throw UsageProviderError(L10n.text("Antigravity 本地服务未返回可读取的额度", "Antigravity's local service returned no readable quota"))
     }
 
-    static func candidates(_ output: String) -> [Candidate] {
-        output.split(separator: "\n").compactMap { line in
-            let pieces = line.split(maxSplits: 1, whereSeparator: \.isWhitespace)
-            guard pieces.count == 2, let pid = Int(pieces[0]) else { return nil }
-            let command = String(pieces[1]), lower = command.lowercased()
-            let cli = lower.contains("/antigravity-cli/") || lower.contains("/antigravity_cli/")
-                || lower.range(of: #"(?:^|/)agy(?:\s|$)"#, options: .regularExpression) != nil
-            let server = (lower.contains("language_server") || lower.contains("language-server"))
-                && (lower.contains("antigravity.app/") || lower.contains("antigravity ide.app/")
-                    || lower.contains("/antigravity/") || flag("app_data_dir", command: command)?.hasPrefix("antigravity") == true)
-            guard cli || server else { return nil }
-            let token = flag("csrf_token", command: command)
-            guard cli || token?.isEmpty == false else { return nil }
-            let extensionPort = flag("extension_server_port", command: command).flatMap(Int.init).flatMap { (1...65535).contains($0) ? $0 : nil }
-            return Candidate(pid: pid, token: token ?? "", extensionPort: extensionPort,
-                extensionToken: flag("extension_server_csrf_token", command: command),
-                priority: cli ? 1 : lower.contains("antigravity-ide") || lower.contains("antigravity ide.app") ? 2 : 0)
-        }.sorted { ($0.priority, $0.pid) < ($1.priority, $1.pid) }
-    }
-
-    private static func flag(_ name: String, command: String) -> String? {
-        let pattern = #"(?:^|\s)--"# + NSRegularExpression.escapedPattern(for: name) + #"(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(in: command, range: NSRange(command.startIndex..., in: command)) else { return nil }
-        for index in 1..<match.numberOfRanges {
-            if let range = Range(match.range(at: index), in: command) { return String(command[range]) }
+    func quota(from endpoint: AntigravityService.Endpoint) async throws -> ProviderQuota {
+        // Opening Antigravity's native quota popover forces a new summary rather than its local service's cached one.
+        let json = try await endpoint.json("RetrieveUserQuotaSummary", body: .object(["forceRefresh": .bool(true)]), http: http)
+        var result = try Self.summary(json)
+        // The IDE and agy can be signed in to different accounts, so identity comes from the same server. Its legacy
+        // per-model quotas may be older than the fresh summary and supply no readings while the summary is available.
+        if let status = try? await endpoint.json("GetUserStatus", body: Self.statusRequest, http: http) {
+            (result.account, result.label) = Self.identity(status)
         }
-        return nil
+        return result
     }
 
-    static func ports(_ output: String) -> [Int] {
-        Set(output.split(separator: "\n").filter { $0.hasPrefix("n") }.compactMap { line -> Int? in
-            guard let raw = line.split(separator: ":").last, let port = Int(raw), (1...65535).contains(port) else { return nil }
-            return port
-        }).sorted()
+    static func candidates(_ output: String) -> [AntigravityService.Candidate] { AntigravityService.candidates(output) }
+    static func ports(_ output: String) -> [Int] { AntigravityService.ports(output) }
+
+    /// The older per-family schema is a fallback for an account without summary windows, never extra limits alongside
+    /// that same account's known summary. The window-key prefixes are the two schemas this parser produces.
+    static func supersededLegacyWindowIDs(in windows: [AgentDescriptor], by known: [AgentDescriptor]) -> Set<String> {
+        let summaryAccounts = Set(known.filter {
+            $0.windowKey.hasPrefix("antigravity:") && !$0.windowKey.hasPrefix("antigravity:legacy:")
+        }.compactMap(\.displayAccountID))
+        return Set(windows.filter {
+            $0.windowKey.hasPrefix("antigravity:legacy:") && $0.displayAccountID.map(summaryAccounts.contains) == true
+        }.map(\.id))
+    }
+
+    /// Retained summary rows keep their recorded group and cadence; their own window duration supplies the period.
+    /// Legacy model-family readings have no summary cadence and keep their names.
+    static func summaryNames(_ windows: [AgentDescriptor], snapshots: [UsageSnapshot]) -> [AgentDescriptor] {
+        windows.map { agent in
+            guard agent.windowKey.hasPrefix("antigravity:"), !agent.windowKey.hasPrefix("antigravity:legacy:"),
+                  let duration = snapshots.first(where: { $0.agentId == agent.id })?.windowDuration else { return agent }
+            let word: String?
+            if agent.windowKey.hasPrefix("antigravity:gemini-") { word = "Gemini" }
+            else if agent.windowKey.hasPrefix("antigravity:3p-") { word = L10n.text("第三方", "3rd-party") }
+            else { word = agent.model.range(of: " · ").map { groupWord(String(agent.model[..<$0.lowerBound])) } }
+            guard let short = compactName(word: word, duration: duration, allModels: agent.allModels),
+                  short != agent.shortModel else { return agent }
+            return AgentDescriptor(id: agent.id, vendor: agent.vendor, model: agent.model, shortModel: short, source: agent.source,
+                enabled: agent.enabled, connected: agent.connected, billingPool: agent.billingPool, account: agent.account, allModels: agent.allModels)
+        }
+    }
+
+    private static func compactName(word: String?, duration: TimeInterval?, allModels: Bool) -> String? {
+        let period = WindowNames.Period(seconds: duration)
+        if allModels { return period?.shortName }
+        guard let word else { return nil }
+        return period.map { "\(word) \($0.afterWord)" } ?? word
     }
 
     static func summary(_ json: ProviderJSON) throws -> ProviderQuota {
         let groups = json["response"]["groups"].arrayValue ?? json["summary"]["groups"].arrayValue ?? json["groups"].arrayValue
         guard let groups else { throw ProviderFailure.format }
-        var result = ProviderQuota(), ids = Set<String>()
-        for group in groups {
+        var result = ProviderQuota(), ids = Set<String>(), activeGroups = Set<Int>()
+        var found: [(group: Int, name: String?, window: ProviderQuota.Window)] = []
+        for (index, group) in groups.enumerated() {
             guard let buckets = group["buckets"].arrayValue else { throw ProviderFailure.format }
             for bucket in buckets {
-                guard bucket["disabled"].boolValue != true, let id = bucket["bucketId"].stringValue, !id.isEmpty else { continue }
+                guard bucket["disabled"].boolValue != true else { continue }
+                guard let id = bucket["bucketId"].stringValue, !id.isEmpty, ids.insert(id).inserted else { throw ProviderFailure.format }
+                activeGroups.insert(index)
                 let remaining = bucket["remaining"]
                 let fraction = bucket["remainingFraction"].numberValue ?? remaining["remainingFraction"].numberValue
                     ?? (remaining["case"].stringValue == "remainingFraction" ? remaining["value"].numberValue : nil)
                 guard let fraction, (0...1).contains(fraction) else { continue }
-                guard ids.insert(id).inserted else { throw ProviderFailure.format }
                 let label = [group["displayName"].stringValue, bucket["displayName"].stringValue ?? id].compactMap { $0 }.joined(separator: " · ")
+                // Antigravity names its buckets Weekly Limit and Five Hour Limit; ids write the period with an underscore.
                 let cadence = (id + " " + (bucket["displayName"].stringValue ?? "")).lowercased()
+                    .replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ")
                 let duration: TimeInterval? = cadence.contains("weekly") ? 604800
-                    : cadence.contains("five_hour") || cadence.contains("5-hour") || cadence.contains("5 hour") ? 18000 : nil
-                result.windows.append(.init(id: "antigravity:\(id)", label: label, remaining: fraction * 100,
-                    reset: ProviderDate.iso(bucket["resetTime"].stringValue), duration: duration))
+                    : cadence.contains("five hour") || cadence.contains("5 hour") ? 18000 : nil
+                found.append((index, group["displayName"].stringValue, .init(id: "antigravity:\(id)", label: label, remaining: fraction * 100,
+                    reset: DateParsing.internet(bucket["resetTime"].stringValue), duration: duration)))
             }
         }
+        // One group's windows are the account's main set, known by their period alone and plan-wide; with several groups
+        // a window limits its group's models and is known by its group's word and its period.
+        result.quotaWindowIDs = Set(ids.map { "antigravity:" + $0 })
+        result.windows = found.map { entry in
+            var window = entry.window
+            window.allModels = activeGroups.count == 1
+            window.shortLabel = compactName(word: entry.name.map(groupWord), duration: window.duration, allModels: window.allModels)
+            return window
+        }
         return result
+    }
+
+    /// The word a group of models is known by in tight places: its first word, as Gemini for Gemini Models, and
+    /// third-party for Claude and GPT models, as Antigravity's plans describe them.
+    static func groupWord(_ name: String) -> String {
+        let lower = name.lowercased()
+        if lower.contains("claude") || lower.contains("gpt") { return L10n.text("第三方", "3rd-party") }
+        return name.split(separator: " ").first.map(String.init) ?? name
     }
 
     static func identity(_ json: ProviderJSON) -> (ProviderAccount?, String?) {
@@ -132,13 +145,21 @@ struct AntigravityClient: Sendable {
             if ["lite", "autocomplete", "image"].contains(where: lower.contains) { continue }
             let family = lower.contains("gemini") ? "gemini" : lower.contains("claude") || lower.contains("gpt") ? "claude-gpt" : model
             guard !family.isEmpty else { continue }
-            let name = family == "gemini" ? "Gemini" : family == "claude-gpt" ? "Claude + GPT" : label
+            // The groups by Antigravity's own names; any other model by its label.
+            let name = family == "gemini" ? "Gemini Models" : family == "claude-gpt" ? "Claude and GPT models" : label
+            let short = family == "gemini" ? "Gemini" : family == "claude-gpt" ? groupWord(name) : WindowNames.word(label)
             let window = ProviderQuota.Window(id: "antigravity:legacy:\(family)", label: name, remaining: fraction * 100,
-                reset: ProviderDate.iso(config["quotaInfo"]["resetTime"].stringValue))
+                reset: DateParsing.internet(config["quotaInfo"]["resetTime"].stringValue), shortLabel: short)
             if pools[family].map({ window.remaining < $0.remaining }) ?? true { pools[family] = window }
         }
         let plan = status["userTier"]["name"].stringValue ?? status["planStatus"]["planInfo"]["planName"].stringValue
-        return ProviderQuota(windows: pools.keys.sorted().compactMap { pools[$0] }, plan: plan)
+        // Several families' quotas each limit their own models, as several groups' windows do.
+        let windows = pools.keys.sorted().compactMap { pools[$0] }.map { pool in
+            var window = pool
+            window.allModels = pools.count == 1
+            return window
+        }
+        return ProviderQuota(windows: windows, plan: plan)
     }
 }
 
@@ -147,6 +168,7 @@ enum ProviderCommand {
     static func run(_ executable: String, _ arguments: [String]) async throws -> String {
         let output = try await ChildProcess.run(URL(fileURLWithPath: executable), arguments, timeout: 3, stdoutLimit: 2 * 1024 * 1024)
         guard output.status != nil, !output.truncated else { throw ProviderFailure.limit }
+        guard output.status == 0 else { throw ProviderFailure.format }
         return String(decoding: output.stdout, as: UTF8.self)
     }
 }

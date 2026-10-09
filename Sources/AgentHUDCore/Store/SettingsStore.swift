@@ -10,7 +10,8 @@ public final class SettingsStore {
     public private(set) var hasCompletedOnboarding: Bool
 
     public enum Change { case settings, agents, discovery }
-    /// Invoked after preferences are persisted and local state is updated.
+    /// Invoked after preferences are persisted and local state is updated. A running `UsageStore` sets it, to wake
+    /// collection when a change needs a read; a host follows settings through Observation instead.
     @ObservationIgnored public var onChange: ((Change) -> Void)?
 
     private let defaults: UserDefaults
@@ -39,6 +40,11 @@ public final class SettingsStore {
             agents = defaultAgents.groupedAgentOrder
         }
         hasCompletedOnboarding = defaults.bool(forKey: Keys.onboarding)
+        let normalized = applyingAccountVisibility(to: agents)
+        if normalized != agents {
+            agents = normalized
+            persist(normalized, key: Keys.agents)
+        }
     }
 
     public var enabledAgents: [AgentDescriptor] { agents.filter(\.enabled) }
@@ -71,37 +77,98 @@ public final class SettingsStore {
         updateAgents { list in list.map { $0.id == id ? $0.with(enabled: enabled) : $0 } }
     }
 
+    /// Sets every window of the account to the same display switch, preserving other accounts and window order.
+    /// Both persisted values are current before observers hear about this one preference change.
+    public func setAccount(id: String, visible: Bool) {
+        let next = settings.with { $0.setAccountVisibility(id: id, visible: visible) }
+        let windows = agents.map { $0.displayAccountID == id ? $0.with(enabled: visible) : $0 }
+        guard next != settings || windows != agents else { return }
+        if next != settings {
+            settings = next
+            persist(next, key: Keys.settings)
+        }
+        if windows != agents {
+            agents = windows
+            persist(windows, key: Keys.agents)
+        }
+        onChange?(.settings)
+    }
+
     public func moveAgent(id: String, to index: Int) {
         updateAgents { $0.moving(id: id, to: index) }
+    }
+
+    public func moveAccountWindow(id: String, to targetID: String) {
+        updateAgents { $0.movingAccountWindow(id: id, to: targetID) }
     }
 
     public func moveAgentGroup(id: String, to targetID: String) {
         updateAgents { $0.movingGroup(id: id, to: targetID) }
     }
 
-    /// Adds rows a provider discovered (in the order given) and refreshes model names of known rows.
+    /// Adds rows a provider discovered (in the order given) and refreshes the names and flags of known rows.
     /// New rows for a vendor go right after that vendor's last existing row; vendors new to the list go to the top in
     /// the order the providers gave them, switched off when the vendor catalog starts them hidden. The user's manual
     /// order is preserved.
     /// Account rows: the first identified account takes over an unscoped row's position and switch, a further account's
-    /// window inherits the switch of the same window on another account, and rows of accounts absent from a provider's
-    /// inventory are removed.
-    /// Full retained reports can retire Codex windows; incremental discovery keeps existing preferences.
+    /// window inherits the switch of the same window on another account, and rows that are no longer present, as
+    /// `ReportView.isPresent(_:in:)` decides without the sighting times, are removed.
+    /// Windows belonging to a hidden account stay switched off, including newly discovered and identified windows.
+    /// With `replaceQuotaWindows`, the caller explicitly declares the discovered windows to be complete for each current
+    /// account whose own reading is sound. Otherwise account observations must explicitly list their quota window ids;
+    /// incremental discovery keeps existing preferences.
     public func mergeDiscovered(_ discovered: [AgentDescriptor], activeQuotaPoolIDs: [String: Set<String>]? = nil,
                                 accounts: [String: [AccountObservation]]? = nil, replaceQuotaWindows: Bool = false) {
+        let inventoryReport = UsageReport(generatedAt: Date(), snapshots: [], sessions: [], accounts: accounts)
+        let inventories = replaceQuotaWindows ? (accounts ?? [:]).values.flatMap { $0 }.reduce(into: [String: Set<String>]()) { inventories, account in
+            guard account.isCurrent && account.ownStatus.isNormal else { return }
+            inventories[account.account.id] = Set(discovered.filter { $0.displayAccountID == account.account.id }.map(\.id))
+        } : inventoryReport.completeQuotaWindowInventories
+        merge(discovered, activeQuotaPoolIDs: activeQuotaPoolIDs, accounts: accounts, windowInventories: inventories)
+    }
+
+    /// Merges the rows of a report the app displays, as `mergeDiscovered(_:activeQuotaPoolIDs:accounts:replaceQuotaWindows:)`
+    /// does with every explicitly complete inventory applied. Only a current account's sound complete inventory retires
+    /// omitted windows, the same rule the report kept across passes follows.
+    public func mergeDiscovered(from report: UsageReport) {
+        merge(report.discoveredAgents, activeQuotaPoolIDs: report.activeQuotaPoolIDs, accounts: report.accounts,
+              windowInventories: report.completeQuotaWindowInventories, rowSeenAt: report.rowSeenAt)
+    }
+
+    /// - windowInventories: explicit complete window ids for accounts whose current reading can replace older windows.
+    private func merge(_ discovered: [AgentDescriptor], activeQuotaPoolIDs: [String: Set<String>]?,
+                       accounts: [String: [AccountObservation]]?, windowInventories: [String: Set<String>], rowSeenAt: [String: Date]? = nil) {
         guard !discovered.isEmpty || activeQuotaPoolIDs != nil || accounts != nil else { return }
+        let resolved = (accounts ?? [:]).values.flatMap { $0 }.filter {
+            $0.aliases?.contains(where: settings.hiddenAccountIDs.contains) == true
+        }
+        if !resolved.isEmpty {
+            update { preferences in
+                for observation in resolved {
+                    for alias in observation.aliases ?? [] { preferences.setAccountVisibility(id: alias, visible: true) }
+                    preferences.setAccountVisibility(id: observation.account.id, visible: false)
+                }
+            }
+        }
+        func isPresent(_ agent: AgentDescriptor) -> Bool {
+            ReportView.isPresent(agent, seenAt: nil, accounts: accounts, activePools: activeQuotaPoolIDs)
+        }
+        func isUnscoped(_ agent: AgentDescriptor) -> Bool { agent.account == nil && agent.billingPool == nil }
         let merged: [AgentDescriptor] = {
             var list = agents.filter { agent in
-                if let account = agent.account, agent.billingPool == nil, let known = accounts?[account.provider] {
-                    if replaceQuotaWindows, account.provider == "Codex", known.contains(where: { $0.account.id == account.id && $0.isCurrent && $0.quotaNotice == nil }) {
-                        return discovered.contains { $0.id == agent.id }
-                    }
-                    return known.contains { $0.account.id == account.id }
+                // A complete account inventory keeps only the windows it explicitly lists.
+                if let accountID = agent.displayAccountID, let inventory = windowInventories[accountID] {
+                    return inventory.contains(agent.id)
                 }
-                guard let pool = agent.billingPool, pool.product == .plan,
-                      let active = activeQuotaPoolIDs?[pool.provider] else { return true }
-                return active.contains(pool.id)
+                // A row without an account waits for an identified account to take it over.
+                return isUnscoped(agent) || isPresent(agent)
             }
+            let knownSummaryRows = (list + discovered).filter {
+                ReportView.isPresent($0, seenAt: rowSeenAt, accounts: accounts, activePools: activeQuotaPoolIDs)
+            }
+            let superseded = AntigravityClient.supersededLegacyWindowIDs(in: list + discovered, by: knownSummaryRows)
+            list.removeAll { superseded.contains($0.id) }
+            let discovered = discovered.filter { !superseded.contains($0.id) }
             for found in discovered where found.account != nil && found.billingPool == nil && !list.contains(where: { $0.id == found.id }) {
                 if let index = list.firstIndex(where: { $0.account == nil && $0.billingPool == nil && $0.vendor == found.vendor && $0.id == found.windowKey }) {
                     let unscoped = list.remove(at: index)
@@ -119,20 +186,19 @@ public final class SettingsStore {
                 list.insert(contentsOf: replacements, at: index)
             }
             // Unscoped rows of a provider that now identifies accounts have been taken over or no longer exist.
-            list.removeAll { agent in
-                agent.account == nil && agent.billingPool == nil && accounts?[agent.vendor]?.isEmpty == false
-                    && !discovered.contains { $0.id == agent.id }
-            }
+            list.removeAll { agent in isUnscoped(agent) && !isPresent(agent) && !discovered.contains { $0.id == agent.id } }
             let listed = Set(list.map(\.vendor))
             var arriving: [AgentDescriptor] = []
             for found in discovered {
                 if let index = list.firstIndex(where: { $0.id == found.id }) {
                     let existing = list[index]
-                    if existing.model != found.model || existing.source != found.source || existing.connected != found.connected
-                        || existing.billingPool != found.billingPool || existing.account != found.account {
+                    if existing.model != found.model || existing.shortModel != found.shortModel || existing.source != found.source
+                        || existing.connected != found.connected || existing.billingPool != found.billingPool
+                        || existing.account != found.account || existing.allModels != found.allModels {
                         list[index] = AgentDescriptor(
-                            id: existing.id, vendor: existing.vendor, model: found.model, source: found.source,
-                            enabled: existing.enabled, connected: found.connected, billingPool: found.billingPool, account: found.account
+                            id: existing.id, vendor: existing.vendor, model: found.model, shortModel: found.shortModel, source: found.source,
+                            enabled: existing.enabled, connected: found.connected, billingPool: found.billingPool, account: found.account,
+                            allModels: found.allModels
                         )
                     }
                     continue
@@ -147,7 +213,12 @@ public final class SettingsStore {
             list.insert(contentsOf: arriving, at: 0)
             return list
         }()
-        saveAgents(merged, change: .discovery)
+        saveAgents(applyingAccountVisibility(to: merged), change: .discovery)
+    }
+
+    /// Hidden accounts keep every window off; visible accounts retain their individual display switches.
+    private func applyingAccountVisibility(to windows: [AgentDescriptor]) -> [AgentDescriptor] {
+        windows.map { settings.accountVisible($0.displayAccountID) ? $0 : $0.with(enabled: false) }
     }
 
     public func markOnboardingComplete() {

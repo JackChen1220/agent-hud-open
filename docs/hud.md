@@ -2,62 +2,73 @@
 
 ## Overview
 
-The HUD sits at the top of every attached display, and each display carries its own. A Mac with a notch keeps the island around it; a display without one shows the watched agents' own logos in a row. Both are backed by the same glow, which reads as a rim around the island and as a backdrop behind the logos. Every display is configured on its own, so a laptop and the monitor beside it need not agree on anything.
+Each display has its own HUD and settings. Notch mode uses the physical notch or a stand-in bar; Dynamic Dock places agent logos along any screen edge. The glow forms a rim around the island or a backdrop behind the logos.
 
 ## Model
 
 | Concept | Meaning |
 |---|---|
-| HUD | One display's presentation: a collapsed shape at the screen's top edge, the panel it opens into, and the glow behind both |
+| HUD | One display's presentation: a collapsed entry on a screen edge, the panel it opens into, and its glow |
 | Notch mode | The island: the physical notch on a Mac that has one, or a bar standing in for it on a display that does not |
-| Logo queue | A row of marks — the watched vendors and any run in the last day — centred at the screen's top edge with no shape behind them |
-| Glow | Colour drawn from the enabled windows' levels — a rim around the island, a curtain falling from the top edge behind a queue |
-| Placement | What one display shows and how large: mode, logo size, logo spacing, whether the marks are drawn |
+| Dynamic Dock | A queue of marks — the watched vendors and any run in the last day — along a screen edge with no shape behind them |
+| Glow | Colour drawn from the enabled windows' levels — a rim around the island, a backdrop falling inward behind the dock |
+| Placement | What one display shows and where: mode, edge, position along the edge, logo size, logo spacing, whether the marks are drawn |
 
 ## Rules
 
 ### Placement
 
-- A display with a notch defaults to notch mode; a display without one defaults to the logo queue, so no screen draws a bar pretending to have a notch.
-- Either mode can be chosen for any display, including a notched one; a top-edge queue that would overlap the physical notch stays horizontally centred and appears below it.
-- A display keeps its own placement, keyed by the display's UUID, and a newly attached display needs no setup.
-- The queue runs along the top edge, centred. Logo size is 12–24 pt and spacing is 0.1–0.6 of the logo; the number of marks that fit is an outcome, never a setting.
+- A display with a notch defaults to notch mode; a display without one defaults to Dynamic Dock, so no screen draws a bar pretending to have a notch.
+- Either mode can be chosen for any display; notch mode stays at the physical notch or the screen's top centre.
+- A display keeps its own placement under its UUID; display settings can reset its position to top centre, keeping its mode and logo settings.
+- The dock can sit anywhere along the top, right, bottom or left edge, running horizontally on the top and bottom and vertically on the sides; logo size is 12–24 pt and spacing is 0.1–0.6 of the logo.
+- Drag a visible HUD directly to any edge; dragging a notch switches it to Dynamic Dock. Its bounds appear while it is grabbed or dragged.
 - The marks can be hidden, which leaves the backdrop alone, still where they would have been and as wide.
 
 ### What the queue shows
 
 - The enabled, non-API-billed agents first, in the order they are watched in, then any vendor that ran in the last day without a window on that list, most recently used first.
-- A watched vendor's mark is drawn whether or not it has ever reported anything; a vendor that is only there for having run leaves again a day after its last turn, and a vendor whose Live status is off never arrives that way, since that switch is what says its runs may be reported at all.
-- One mark per piece of artwork rather than per vendor: two Claude windows are one Claude, and so are Codex and ChatGPT, which share OpenAI's mark. A second identical mark would take a place in the row and tell a glance nothing.
-- A mark bobs while any session behind it is live, including a turn blocked on the user, and holds still otherwise, so motion means exactly one thing. Liveness is the store's, the same the panel ranks sessions by.
-- A queue with nothing to show — nothing watched and nothing run — falls back to the screen's notch shape.
-- Marks keep their own artwork at full strength with a hairline outline; a single-colour mark is drawn white. Kiro keeps its supplied purple artwork without an added outline. Status colour is carried by the glow behind them, never by the logos.
-
-### Project branches and keyboard access
-
-The footer switches between Agent usage and project branches. Command–Shift–H opens or closes the panel; General settings can change or disable that shortcut. The Pin control beside Settings keeps the panel open when the pointer leaves or another window is clicked; unpinning restores hover-to-close, and an explicit close clears Pin. Project discovery, cached Git state, worktrees, manual progress and the explicit remote refresh are documented in [project branches](repositories.md).
+- Watched vendors appear before their first reading; vendors shown only for recent activity leave a day after their last turn and never appear with Live status off.
+- Shared artwork appears once: Claude windows share one mark, as do Codex and ChatGPT.
+- Marks bob while a session is live, including one blocked on the user, using the same liveness as the panel.
+- A dock with nothing to show keeps a minimal entry at its saved position without drawing a logo.
+- Marks retain their artwork with a hairline outline; single-colour marks are white, and status colour appears in the glow.
 
 ### Hovering and events
 
-- A collapsed queue takes no mouse events, so clicks reach the menu bar and whatever window is under it; the pointer is followed by an event monitor instead.
-- Hovering opens the panel, inward from the edge the HUD sits on. Hovering can be asked to take Option as well, which leaves an accidental pass over the HUD closed.
-- An event is shown once, on the display the pointer is on: repeating it on every screen would mean dismissing the same thing several times.
-- Clicking an event opens the statistics window on what it is about: a completed turn on its session's page in Sessions, a quota event on its agent's card in Tokens, shown if it was not picked and pointed out for a moment, and anything else on Tokens. A session row of the panel opens that session's page and its heading the Sessions list; the chart button and the menu bar's rows open Tokens, with Sessions back at its list.
-- Whatever on the HUD opens another window, the statistics or the settings, collapses the HUD first, so the window is not left underneath it; the pointer has to leave and come back to open it again. Controls that only change the panel, such as a group's metric or an account's page, leave it open.
-- A queue's glow is a backdrop, never a rim: once the panel opens or an event widens the island, the field stops rather than following the new shape around. Only a notch is rimmed.
-- The marks ride over the panel while it is open, so opening the HUD never makes the agents disappear.
+- A visible dock accepts dragging; with logos hidden, clicks pass through.
+- Hovering opens inward, optionally requiring Option, with the same opening and closing timing on all four edges. During the delay, content height is measured and glow and shadow bitmaps are drawn off the UI thread without retaining a hidden panel; leaving cancels preparation and discards late results. Opening and collapse commit their window geometry immediately, with materials installed when ready. Matching installed materials are reused without another raster.
+- Events appear once, on the pointer's display.
+- A successfully ended turn shows its conversation title and, for Codex, the last paragraph of its final reply when available, with a blue outlined speech bubble. Replies and permission requests share an event panel, separate from the usage panel, with one card open and the rest selectable. A reply offers session return when an exact target is available and a separate token-usage action; a failed return retains it for retry. See [session navigation](session-navigation.md) for coverage.
+- The completion's token-usage action opens its Sessions statistics page; quota events reveal and highlight their Tokens card, and other events open Tokens. A panel session's title returns to its native agent when available, its token count opens that session's statistics, and the heading opens the list; chart and menu-bar controls open Tokens and reset Sessions to its list.
+- Opening statistics or settings collapses the HUD until the pointer leaves and returns; controls that change only the panel keep it open.
+- A dock's backdrop stops when the panel or an event opens; only notch mode draws a rim.
+- Expanded docks and reminders flare outward at both ends of their contact with the parked edge, while their text stays upright; the marks keep their saved position over the open usage panel, even when its content is shorter than the queue.
+
+### Usage panel
+
+- The panel shows quota and balances, then Tokens, then the local session summary with at most five rows in total: sessions with work in flight, those waiting for the user ahead of those still running and newest created first within each group, then sessions last active in the past 24 hours by their last event. Account-wide API receipts and older ended sessions remain in statistics and do not occupy these rows or enter their remaining count. Each row shows its agent's mark and its state on the mark's corner. The remaining count covers every hidden session in this summary; it and the header open the full Sessions page.
+- A session waiting on a question shows a badge on its row. It opens the question right there, answered the same way the island's own card answers it, beside a way back to the agent for answering it in its own dialog instead. A row's title returns to its agent, or opens that session's page where the client names no destination; its token count opens that session's usage.
+- The token chart is a compact strip with the latest 24 hours in 96 quarter-hour bars, including the current quarter, and all token kinds. Dashboard range, bucket, model and token-kind controls do not change it; its legend, axis and peak mark belong to the statistics window. Height follows content up to the display's height minus 80 pt; overflow scrolls above fixed settings, statistics and host controls, clear of the notch and dock.
 
 ### Approvals
 
-- A client that stops to ask whether a tool may run reaches the HUD through a socket of its own, and the request lives only as long as that client waits for it. Answering resumes the client; the client giving up — timed out, killed — takes the request off the HUD by itself, and nothing is answered on anyone's behalf.
+Antigravity supplies waiting permissions through its running local service, without an execution hook. All services advertising local credentials are read; agy without them is excluded. Before sending allow-once or deny, the HUD rereads the exact interaction. Answers in Antigravity remove the card. Leaving or expiry keeps the native prompt unanswered and the card hidden until a complete reading confirms it ended. Client hooks off stops observation and cancels answers still in preflight.
+
+DeepSeek Harness questions can be answered on the HUD when its web host exposes the compatible question interface. The HUD confirms the host before reading its loopback event stream; hosts using a different interface keep questions in Harness. No hook is installed and nothing is written to Harness's files. Pending questions replay when the connection returns, answers keep each question's original id, and a question settled in Harness leaves the HUD. Plan reviews and questions with supporting detail stay in Harness so their full content can be read. Leaving or expiry keeps the question open there and hidden on the HUD, including across a temporary connection loss. Client hooks off stops the reading. See [the supported interface](providers.md#deepseek-harness).
+
+- A hook client that stops to ask whether a tool may run reaches the HUD through a socket of its own, and the request lives only as long as that client waits for it. One copy of the application runs at a time ([command line](command-line.md#launch-and-display)) and serves the socket; should another start beside it with the same data directory, it leaves the socket to the first, and quitting removes only a socket that copy made. Answering resumes the client; the client giving up — timed out, killed — takes the request off the HUD by itself, and nothing is answered on anyone's behalf.
+- While a request waits, its session needs approval wherever it is shown — its dot among the island's sessions, its card on the Sessions page and its page — and counts as running, whatever the client's log says; the mark leaves with the request. A session whose Live status is off shows no state.
 - Claude Code keeps its hook waiting after the user answers in Claude Code's own dialog, in the terminal or the desktop app. The hook follows the session record instead: once the call it asked about has its result there — answered, refused or interrupted — it leaves without an answer, which takes the request off the HUD. The record names the call by its tool and exact input; an approved command's result is written when the command finishes, so its card stays until then or until the wait runs out.
-- A request holds the island until it is settled, where an event of any other kind expires after a few seconds. Unanswered, it waits Settings → General → Wait for an answer — 10 minutes unless 1, 3, 5, 30 or 60 is chosen — and then goes back to the client's own prompt, answered by nobody. The hook timeout written into the client, a day, is only the ceiling behind that wait, so a new value applies at once, to requests already waiting too, without rewriting any client's settings. Quitting the application hands every waiting request back the same way, and a client that asks while it is not running goes straight to its own prompt. News that arrives while a request waits is dropped rather than queued behind it; a second request waits its turn.
+- A request holds the island until it is settled, where other events expire a few seconds after being shown. Unanswered, it waits Settings → General → Wait for an answer — 10 minutes unless 1, 3, 5, 30 or 60 is chosen — and then goes back to the client's own prompt, answered by nobody. The hook timeout written into the client, a day, is only the ceiling behind that wait, so a new value applies at once, to requests already waiting too, without rewriting any client's settings. Quitting the application hands every waiting request back the same way, and a client that asks while it is not running goes straight to its own prompt. Replies that arrive while a request waits remain selectable in the event panel; quota events and added usage resets are dropped, and a second request waits its turn.
 - Hovering opens the queue: the oldest request open, the rest a line each. Any line can be opened, which closes the one before it, and the answers always act on the open one. Answering hands over to whichever has waited longest.
-- A question Claude Code asks its user is answered rather than approved: each question with its offered answers, several where it allows them, and a field for the user's own words, one question at a time and sent together after the last. Any question can be skipped; Claude Code hears which were left open, and with none answered that its questions went unanswered — nothing on a question card refuses the call.
+- A request is on one display at a time, the one the pointer was on when it arrived, and the queue lists every request waiting on any of them: opening a line that arrived on another display moves that request to this one. A request whose display goes away moves to the display the pointer is on, still waiting.
+- A question Claude Code, ZCode or DeepSeek Harness asks its user is answered rather than approved: each question with its offered answers, several where it allows them, and a field for the user's own words, one question at a time and sent together after the last. Any question can be skipped; the client hears which were left open — nothing on a question card refuses the call. A session waiting on one carries a badge on its row in the usage panel, where the same answers open inline.
 - A plan Claude Code asks to have approved is not answered on the HUD: the card names it, shows its opening lines and points to Claude Code, whose own dialog carries the choices about how to go on. Putting the card away answers nothing. The field is the only thing on the HUD that takes the keyboard, and only when clicked — a card that arrives never catches keys typed elsewhere; the keyboard goes back to the app in front when the answer is sent, Escape is pressed or another window is clicked, and the island stays open while it is being typed into.
-- Deny and allow-once are always offered for every other request. A third answer appears only when the client supports rule updates and itself suggested a rule — the HUD echoes that suggestion back untouched rather than composing one. Codex, CodeBuddy, WorkBuddy, ZCode and Qwen Code offer only deny and allow-once; their shell commands, file edits and MCP tools use the same queue as Claude Code.
-- A request reaches the HUD only when the client itself was about to ask. A client whose hook runs before every tool call, or whose hook cannot approve, is not connected, because answering it would mean asking about calls the client would have allowed on its own. A question or a plan approval from any other client stays in the client's own dialog: those clients either ignore an answer sent back, act on one without the user's reply, or are not known to read one.
-- Settings → General → Client hooks switches every handler Agent HUD keeps in the clients' own settings: approvals, Claude Code's notification hook, the stop hooks and Pi's observer. Switching it off asks first, naming what stops working — answering requests on the HUD, completion reminders from the clients that report them only through a stop hook, Claude Code's waiting state and Pi's running status; usage, quota and sessions are unaffected. Off, this installation's handlers are removed at once and never added back; a handler another installation added stays with it, and ZCode's hooks switch stays as it was.
+- Deny and allow-once are always offered for every other request, and always beside what an allow lets run: the command, the file and the lines it would change, the URL or the tool's own input, even when the one-line summary already says the same. A request that arrives while the usage panel is open switches to the event panel.
+- A third answer appears only when the client supports rule updates and itself suggested a rule — the HUD echoes that suggestion back untouched rather than composing one, and writes out the rule it adds, such as `Bash(npm test:*)`, before it can be given. Antigravity, Codex, CodeBuddy, WorkBuddy, ZCode and Qwen Code offer only deny and allow-once; their shell commands, file edits and MCP tools use the same queue as Claude Code.
+- A request reaches the HUD only for a user's decision; automatic review and requests whose reviewer cannot be confirmed continue in the client's own permission flow without a HUD answer. A client whose hook runs before every tool call, or whose hook cannot approve, is not connected, because answering it would mean asking about calls the client would have allowed on its own. A plan approval, and a question from any client but Claude Code, ZCode and DeepSeek Harness, stays in the client's own dialog: those clients either ignore an answer sent back, act on one without the user's reply, or are not known to read one.
+- Settings → General → Client hooks switches every handler Agent HUD keeps in the clients' own settings: approvals, Claude Code's notification hook, the stop hooks, Pi's extension and OpenCode's plugin. Switching it off asks first, naming what stops working — answering requests on the HUD, completion reminders from the clients that report them only through a stop hook or a plugin, Claude Code's waiting state and Pi's running status; usage, quota and sessions are unaffected. Off, every Agent HUD handler is removed at once, whichever copy of the application added it, and none is added back; ZCode's hooks switch stays as it was.
 - Saying nothing is an answer the HUD can always give, and it is what a closed, paused or busy HUD gives: the client's own permission flow carries on as though no hook were installed. A hidden or paused glow silences events but never a request, which would otherwise leave a session waiting with nothing on screen to say why.
 
 ### The glow
@@ -73,7 +84,8 @@ The footer switches between Agent usage and project branches. Command–Shift–
 
 | Setting | Values | Default |
 |---|---|---|
-| `screens[<display UUID>].mode` | `notch`, `logos` | By hardware: `notch` with a notch, `logos` without |
+| `screens[<display UUID>].mode` | `notch`, `logos` (Dynamic Dock) | By hardware: `notch` with a notch, `logos` without |
+| `screens[…].edge` / `offset` | `top`, `right`, `bottom`, `left` / 0–1 along the edge | `top` / 0.5 |
 | `screens[…].logoSize` / `gapScale` | 12–24 pt / 0.1–0.6 of the logo | 20 pt / 0.4 |
 | `screens[…].showsLogos` | Draw the marks, or the backdrop alone | `true` |
 | `screenGlow[<display UUID>].style` | `blur`, `dots`, `ascii`, `blocks`, `braille`, `binary` | `blur` |
@@ -84,10 +96,10 @@ The footer switches between Agent usage and project branches. Command–Shift–
 | `screenGlow[…].range` / `blur` | 0–36 pt reach / 0–36 pt feather, for the blurred style | 14 pt / 8 pt |
 | `screenGlow[…].brightness` / `breathAmplitude` | 20–100% / how deep the breath dips | 90% / 60% |
 | `requiresOptionToOpen` | Hovering alone leaves the panel closed | `false` |
-| `clientHooks` | Keep Agent HUD's handlers in the clients' own settings | `true` |
+| `clientHooks` | Keep client handlers and native approval observation enabled | `true` |
 | `approvalWaitMinutes` | 1, 3, 5, 10, 30 or 60 minutes a permission request waits for an answer | 10 |
 
-The approval hook is installed for each detected client at startup, alongside the notification and completion hooks, unless `clientHooks` is off; `--permission-hook <source>` is the handler it points back at. See [command line](command-line.md) and [data access](data-access.md).
+Supported approval hooks are installed for detected clients at startup, alongside the notification and completion hooks, unless `clientHooks` is off; `--permission-hook <source>` is the handler they point back at. Antigravity uses its running service instead, and DeepSeek Harness's questions its web host. See [command line](command-line.md) and [data access](data-access.md).
 
 `Settings.placement(on:hasNotch:)` and `glow(on:)` answer what one display uses, falling back to the default when it has none of its own. Both are keyed by the string `ScreenIdentity.key(for:)` returns for a display.
 
@@ -95,17 +107,28 @@ The approval hook is installed for each detected client at startup, alongside th
 
 | Concept | Where |
 |---|---|
-| Per-display placement and glow | `Sources/AgentHUDCore/Models/ScreenPlacement.swift`, `GlowSettings.swift`, `Settings.swift` |
-| One HUD per screen, and what they share | `Sources/AgentHUDDesktop/Notch/ScreenHUD.swift`, `IslandController.swift`, `ScreenIdentity.swift` |
+| Per-display placement and glow | `Sources/AgentHUDCore/Models/Settings/ScreenPlacement.swift`, `GlowSettings.swift`, `Settings.swift` |
+| One HUD per screen, and what they share | `Sources/AgentHUDDesktop/Notch/ScreenHUD.swift`, `ScreenIdentity.swift`, `Notch/Island/IslandController.swift` |
 | Where a HUD sits on its screen | `Sources/AgentHUDDesktop/Notch/NotchGeometry.swift` |
-| The marks and their motion | `Sources/AgentHUDDesktop/Notch/LogoQueueView.swift`, `LogoImages.swift` |
-| Glow geometry, falloff and frames | `Sources/AgentHUDCore/Logic/GlowGeometry.swift`, `GlowMatrix.swift`, `GlowMotion.swift`; `Sources/AgentHUDDesktop/Notch/GlowWindowController.swift`, `GlowFrameRenderer.swift`, `GlowAnimator.swift` |
-| Collapsed shape, panel and events | `Sources/AgentHUDDesktop/Notch/IslandRootView.swift`, `IslandWindowController.swift` |
-| Requests waiting, and the channel they wait on | `Sources/AgentHUDCore/Providers/Shared/PermissionRequests.swift`, `PermissionRequest.swift`, `PermissionHooks.swift`, `PermissionHookClient.swift` |
-| A call answered in Claude Code's own dialog | `Sources/AgentHUDCore/Providers/Shared/PermissionTranscript.swift` |
-| The card, the queue and the answers | `Sources/AgentHUDDesktop/Notch/PermissionAlertViews.swift`, `PermissionQuestionViews.swift`, `IslandAlert.swift`, `OverlayPanel.swift` |
+| The marks and their motion | `Sources/AgentHUDDesktop/Notch/Island/LogoQueueView.swift`, `LogoImages.swift` |
+| Glow geometry, falloff, colours and frames | `Sources/AgentHUDDesktop/Notch/Glow/GlowGeometry.swift`, `GlowMatrix.swift`, `GlowMotion.swift`, `GlowGradient.swift`, `GlowWindowController.swift`, `GlowFrameRenderer.swift`, `GlowAnimator.swift` |
+| Collapsed shape, panel and events | `Sources/AgentHUDDesktop/Notch/Island/IslandRootView.swift`, `IslandWindowController.swift` |
+| Requests waiting, and the channel they wait on | `Sources/AgentHUDCore/Hooks/Permission/PermissionRequests.swift`, `PermissionRequest.swift`, `PermissionHooks.swift`, `PermissionHookClient.swift`; `Sources/AgentHUDCore/System/UnixSocketListener.swift`, `UnixSocket.swift` |
+| Native Antigravity approvals | `Sources/AgentHUDCore/Hooks/Permission/AntigravityPermissions.swift`, `AntigravityPermissionObserver.swift`; `Sources/AgentHUDCore/Providers/Antigravity/AntigravityService.swift` |
+| DeepSeek Harness's questions | `Sources/AgentHUDCore/Hooks/Permission/DeepSeekQuestions.swift`, `DeepSeekQuestionObserver.swift` |
+| A call answered in Claude Code's own dialog | `Sources/AgentHUDCore/Hooks/Permission/PermissionTranscript.swift` |
+| The card, the queue and the answers | `Sources/AgentHUDDesktop/Notch/Alerts/PermissionAlertViews.swift`, `PermissionQuestionViews.swift`, `IslandAlert.swift`, `Notch/OverlayPanel.swift` |
 | Settings for both | `Sources/AgentHUDDesktop/Settings/ScreensPane.swift`, `GlowPane.swift`, `DisplayPane.swift` |
 
 ## Related
 
 [architecture.md](architecture.md) package layout and host integration · [usage-semantics.md](usage-semantics.md) what the levels behind the colour mean · [session-lifecycle.md](session-lifecycle.md) when a session counts as live · [command-line.md](command-line.md) launch options
+
+## Local fork Hub controls
+
+- Agent / Branches tabs keep the last selection and resize the native panel immediately. Branches opens the local repository/worktree view; its progress labels are manual. See [project branches](repositories.md).
+- ⌘⇧H opens or closes the Hub on the display under the pointer. Settings → General can change or disable it; ⌘⌥H still toggles the glow.
+- Pin beside Settings keeps the panel open after the pointer leaves or another window is clicked. Unpin restores hovering; an explicit dismissal clears the pin.
+- The expanded Hub and its popovers stay dark; independent settings and detail windows follow the appearance preference.
+- A top-edge logo queue that overlaps the physical notch stays horizontally centered and is placed directly below the notch; other edges retain upstream dragging and placement.
+- Kiro CLI completed-turn credits appear separately from reported tokens; neither credits nor context percentages are converted to token counts.

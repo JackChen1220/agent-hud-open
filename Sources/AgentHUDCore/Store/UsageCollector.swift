@@ -1,7 +1,8 @@
+import AgentHUDSupport
 import Foundation
 
-/// A host's extension points in the local collection pipeline. Every hook runs on the main actor inside the pass that
-/// fetched the report, after its local ledger transaction has committed. Account requests may finish independently.
+/// A host's extension points in the local collection pipeline. Hooks run on the main actor after the local
+/// ledger transaction commits; account requests may finish independently.
 public struct UsageCollectionHooks {
     /// Hourly buckets providers load, including the current partial hour; asked before every local poll and account step.
     public var historyHours: @MainActor () -> Int
@@ -23,8 +24,9 @@ public struct UsageCollectionHooks {
 
 /// The collection pipeline. Every source only signals that it has new data: a file change under its directories, a finished
 /// account step, one of its checks falling due, or its poll interval when it cannot name its directories. The collector
-/// waits for those signals and reads the signalled sources one local pass at a time, handing each report to the store.
-/// Account steps run serially in a separate task, so slow network requests cannot delay local lifecycle events.
+/// waits for those signals and reads the signalled sources one local pass at a time. Account steps run serially
+/// in a separate task, so slow network requests cannot delay local lifecycle events. Each source's work
+/// and quota windows determine when its next account reading is due.
 @MainActor
 final class UsageCollector {
     weak var store: UsageStore?
@@ -32,18 +34,20 @@ final class UsageCollector {
     private let settings: SettingsStore
     private let hooks: UsageCollectionHooks
     private var pollTask: Task<Void, Never>?
-    /// Wakes the waiting loop: a file change, a timer, a refresh.
+    /// Moves the store's clock on, so countdowns re-render, and confirms a quiet stretch as current data.
+    private var clockTask: Task<Void, Never>?
+    /// Wakes the waiting loop: a file change, a timer, a refresh, a settings change that needs a read.
     private var wake: AsyncStream<Void>.Continuation?
     /// One pass of the pipeline runs at a time; a request during a pass is served by the next one.
     private var isCollecting = false
-    /// Account steps left in the current sweep, run one at a time between local reads.
+    /// Account steps left in the current sweep, run serially independently of local reads.
     private var accountSteps: [(source: String, run: AccountRefreshStep)] = []
     private var accountTask: Task<Void, Never>?
-    /// Prevent a cancelled task from signalling or clearing a newer run after a stop/restart.
+    /// A cancelled step may never signal or clear a newer stop/restart run.
     private var accountTaskID: UUID?
     /// When each source's account steps last ran; a source that has never run them is due at once.
     private var accountRunAt: [String: Date] = [:]
-    /// Consent to read an account, and a look at the numbers, read every account at once instead of when work moves them.
+    /// Consent to read GitHub Copilot's quota, and a look at the numbers, read accounts at once instead of when work moves them.
     private var sweptWithCopilotQuota: Bool?
     private var forcesAccounts = false
     /// The read of every local source that stands in for a file event the watch missed.
@@ -77,6 +81,7 @@ final class UsageCollector {
         stop()
         let (stream, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
         wake = continuation
+        settings.onChange = { [weak self] change in self?.settingsChanged(change) }
         let directories = sources.compactMap(\.directories).flatMap { $0 }
         changes = directories.isEmpty ? nil : FileChangeMonitor(directories: directories, onChange: { continuation.yield() })
         pollTask = Task { [weak self] in
@@ -92,11 +97,21 @@ final class UsageCollector {
                 timer.cancel()
             }
         }
+        clockTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(10))
+                guard let self, let store = self.store else { return }
+                store.now = Date()
+                self.confirmQuiet(at: store.now)
+            }
+        }
     }
 
     func stop() {
         pollTask?.cancel()
         pollTask = nil
+        clockTask?.cancel()
+        clockTask = nil
         wake?.finish()
         wake = nil
         changes = nil
@@ -126,6 +141,16 @@ final class UsageCollector {
         local = nil
     }
 
+    /// A settings change that collection follows wakes the loop at once, where it would wait for the next signal: a
+    /// changed agent list is read from every source, and consent to read GitHub Copilot quota, given or withdrawn, reads
+    /// Copilot's quota and every other account the request spacing allows. It wakes the next pass, serial like any other.
+    /// Rows a pass merged from its own report ask for nothing.
+    private func settingsChanged(_ change: SettingsStore.Change) {
+        guard change != .discovery,
+              settings.agents != fetchedAgents || settings.settings.readCopilotQuota != sweptWithCopilotQuota else { return }
+        wake?.yield()
+    }
+
     /// While nothing is signalled and file changes are watched, no change was missed: the data on screen is current.
     func confirmQuiet(at date: Date) {
         guard let store, !isCollecting, !needsFetch, signalled.isEmpty, retryAt == nil, changes?.isWatching != false,
@@ -149,7 +174,7 @@ final class UsageCollector {
         }
     }
 
-    /// One pass: collects the signals, reads the signalled sources, then starts the next due account step.
+    /// One pass: reads the signalled local sources and starts the next due account step.
     /// Returns how long to wait for the next signal that is known in advance; file changes wake the loop sooner.
     private func collect(force: Bool) async -> TimeInterval {
         guard let store, store.isAccessAllowed, !isCollecting else { return UsageRefresh.pollInterval }
@@ -168,14 +193,15 @@ final class UsageCollector {
         }
         let consent = settings.settings.readCopilotQuota
         if accountSteps.isEmpty, accountTask == nil {
-            // Consent to read an account follows the switch at once; a look reads whatever the request spacing allows;
-            // otherwise every source waits until its own work, or one of its windows, is worth a reading.
-            let consented = sweptWithCopilotQuota != consent, looked = forcesAccounts
+            // Consent to read Copilot's quota follows the switch at once and is a look at every other account; a look
+            // reads whatever the request spacing allows; otherwise every source waits until its own work, or one of its
+            // windows, is worth a reading.
+            let consented = sweptWithCopilotQuota != consent, looked = forcesAccounts || consented
             forcesAccounts = false
             sweptWithCopilotQuota = consent
             let due = await accountDue(at: started)
             accountSteps = sources.filter { source in
-                if consented { return true }
+                if consented && source.name == AdditionalSource.copilot.vendor { return true }
                 let spaced = (accountRunAt[source.name] ?? .distantPast).addingTimeInterval(UsageRefresh.accountRequestSpacing)
                 return spaced <= started && (looked || due[source.name].map { $0 <= started } ?? false)
             }.flatMap { source in source.accountSteps.map { (source.name, $0) } }
@@ -203,6 +229,7 @@ final class UsageCollector {
         accountRunAt[step.source] = Date()
         accountTaskID = id
         accountTask = Task { [weak self] in
+            guard !Task.isCancelled else { return }
             await step.run(hours)
             guard !Task.isCancelled, let self, self.accountTaskID == id else { return }
             self.accountTask = nil
@@ -307,20 +334,24 @@ final class UsageCollector {
         store.isRefreshing = true
         defer { store.isRefreshing = false }
         do {
-            let fetched = try await provider.fetchUsage(agents: settings.agents, historyHours: hooks.historyHours(), sources: names)
+            let agents = settings.agents
             let read = names ?? Set(sources.map(\.name))
+            // Consume only signals that started this read. An account finishing during it needs the next pass.
             signalled.subtract(read)
+            let fetched = try await provider.fetchUsage(agents: agents, historyHours: hooks.historyHours(), sources: names)
             for name in read { readAt[name] = date }
             await hooks.publish?(fetched)
             mergeRequested = false
             let report = await hooks.merge?(fetched) ?? fetched
             guard store.isAccessAllowed, !Task.isCancelled else { needsFetch = true; return }
-            settings.mergeDiscovered(report.discoveredAgents, activeQuotaPoolIDs: report.activeQuotaPoolIDs, accounts: report.accounts, replaceQuotaWindows: true)
+            let agentsUnchanged = settings.agents == agents
+            settings.mergeDiscovered(from: report)
+            // This pass consumed its captured input and its own discoveries, but not an edit made while it awaited.
+            fetchedAgents = agentsUnchanged ? settings.agents : agents
             generation += 1
             local = (fetched, generation)
             store.collected(report)
             fetchedAt = date
-            fetchedAgents = settings.agents
         } catch {
             // Every source failed; the retry reads them all again instead of spinning on the same signals.
             signalled = []
@@ -330,5 +361,49 @@ final class UsageCollector {
             store.lastError = error.localizedDescription
         }
         store.now = Date()
+    }
+}
+
+extension UsageReport {
+    /// The times at which this report's activity changes with time alone: when a running turn reaches the age at which
+    /// it no longer counts as current, and when a session whose source never said what its turn is doing reaches the
+    /// age at which a quiet log ends it. A source is read again at these times instead of being polled.
+    var activityChecks: [Date] {
+        let margin: TimeInterval = 1
+        var times = sessions.filter(\.isLive).map { $0.observedAt.addingTimeInterval(SessionPhase.Limits.quiet + margin) }
+        for turn in turns where turn.state == .running {
+            let observed = RecordCoding.date(turn.observedAtMs)
+            times.append(observed.addingTimeInterval(SessionPhase.Limits.quiet + margin))
+            times.append(observed.addingTimeInterval(UsageRefresh.activeTurnFreshness + margin))
+            times.append(observed.addingTimeInterval(SessionPhase.Limits.abandoned + margin))
+        }
+        return times
+    }
+
+    /// When an account reading of this source is next worth taking, counted from `since`, when its steps last ran.
+    /// A window moves only while work runs, so a running turn is read often, a session between turns slowly, and work
+    /// that finished after the last reading once more. An idle source's windows change only when they reset, and a
+    /// source that cannot see this Mac's work keeps the account interval.
+    func accountCheck(since: Date, now: Date, seesLocalWork: Bool) -> Date {
+        // A deadline remains due until an account request has actually run at or after it.
+        // Comparing with `now` loses the scheduled refresh as soon as the deadline arrives.
+        let reset = snapshots.filter { snapshot in
+            discoveredAgents.first(where: { $0.id == snapshot.agentId }).map(isCurrent) ?? true
+        }.compactMap(\.resetAt).filter { $0 > since }.min()
+        let regular: Date
+        let stale = now.addingTimeInterval(-UsageRefresh.activeTurnFreshness)
+        if turns.contains(where: { $0.state == .running && RecordCoding.date($0.observedAtMs) > stale }) {
+            regular = since.addingTimeInterval(UsageRefresh.runningAccountInterval)
+        } else if sessions.contains(where: { $0.isLive(at: now) }) {
+            regular = since.addingTimeInterval(UsageRefresh.liveAccountInterval)
+        } else if !seesLocalWork {
+            regular = since.addingTimeInterval(UsageRefresh.accountInterval)
+        } else if sessions.contains(where: { ($0.endedAt ?? .distantPast) > since }) {
+            regular = now
+        } else {
+            regular = reset == nil || snapshots.contains(where: { ($0.resetAt ?? .distantFuture) <= since })
+                ? since.addingTimeInterval(UsageRefresh.accountInterval) : .distantFuture
+        }
+        return min(regular, reset ?? .distantFuture)
     }
 }

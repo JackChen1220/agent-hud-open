@@ -12,11 +12,38 @@ public enum DemoData {
         AgentDescriptor(id: "deepseek", vendor: "DeepSeek", model: "Harness", source: L10n.sourceNotConnected, enabled: false),
     ]
 
+    public static let currentCodexAccount = ProviderAccount.identified(provider: "Codex", user: "work@example.com", workspace: "team")!
+    public static let previousCodexAccount = ProviderAccount.identified(provider: "Codex", user: "me@example.com", workspace: "personal")!
+
+    /// Two quota readings the interactive demo can hide independently of its token consumers.
+    public static let codexAccountRows: [AgentDescriptor] = [currentCodexAccount, previousCodexAccount].map { account in
+        AgentDescriptor(id: account.windowID("codex"), vendor: "Codex", model: L10n.windowWeekly,
+                        shortModel: WindowNames.Period.week.shortName, source: L10n.sourceCodexAppServer,
+                        enabled: true, account: account)
+    }
+
+    public static func codexAccounts(now: Date) -> [AccountObservation] {
+        [
+            AccountObservation(account: currentCodexAccount, label: "work@example.com", plan: "pro", observedAt: now,
+                               resetCredits: codexResetCredits(now: now)),
+            AccountObservation(account: previousCodexAccount, label: "me@example.com", plan: "prolite",
+                               observedAt: now.addingTimeInterval(-3 * 3600), isCurrent: false),
+        ]
+    }
+
+    public static func codexAccountSnapshots(now: Date) -> [UsageSnapshot] {
+        codexAccounts(now: now).map { observation in
+            UsageSnapshot(agentId: observation.account.windowID("codex"), remainingPct: observation.isCurrent ? 58 : 100,
+                          resetAt: now.addingTimeInterval(4 * 86400), windowDuration: 7 * 86400, updatedAt: observation.observedAt)
+        }
+    }
+
     /// Every vendor the app ships artwork for, all switched on. `agents` is the small set the tests and
     /// snapshots are written against; this is what the running demo uses, so the HUD is shown carrying a
     /// full queue rather than the three marks a minimal set produces.
-    public static let everyAgent: [AgentDescriptor] = agents.map {
-        AgentDescriptor(id: $0.id, vendor: $0.vendor, model: $0.model, source: $0.source, enabled: true)
+    public static let everyAgent: [AgentDescriptor] = agents.flatMap { agent -> [AgentDescriptor] in
+        if agent.id == "codex" { return codexAccountRows }
+        return [AgentDescriptor(id: agent.id, vendor: agent.vendor, model: agent.model, source: agent.source, enabled: true)]
     } + [
         AgentDescriptor(id: "cursor", vendor: "Cursor", model: "Agent", source: L10n.sourceNotConnected, enabled: true),
         AgentDescriptor(id: "copilot", vendor: "GitHub Copilot", model: "Agent", source: L10n.sourceNotConnected, enabled: true),
@@ -105,13 +132,13 @@ public enum DemoData {
             LiveSession(id: "s1", agentId: "claude-opus", task: "fix auth bug in middleware", terminal: "api-gateway",
                         startedAt: now.addingTimeInterval(-27 * 60), pctOfWindow: 6.2, tokensIn: s1.tokensIn, tokensOut: s1.tokensOut,
                         cacheReadTokens: s1.cacheReadTokens, observedAt: now, workingDirectory: home + "/work/api-gateway"),
-            LiveSession(id: "s2", agentId: "codex", task: "backend server endpoints", terminal: "hud-ios",
+            LiveSession(id: "s2", agentId: "codex", task: "backend server endpoints", terminal: "billing-service",
                         startedAt: now.addingTimeInterval(-64 * 60), pctOfWindow: 3.8, tokensIn: s2.tokensIn, tokensOut: s2.tokensOut,
-                        cacheReadTokens: s2.cacheReadTokens, observedAt: now, workingDirectory: home + "/work/hud-ios"),
+                        cacheReadTokens: s2.cacheReadTokens, observedAt: now, workingDirectory: home + "/work/api-gateway"),
             LiveSession(id: "s3", agentId: "claude-sonnet", task: "optimize db queries", terminal: "etl",
                         startedAt: now.addingTimeInterval(-140 * 60), endedAt: now.addingTimeInterval(-51 * 60),
                         pctOfWindow: 2.1, tokensIn: s3.tokensIn, tokensOut: s3.tokensOut, cacheReadTokens: s3.cacheReadTokens,
-                        workingDirectory: home + "/data/etl"),
+                        workingDirectory: home + "/clients/api-gateway"),
             LiveSession(id: "s4", agentId: "chatgpt", task: L10n.text("桌面版 · 3 段对话", "Desktop · 3 conversations"), terminal: nil,
                         startedAt: now.addingTimeInterval(-200 * 60), endedAt: now.addingTimeInterval(-120 * 60),
                         pctOfWindow: 4.5, tokensIn: 0, tokensOut: 0, observedAt: now),
@@ -281,7 +308,7 @@ public enum DemoData {
     }
 
     public static func insights(now: Date, calendar: Calendar = .current) -> UsageInsights {
-        // "周二 16:10" of the current week.
+        // Tuesday 16:10 of the current week.
         var components = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
         components.weekday = 3
         components.hour = 16
@@ -295,5 +322,47 @@ public enum DemoData {
             weeklyWaitLongest: 58 * 60,
             weeklyWaitLongestAt: tuesday
         )
+    }
+
+    /// The sources the demo's first-launch screen lists.
+    public static var sources: [SourceStatus] {
+        [
+            SourceStatus(id: "claude-code", name: "Claude", detail: L10n.text("额度、会话与用量统计", "Quota, sessions and usage"), state: .ready(plan: "max_20x")),
+            SourceStatus(id: "codex-cli", name: "Codex", detail: L10n.text("额度、会话与用量统计", "Quota, sessions and usage"), state: .ready(plan: "prolite")),
+            SourceStatus(id: "antigravity", name: "Antigravity", detail: L10n.text("安装后自动出现", "Appears once installed"), state: .notDetected),
+            SourceStatus(id: "deepseek", name: "DeepSeek", detail: L10n.text("安装后自动出现", "Appears once installed"), state: .notDetected),
+        ]
+    }
+
+    /// The requests the demo shows: four clients caught mid-task, the way a working morning actually looks — one
+    /// edit worth reading, one build, one ticket and one file. No client is waiting behind them, so answering one
+    /// only takes it off the HUD.
+    public static func permissionRequests(now: Date = Date()) -> [PermissionRequest] {
+        [
+            PermissionRequest(
+                id: "demo-edit", source: .claude, sessionID: "demo-1", toolName: "Edit",
+                summary: "Avatar.tsx", detail: "~/Projects/acme-web/src/components/Avatar.tsx", cwd: "~/Projects/acme-web",
+                path: "~/Projects/acme-web/src/components/Avatar.tsx",
+                removed: "  const initials = user.name.slice(0, 2)", added: "  const initials = user?.name?.slice(0, 2) ?? '?'",
+                suggestions: [.object([
+                    "type": .string("addRules"), "behavior": .string("allow"),
+                    "destination": .string("localSettings"),
+                    "rules": .array([.object(["toolName": .string("Edit"), "ruleContent": .string("src/**")])]),
+                ])],
+                at: now.addingTimeInterval(-38)),
+            PermissionRequest(
+                id: "demo-build", source: .codex, sessionID: "demo-2", toolName: "Bash",
+                summary: L10n.text("构建生产版本", "Build for production"), detail: "npm run build",
+                cwd: "~/Projects/acme-api", at: now.addingTimeInterval(-124)),
+            PermissionRequest(
+                id: "demo-ticket", source: .codebuddy, sessionID: "demo-3",
+                toolName: "mcp__linear__create_issue", summary: "linear · create_issue",
+                detail: "team: Mobile\ntitle: Settings screen crashes when offline",
+                cwd: "~/Projects/acme-mobile", at: now.addingTimeInterval(-71)),
+            PermissionRequest(
+                id: "demo-read", source: .claude, sessionID: "demo-4", toolName: "Read",
+                summary: "tsconfig.base.json", detail: "~/Projects/acme-shared/tsconfig.base.json", cwd: "~/Projects/acme-web",
+                path: "~/Projects/acme-shared/tsconfig.base.json", at: now.addingTimeInterval(-9)),
+        ]
     }
 }

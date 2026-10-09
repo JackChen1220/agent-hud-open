@@ -49,8 +49,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 }
 
 enum SettingsWindowLayout {
-    static let size = CGSize(width: 760, height: 720)
-    static let minimum = CGSize(width: 680, height: 560)
+    static let size = CGSize(width: 960, height: 720)
+    static let minimum = CGSize(width: 880, height: 560)
     static let sidebarWidth: CGFloat = 212
 }
 
@@ -58,7 +58,7 @@ struct SettingsView: View {
     let settings: SettingsStore
     let store: UsageStore
     var sourceStatuses: [SourceStatus]?
-    var initiallyExpandedAgents: Set<String>
+    var initialProviderID: String?
     let additionalPages: [DesktopSettingsPage]
     @State private var navigation: SettingsNavigation
     @Environment(\.colorScheme) private var scheme
@@ -66,11 +66,11 @@ struct SettingsView: View {
     init(settings: SettingsStore, store: UsageStore, initialTab: SettingsTab = .display,
          navigation: SettingsNavigation? = nil,
          additionalPages: [DesktopSettingsPage] = [],
-         sourceStatuses: [SourceStatus]? = nil, initiallyExpandedAgents: Set<String> = []) {
+         sourceStatuses: [SourceStatus]? = nil, initialProviderID: String? = nil) {
         self.settings = settings
         self.store = store
         self.sourceStatuses = sourceStatuses
-        self.initiallyExpandedAgents = initiallyExpandedAgents
+        self.initialProviderID = initialProviderID
         self.additionalPages = additionalPages
         _navigation = State(initialValue: navigation ?? SettingsNavigation(tab: initialTab))
     }
@@ -95,14 +95,20 @@ struct SettingsView: View {
                 .padding(.top, 24)
                 .padding(.bottom, 20)
 
-                ScrollView {
+                if tab == .sources {
                     pane(theme)
-                        .frame(maxWidth: additionalPage?.preferredContentWidth ?? 640, alignment: .leading)
-                        .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.horizontal, 20)
-                        .padding(.bottom, 32)
+                        .id(navigation.pageID)
+                } else {
+                    ScrollView {
+                        pane(theme)
+                            .frame(maxWidth: additionalPage?.preferredContentWidth ?? 640, alignment: .leading)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 32)
+                    }
+                    .id(navigation.pageID)
                 }
-                .id(navigation.pageID)
             }
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .clipped()
@@ -127,7 +133,7 @@ struct SettingsView: View {
             switch tab {
             case .general: GeneralPane(settings: settings, theme: theme)
             case .sources: SourcesPane(settings: settings, store: store, theme: theme, sources: sourceStatuses,
-                                       initiallyExpanded: initiallyExpandedAgents)
+                                       initialProviderID: initialProviderID)
             case .display: DisplayPane(settings: settings, store: store, theme: theme)
             }
         } else if let additionalPage {

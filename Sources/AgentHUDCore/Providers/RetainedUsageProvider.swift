@@ -59,7 +59,8 @@ extension UsageReport {
         UsageReport(generatedAt: generatedAt, snapshots: snapshots, sessions: sessions,
                     notice: notice, discoveredAgents: discoveredAgents, consumers: consumers, usage: usage,
                     indexing: indexing, insightsByAgent: insightsByAgent, subscriptions: subscriptions, sourceNotices: sourceNotices,
-                    consumerIdsByQuota: consumerIdsByQuota, billing: billing, codexResetCredits: codexResetCredits,
+                    quotaNotices: quotaNotices, readingIssues: readingIssues, consumerIdsByQuota: consumerIdsByQuota, billing: billing,
+                    codexResetCredits: codexResetCredits,
                     codexResetCreditsObservedAt: codexResetCreditsObservedAt, services: services, activeQuotaPoolIDs: activeQuotaPoolIDs,
                     accounts: accounts, forgottenAccountProviders: forgottenAccountProviders, periods: periods,
                     rowSeenAt: rowSeenAt)
@@ -69,8 +70,8 @@ extension UsageReport {
     func startingRowClocks() -> UsageReport {
         UsageReport(generatedAt: generatedAt, snapshots: snapshots, sessions: sessions, notice: notice,
                     discoveredAgents: discoveredAgents, consumers: consumers, usage: usage, indexing: indexing,
-                    insightsByAgent: insightsByAgent, subscriptions: subscriptions, sourceNotices: sourceNotices,
-                    consumerIdsByQuota: consumerIdsByQuota, billing: billing, codexResetCredits: codexResetCredits,
+                    insightsByAgent: insightsByAgent, subscriptions: subscriptions, sourceNotices: sourceNotices, quotaNotices: quotaNotices,
+                    readingIssues: readingIssues, consumerIdsByQuota: consumerIdsByQuota, billing: billing, codexResetCredits: codexResetCredits,
                     codexResetCreditsObservedAt: codexResetCreditsObservedAt, completions: completions, turns: turns,
                     services: services, activeQuotaPoolIDs: activeQuotaPoolIDs, accounts: accounts,
                     forgottenAccountProviders: forgottenAccountProviders, sessionUsage: sessionUsage, periods: periods,
@@ -79,52 +80,62 @@ extension UsageReport {
 
     /// An absent reading is not a zero or a confirmed reset. Keep its original observation time.
     func retainingReadings(from previous: UsageReport) -> UsageReport {
+        /// A plan pool the provider's inventory leaves out retires with its rows, readings and account.
         func isActive(_ agent: AgentDescriptor) -> Bool {
-            guard let pool = agent.billingPool, pool.product == .plan,
-                  let active = activeQuotaPoolIDs?[pool.provider] else { return true }
-            return active.contains(pool.id)
+            ReportView.isPresent(agent, seenAt: nil, accounts: nil, activePools: activeQuotaPoolIDs)
         }
-        let retiredPools = previous.discoveredAgents.filter { !isActive($0) }
-        let retiredPoolIDs = Set(retiredPools.compactMap { $0.billingPool?.id })
+        let retiredPoolIDs = Set(previous.discoveredAgents.filter { !isActive($0) }.compactMap { $0.billingPool?.id })
         let cutoff = generatedAt.addingTimeInterval(-QuotaHistoryStore.retention)
-        let currentIDs = Set(snapshots.map(\.agentId))
-        // A successful Codex response is the complete window inventory for that account.
-        // Omitted buckets are retired; a failed read or an account switched away keeps its last readings.
-        let confirmedCodex = Set((self.accounts?["Codex"] ?? []).filter {
-            $0.isCurrent && $0.quotaNotice == nil && sourceNotices["Codex"] == nil
-        }.map(\.account.id))
+        // Only a provider's explicit, sound complete inventory retires omitted windows. Missing values in a present
+        // window keep their last reading, and a failed read or an account switched away keeps every last reading.
+        let inventories = completeQuotaWindowInventories
         let accounts = mergedAccounts(from: previous, retiredPoolIDs: retiredPoolIDs, cutoff: cutoff)
-        let knownAccountIDs = Set(accounts?.values.flatMap { $0.map(\.account.id) } ?? [])
-        // Rows of an account unseen for the retention period retire with its readings and settings.
-        // Rows without an account belong to a provider version that could not identify accounts; they are dropped.
-        let retiredRows = previous.discoveredAgents.filter { agent in
-            if let account = agent.account, confirmedCodex.contains(account.id), !currentIDs.contains(agent.id) { return true }
-            if let account = agent.account, agent.billingPool == nil { return accounts != nil && !knownAccountIDs.contains(account.id) }
-            return agent.account == nil && agent.billingPool == nil && accounts?[agent.vendor]?.isEmpty == false
-        }
-        // Any row retires once no provider has reported it for the retention period, whatever took it away: a client
-        // uninstalled, a window the service dropped, a vendor the app no longer reads. Rows from a report that kept no
-        // times start their clock now.
+        // Every row a provider reports is seen now; rows from a report that kept no times start their clock now.
         let reportedIDs = Set(discoveredAgents.map(\.id))
         var seen = previous.rowSeenAt ?? [:]
         for agent in previous.discoveredAgents where seen[agent.id] == nil { seen[agent.id] = generatedAt }
         for id in reportedIDs { seen[id] = generatedAt }
-        let unseenRows = previous.discoveredAgents.filter { !reportedIDs.contains($0.id) && seen[$0.id]! < cutoff }
-        let retired = retiredPools + retiredRows + unseenRows
-        let retiredWindowIDs = Set(retired.map(\.id))
-        func isRetained(_ agent: AgentDescriptor) -> Bool { isActive(agent) && !retiredWindowIDs.contains(agent.id) }
+        for id in inventories.values.flatMap({ $0 }) { seen[id] = generatedAt }
+        // A row retires with its readings and settings once it is no longer present: no provider reported it for the
+        // retention period, whatever took it away (a client uninstalled, a window the service dropped, a vendor the app no
+        // longer reads), its account left its provider's inventory, its plan pool is inactive, or it has no account while
+        // its provider identifies them. A complete account inventory also retires the windows it left out.
+        let recent = seen.filter { $0.value >= cutoff }
+        let retired = previous.discoveredAgents.filter { agent in
+            if let accountID = agent.displayAccountID, let inventory = inventories[accountID], !inventory.contains(agent.id) { return true }
+            return !ReportView.isPresent(agent, seenAt: recent, accounts: accounts, activePools: activeQuotaPoolIDs)
+        }
+        let absentWindowIDs = Set(retired.map(\.id))
+        let previousRows = previous.discoveredAgents.filter { !absentWindowIDs.contains($0.id) }
+        // Older caches can already mix the two schemas. A still-present summary supersedes both retained and incoming
+        // legacy rows, without asserting that the summary's other windows form this pass's complete inventory.
+        let superseded = AntigravityClient.supersededLegacyWindowIDs(in: discoveredAgents + previousRows,
+                                                                   by: discoveredAgents + previousRows)
+        let retiredWindowIDs = absentWindowIDs.union(superseded)
+        func isRetained(_ agent: AgentDescriptor) -> Bool { !retiredWindowIDs.contains(agent.id) }
+        let reportedRows = discoveredAgents.filter { !superseded.contains($0.id) }
+        let reportedSnapshots = snapshots.filter { !superseded.contains($0.agentId) }
+        let currentIDs = Set(reportedSnapshots.map(\.agentId))
         let billingIDs = Set(billing.map(\.id))
         let retainedBilling = billing.map { value -> APIBilling in
             guard value.updatedAt == nil, let old = previous.billing.first(where: { $0.id == value.id }) else { return value }
             return APIBilling(vendor: value.vendor, balances: old.balances, isAvailable: old.isAvailable,
-                updatedAt: old.updatedAt, costs: value.costs, sessionCosts: value.sessionCosts, notice: value.notice, billingPool: value.billingPool)
+                updatedAt: old.updatedAt, costs: value.costs, sessionCosts: value.sessionCosts, notice: value.notice,
+                readingIssue: value.readingIssue, billingPool: value.billingPool)
         } + previous.billing.filter { !billingIDs.contains($0.id) }
         let knownAgents = UsageAggregation.consumersUnion([discoveredAgents, consumers, previous.discoveredAgents, previous.consumers])
-        let failedIDs = Set(knownAgents.filter { sourceNotices[$0.vendor] != nil }.map(\.id))
-        let retainedSessions = UsageAggregation.sessionsUnion([sessions, previous.sessions.filter { failedIDs.contains($0.agentId) }])
-        let rows = UsageAggregation.consumersUnion([discoveredAgents, previous.discoveredAgents.filter(isRetained)])
+        // A source whose read or quota reading failed keeps its last sessions; a notice about its local logs or hooks does not.
+        let failedIDs = Set(knownAgents.filter { !vendorStatus($0.vendor).isNormal }.map(\.id))
+        // Bot's account-scoped local inventory owns its sessions; an unrelated CLI quota failure must not restore a
+        // roster that a sign-out or account switch removed. Its file reader already retains unreadable files.
+        let retainedSessions = UsageAggregation.sessionsUnion([sessions, previous.sessions.filter {
+            failedIDs.contains($0.agentId) && $0.client != "Grok Bot"
+        }])
+        let retainedSnapshots = reportedSnapshots + previous.snapshots.filter { !currentIDs.contains($0.agentId) && !retiredWindowIDs.contains($0.agentId) }
+        let rows = AntigravityClient.summaryNames(UsageAggregation.consumersUnion([reportedRows, previous.discoveredAgents.filter(isRetained)]),
+                                                 snapshots: retainedSnapshots)
         return UsageReport(generatedAt: generatedAt,
-            snapshots: snapshots + previous.snapshots.filter { !currentIDs.contains($0.agentId) && !retiredWindowIDs.contains($0.agentId) },
+            snapshots: retainedSnapshots,
             sessions: retainedSessions,
             notice: notice,
             discoveredAgents: rows,
@@ -132,10 +143,12 @@ extension UsageReport {
             // Recorded usage outlives a failed refresh in the ledger, so the new report's periods are complete.
             usage: usage,
             indexing: indexing,
-            insightsByAgent: previous.insightsByAgent.filter { !retiredWindowIDs.contains($0.key) }.merging(insightsByAgent, uniquingKeysWith: { _, new in new }),
+            insightsByAgent: previous.insightsByAgent.filter { !retiredWindowIDs.contains($0.key) }
+                .merging(insightsByAgent.filter { !superseded.contains($0.key) }, uniquingKeysWith: { _, new in new }),
             subscriptions: previous.subscriptions.filter { !retiredPoolIDs.contains($0.key) }.merging(subscriptions, uniquingKeysWith: { _, new in new }),
-            sourceNotices: sourceNotices,
-            consumerIdsByQuota: previous.consumerIdsByQuota.filter { !retiredWindowIDs.contains($0.key) }.merging(consumerIdsByQuota, uniquingKeysWith: { _, new in new }),
+            sourceNotices: sourceNotices, quotaNotices: quotaNotices, readingIssues: readingIssues,
+            consumerIdsByQuota: previous.consumerIdsByQuota.filter { !retiredWindowIDs.contains($0.key) }
+                .merging(consumerIdsByQuota.filter { !superseded.contains($0.key) }, uniquingKeysWith: { _, new in new }),
             billing: retainedBilling, codexResetCredits: codexResetCredits ?? (sameCurrentAccount(as: previous, provider: "Codex") ? previous.codexResetCredits : nil),
             codexResetCreditsObservedAt: codexResetCredits != nil ? codexResetCreditsObservedAt
                 : sameCurrentAccount(as: previous, provider: "Codex") ? previous.codexResetCreditsObservedAt : nil,

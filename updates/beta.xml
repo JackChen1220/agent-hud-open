@@ -1,0 +1,75 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>Agent HUD</title>
+    <item>
+      <title>0.4.39</title>
+      <pubDate>Fri, 09 Oct 2026 19:51:05 +0800</pubDate>
+      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.39-beta.2</link>
+      <sparkle:channel>beta</sparkle:channel>
+      <sparkle:minimumAutoupdateVersion>481</sparkle:minimumAutoupdateVersion>
+      <sparkle:version>481</sparkle:version>
+      <sparkle:shortVersionString>0.4.39-beta.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <description sparkle:format="markdown"># Agent HUD 0.4.39-beta.2
+
+## Compatibility
+
+**Requires Agent HUD for iPhone 1.5 or later** for iPhone and Apple Watch sync. Update the iPhone app before updating the Mac. Older iPhone versions cannot read this release's data.
+
+[Get the iPhone app](https://apps.apple.com/app/id6812113619).
+
+If the required iPhone version is not yet on the App Store, cross-device features require the corresponding TestFlight version.
+
+Requires an Apple Silicon Mac running macOS 14 or later.
+
+## Changes
+
+- Improves LAN snapshot updates by computing canonical record IDs once before sorting snapshots and replay batches. This removes repeated encoding from the sorting hot path.
+- Recognises personal SuperGrok accounts whose native Grok Bot usage records contain both a user principal and a team ID. The account can now display its confirmed weekly quota.
+- Leaves Codex automatic approval review to Codex. The HUD only handles a permission request when the matching turn explicitly uses a user reviewer.
+- Includes the LAN connection and cross-device sync fixes from the 0.4.39 release series.
+
+## Known issues
+
+- Grok prepaid and on-demand wallet amounts, including a zero-dollar wallet, are not yet displayed. The missing-quota placeholder also remains outstanding. [Issue #20](https://github.com/jazzenchen/agent-hud-open/issues/20) remains open; [PR #35](https://github.com/jazzenchen/agent-hud-open/pull/35) and [PR #38](https://github.com/jazzenchen/agent-hud-open/pull/38) address native usage reading and personal-account recognition.
+- Cross-device features require iPhone 1.5 or later. Use the corresponding TestFlight build while version 1.5 is awaiting App Store review.
+</description>
+      <enclosure url="https://github.com/jazzenchen/agent-hud-open/releases/download/v0.4.39-beta.2/Agent-HUD-0.4.39-beta.2-arm64.dmg" length="12703441" type="application/octet-stream" sparkle:edSignature="FF+vGxSnEM2kSkqaS1H1/diwYsrYSQ2klUkECMhm2tQrguENUwckZK0fX0bL9PKOEADbLAIwZaLVvshgUCd1CA==" />
+      <agenthudMacOnly>false</agenthudMacOnly>
+      <agenthudMinimumIOSVersion>1.5</agenthudMinimumIOSVersion>
+    </item>
+    <item>
+      <title>0.4.36</title>
+      <pubDate>Thu, 08 Oct 2026 02:06:40 +0800</pubDate>
+      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.36</link>
+      <sparkle:version>467</sparkle:version>
+      <sparkle:shortVersionString>0.4.36</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <description sparkle:format="markdown"># Agent HUD 0.4.36
+
+## Compatibility
+
+**Requires Agent HUD for iPhone 1.4 or later** for iPhone and Apple Watch sync. Update the iPhone app before updating the Mac. Older iPhone versions cannot read this release's data.
+
+[Get the iPhone app](https://apps.apple.com/app/id6812113619).
+
+Requires an Apple Silicon Mac running macOS 14 or later.
+
+## Changes
+
+- Open a supported desktop conversation or focus the originating iTerm2 pane from a new reply, with a separate action to view token usage. In Active sessions, click the title to return to the agent or the token count to view usage.
+- Return destinations are available for Codex Desktop, Claude Desktop Code and Cowork, and Antigravity's running standalone app. Codex CLI, Claude Code CLI, Pi and OpenCode can return to their existing iTerm2 pane when a destination is available.
+- New replies and permission requests now share one event panel. Select a reply or request to see its details while the others remain available.
+- Failed session returns keep the reminder open for retry or token usage. Token usage remains available when the original session cannot be located.
+- Buttons respond across their icons, text and spacing, and token bars stay within their cards.
+- Holding Command no longer adds a dashed outline around the HUD; drag outlines appear during repositioning.
+</description>
+      <enclosure url="https://github.com/jazzenchen/agent-hud-open/releases/download/v0.4.36/Agent-HUD-0.4.36-arm64.dmg" length="11842893" type="application/octet-stream" sparkle:edSignature="sVONs8TQDRPO4WYkMwFAbB33IQ8iGP8cbP26dq6ZLkEm/d1EHnOe0SQrhKVg/BXtecn5bjc3gH/KndvT1UfXAA==" />
+      <agenthudMacOnly>false</agenthudMacOnly>
+      <agenthudMinimumIOSVersion>1.4</agenthudMinimumIOSVersion>
+    </item>
+  </channel>
+</rss>

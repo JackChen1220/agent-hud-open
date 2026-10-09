@@ -109,7 +109,7 @@ enum OpenAgentCredentials {
             claude["ANTHROPIC_AUTH_TOKEN"].stringValue ?? claude["ANTHROPIC_API_KEY"].stringValue, "Claude")
 
         // Explicit endpoint overrides take precedence over built-in provider names.
-        let configRoot = URL(fileURLWithPath: env["XDG_CONFIG_HOME"] ?? home.appendingPathComponent(".config").path)
+        let configRoot = URL(fileURLWithPath: ClientHome.variable("XDG_CONFIG_HOME", in: env) ?? home.appendingPathComponent(".config").path)
         let openJSON = configRoot.appendingPathComponent("opencode/opencode.json")
         let openJSONC = configRoot.appendingPathComponent("opencode/opencode.jsonc")
         let configs = [openJSON, openJSONC].filter { FileManager.default.fileExists(atPath: $0.path) }.map { read($0, json5: true) }

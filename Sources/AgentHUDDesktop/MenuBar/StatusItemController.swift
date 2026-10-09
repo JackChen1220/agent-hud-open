@@ -15,14 +15,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private let store: UsageStore
     private let settings: SettingsStore
+    private let additionalMenuItems: () -> [NSMenuItem]
     var actions = MenuActions()
 
     private static let menuWidth: CGFloat = 250
     private static let agentMenuFont = NSFontManager.shared.convert(.menuFont(ofSize: 13), toHaveTrait: .boldFontMask)
 
-    init(store: UsageStore, settings: SettingsStore) {
+    init(store: UsageStore, settings: SettingsStore, additionalMenuItems: @escaping () -> [NSMenuItem] = { [] }) {
         self.store = store
         self.settings = settings
+        self.additionalMenuItems = additionalMenuItems
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
         menu.delegate = self
@@ -31,7 +33,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         item.menu = menu
         item.button?.imagePosition = .imageLeading
         refreshButton()
-        observeChanges({ [weak self] in
+        trackChanges({ [weak self] in
             guard let self else { return }
             _ = self.store.rows
             _ = self.store.pausedUntil
@@ -81,9 +83,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                     header.isEnabled = false
                     header.view = MenuRowView(
                         title: [account.displayName, account.planLabel].compactMap { $0 }.joined(separator: " · "),
-                        value: account.statusLabel(now: store.now), image: nil, font: .menuFont(ofSize: 11),
+                        value: store.accountLabel(for: account), image: nil, font: .menuFont(ofSize: 11),
                         titleColor: .secondaryLabelColor, minimumWidth: Self.menuWidth)
-                    header.toolTip = account.quotaNotice
+                    header.toolTip = store.accountNotice(for: section)
                     menu.addItem(header)
                 }
                 for row in section.rows {
@@ -99,10 +101,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             item.target = self
             item.view = MenuRowView(title: title, value: balance.isEmpty ? "—" : balance,
                                          image: AgentArtwork.image(for: billing.vendor), font: Self.agentMenuFont,
-                                         valueColor: billing.isAvailable == false ? .systemRed : .secondaryLabelColor, minimumWidth: Self.menuWidth)
+                                         valueColor: Self.valueColor(store.view.level(of: billing)), minimumWidth: Self.menuWidth)
             let cost = billing.estimatedCost(currency: billing.currency, during: store.statsInterval)
                 .map { MoneyFormat.amount($0, currency: billing.currency, estimated: true) } ?? "—"
-            item.toolTip = (L10n.text("费用估算 · ", "Est. cost · ") + store.statsRange.recentLabel + ": " + cost)
+            // A balance whose read failed says why before its cost.
+            item.toolTip = [store.view.assessment(of: billing).status.reason,
+                            L10n.text("费用估算 · ", "Est. cost · ") + store.statsRange.recentLabel + ": " + cost].compactMap { $0 }
+                .joined(separator: "\n")
             menu.addItem(item)
         }
         if store.rows.isEmpty && store.enabledBilling.isEmpty {
@@ -119,6 +124,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         ))
         menu.addItem(.separator())
         menu.addItem(action(L10n.text("设置…", "Settings…"), key: ",", modifiers: [.command], selector: #selector(openSettings)))
+        for item in additionalMenuItems() {
+            if item.view == nil, !item.isSeparatorItem { setActionView(item) }
+            menu.addItem(item)
+        }
         menu.addItem(action(L10n.text("退出", "Quit"), key: "q", modifiers: [.command], selector: #selector(quit)))
     }
 
@@ -131,40 +140,49 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let level = row.level ?? .ok
         let light = SystemAppearance.isLight
         let color = NSColor(StatusPalette.color(for: level, light: light))
-        let label = L10n.modelLabel(row.agent.model)
-        let name = showVendor ? "\(row.agent.vendorName) · \(L10n.shortModelLabel(row.agent.model))" : label
+        let label = row.agent.name
+        let name = showVendor ? row.agent.compactName : label
         let value: String
         if let used = row.usedPct {
             value = "\(TokenFormat.percent(used)) · \(row.resetLabel(now: store.now, compact: true))"
         } else {
             value = row.missingQuotaLabel
         }
-        let valueColor: NSColor = level == .critical ? NSColor(StatusPalette.textColor(for: .critical, light: light)) : .secondaryLabelColor
         let item = NSMenuItem(title: name, action: #selector(openStats), keyEquivalent: "")
         item.target = self
         item.view = MenuRowView(
             title: name, value: value,
             image: showVendor ? AgentArtwork.image(for: row.agent.vendor) : StatusIconRenderer.dot(color: row.level == nil ? .tertiaryLabelColor : color),
             font: showVendor ? Self.agentMenuFont : .menuFont(ofSize: 13),
-            titleColor: row.isCurrentAccount ? .labelColor : .secondaryLabelColor, valueColor: valueColor, minimumWidth: Self.menuWidth
+            titleColor: row.isCurrentAccount ? .labelColor : .secondaryLabelColor, valueColor: Self.valueColor(row.level), minimumWidth: Self.menuWidth
         )
         item.toolTip = store.quotaForecastHint(for: row.id)
         item.view?.toolTip = item.toolTip
         return item
     }
 
+    /// The colour of a quota row's or a balance's figure: the critical text colour at a critical level, else secondary.
+    static func valueColor(_ level: StatusLevel?) -> NSColor {
+        level == .critical ? NSColor(StatusPalette.textColor(for: .critical, light: SystemAppearance.isLight)) : .secondaryLabelColor
+    }
+
     private func action(_ title: String, key: String, modifiers: NSEvent.ModifierFlags, selector: Selector) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: selector, keyEquivalent: key)
         item.keyEquivalentModifierMask = modifiers
         item.target = self
+        setActionView(item)
+        return item
+    }
+
+    private func setActionView(_ item: NSMenuItem) {
         let modifierSymbols: [(NSEvent.ModifierFlags, String)] = [
             (.control, "⌃"), (.option, "⌥"), (.shift, "⇧"), (.command, "⌘"),
         ]
         let shortcut = modifierSymbols.filter { item.keyEquivalentModifierMask.contains($0.0) }
             .map(\.1).joined() + item.keyEquivalent.uppercased()
-        item.view = MenuRowView(title: title, value: shortcut, image: nil,
-                                font: .menuFont(ofSize: 13), minimumWidth: Self.menuWidth)
-        return item
+        item.view = MenuRowView(title: item.title, value: shortcut, image: item.image,
+                                font: .menuFont(ofSize: 13), minimumWidth: Self.menuWidth,
+                                attributedTitle: item.attributedTitle)
     }
 
     // MARK: Selectors
@@ -186,8 +204,8 @@ private final class MenuRowView: NSView {
     private static let selectionInset: CGFloat = 5
     private static let selectionRadius: CGFloat = 7
 
-    init(title: String, value: String = "", image: NSImage?, font: NSFont, titleColor: NSColor = .labelColor, valueColor: NSColor = .secondaryLabelColor, minimumWidth: CGFloat) {
-        self.title = NSAttributedString(string: title, attributes: [.font: font, .foregroundColor: titleColor])
+    init(title: String, value: String = "", image: NSImage?, font: NSFont, titleColor: NSColor = .labelColor, valueColor: NSColor = .secondaryLabelColor, minimumWidth: CGFloat, attributedTitle: NSAttributedString? = nil) {
+        self.title = attributedTitle ?? NSAttributedString(string: title, attributes: [.font: font, .foregroundColor: titleColor])
         self.value = NSAttributedString(string: value, attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: font.pointSize, weight: .regular),
             .foregroundColor: valueColor,

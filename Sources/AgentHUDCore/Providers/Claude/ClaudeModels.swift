@@ -57,7 +57,7 @@ public struct DiscoveredModel: Hashable, Sendable {
         AgentDescriptor(
             id: "claude-model:\(modelId)",
             vendor: "Claude",
-            model: ClaudeModelInfo.parse(modelId)?.displayName ?? modelId,
+            model: ModelCatalog.consumerName(of: "claude-model:\(modelId)"),
             source: L10n.sourceClaudeCode,
             enabled: true
         )

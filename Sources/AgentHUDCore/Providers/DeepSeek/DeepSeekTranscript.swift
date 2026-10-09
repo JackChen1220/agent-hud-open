@@ -1,7 +1,7 @@
 import AgentHUDSupport
 import Foundation
 
-/// Summary of Harness session logs in formats 0, 2 and 3. Only metadata and token counters survive indexing.
+/// Summary of Harness session logs in formats 0 and 2–4. Only metadata and token counters survive indexing.
 public struct DeepSeekTranscript: Codable, Sendable {
     public struct Usage: Codable, Sendable {
         public let timestamp: Date
@@ -40,7 +40,11 @@ public struct DeepSeekTranscript: Codable, Sendable {
     /// Models that reported usage in this log.
     public private(set) var models: Set<String> = []
     private var attempts = 0
+    /// The header's format version, absent from summaries stored before format 4 was read.
+    private var format: Int?
     private var seedLength = 0
+    /// The last tagged seed marker read before the cut.
+    private var seedMarker: Int?
     /// Turn starts read since the store last took them.
     private var marks: [UsageLedger.Mark] = []
     private struct Turn: Codable, Sendable {
@@ -66,14 +70,15 @@ public struct DeepSeekTranscript: Codable, Sendable {
         guard let object = try JSONSerialization.jsonObject(with: line) as? [String: Any],
               let type = object["type"] as? String else { return }
         if type == "session" {
-            // Format 1 was never released; 2 embeds streams in settled events and 3 changes nothing read here.
-            guard let version = object["version"] as? Int, [0, 2, 3].contains(version) else {
+            // Format 1 was never released; 2 embeds streams in settled events and 3 changes nothing read here. 4 renames
+            // producer message sources but not a person's `user` prompts, and dates a fork's marker at its cut.
+            guard let version = object["version"] as? Int, [0, 2, 3, 4].contains(version) else {
                 throw UsageProviderError(L10n.text("不支持此 Harness 会话格式", "Unsupported Harness session format"))
             }
             guard let sessionId = object["id"] as? String, let created = object["createdAt"] as? Double else {
                 throw UsageProviderError(L10n.text("Harness 会话头无效", "Invalid Harness session header"))
             }
-            id = sessionId; cwd = object["cwd"] as? String
+            id = sessionId; cwd = object["cwd"] as? String; format = version
             startedAt = Date(timeIntervalSince1970: created / 1000)
             isSubagent = object["origin"] as? String == "subagent" || (object["delegationDepth"] as? Int ?? 0) > 0
             // A seeded format-2+ log stores no seed length; its cut is found at the fork's own marker below.
@@ -101,9 +106,15 @@ public struct DeepSeekTranscript: Codable, Sendable {
             provider = data["provider"] as? String ?? "Unknown"
         }
         let timestamp = Date(timeIntervalSince1970: milliseconds / 1000)
-        // The fork writes its tagged end-seed at creation; tagged markers of copied ancestors predate the header.
-        if type == "session/end-seed", seq < seedLength, data["inherited"] as? Bool == true, timestamp >= startedAt ?? .distantFuture {
-            seedLength = seq
+        // The cut is the fork's own tagged end-seed, the last one; markers copied from ancestors are followed by more
+        // inherited events, all older than the header. Before format 4 the fork dates its marker at its creation. Format 4
+        // dates it, and the closers of a turn the fork cut open, at the last inherited event, so the fork's first event
+        // from the header's time on settles the cut at the last marker read.
+        if type == "session/end-seed", seq < seedLength, data["inherited"] as? Bool == true {
+            seedMarker = seq
+            if timestamp >= startedAt ?? .distantFuture { seedLength = seq }
+        } else if seedLength == .max, (format ?? 0) >= 4, let seedMarker, timestamp >= startedAt ?? .distantFuture {
+            seedLength = seedMarker
         }
         guard seq >= seedLength else { return }
         // A rename or seed marker must not make a finished task look active again.
@@ -232,12 +243,24 @@ public struct DeepSeekTranscript: Codable, Sendable {
         return value
     }
 
-    /// Running means the newest turn is still going: questions and long tools leave an open turn quiet, and that
-    /// does not end it. `processStarts` is the process table, read only once a turn has been quiet for a while; a
-    /// newer process cannot own an older turn, so a turn none of them predates has lost its harness and stops.
+    /// Whether this log has its session in flight, by the process rule of `SessionPhase.read(_:rule:at:)`.
+    /// `processStarts` is the process table, nil when it was not read.
     public func isLive(processStarts: [Date]?) -> Bool {
-        guard let turn = turns?.last, turn.state == .running, lastActivityAt != nil else { return false }
-        guard let processStarts, let turnStartedAt = turn.startedAt else { return true }
-        return processStarts.contains { $0 <= turnStartedAt }
+        // The process rule reads no clock.
+        SessionPhase.read(evidence(processStarts: processStarts), rule: .process, at: Date()).inFlight
+    }
+
+    /// What this log says about its session: its newest turn, when it last recorded an event, and, when the process table
+    /// was read, whether a process there predates the turn. A newer process cannot own an older turn, so a turn none of
+    /// them predates has lost its harness.
+    func evidence(processStarts: [Date]?) -> SessionPhase.SourceEvidence {
+        let newest = turns?.last
+        return SessionPhase.SourceEvidence(turn: newest.map { turn in
+            SessionTurn(provider: "deepseek", sessionID: "deepseek:\(id ?? "")", turnID: String(turn.id), state: turn.state,
+                        startedAtMs: turn.startedAt.map(RecordCoding.milliseconds), observedAtMs: RecordCoding.milliseconds(turn.observedAt))
+        }, lastWriteAt: lastActivityAt, processOutlivesTurn: processStarts.map { starts in
+            // `turn/start` opens every turn, so a running one always has a start.
+            starts.contains { $0 <= newest?.startedAt ?? .distantPast }
+        })
     }
 }

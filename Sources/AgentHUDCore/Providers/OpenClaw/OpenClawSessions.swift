@@ -9,7 +9,7 @@ enum OpenClawSessions: LocalSessionLayout {
     static let lookback: TimeInterval = 8 * 86400
 
     static func roots(home: URL, environment: [String: String]) -> [URL] {
-        if let state = environment["OPENCLAW_STATE_DIR"]?.trimmingCharacters(in: .whitespaces), !state.isEmpty {
+        if let state = ClientHome.variable("OPENCLAW_STATE_DIR", in: environment) {
             let path = state == "~" ? home.path : state.hasPrefix("~/") ? home.path + state.dropFirst() : state
             return [URL(fileURLWithPath: path).appendingPathComponent("agents")]
         }
@@ -65,7 +65,7 @@ enum OpenClawSessions: LocalSessionLayout {
             // claude-cli runs, and Codex-harness rows mirror only a turn's last response.
             if message["api"].stringValue == "openclaw-transcript" || provider == "openclaw" && ["delivery-mirror", "gateway-injected"].contains(name ?? "")
                 || provider.lowercased() == "claude-cli" || message["idempotencyKey"].stringValue?.hasPrefix("codex-app-server:") == true { return nil }
-            guard let at = ProviderDate.milliseconds(message["timestamp"]) ?? ProviderDate.iso(entry["timestamp"].stringValue) else { throw ProviderFailure.format }
+            guard let at = ProviderDate.milliseconds(message["timestamp"]) ?? DateParsing.internet(entry["timestamp"].stringValue) else { throw ProviderFailure.format }
             let input = try usage["input"].optionalCounter(), output = try usage["output"].optionalCounter()
             let read = try usage["cacheRead"].optionalCounter(), write = try usage["cacheWrite"].optionalCounter()
             guard try TokenCount.sum(input, output, read, write) > 0 else { return nil }
@@ -82,14 +82,18 @@ enum OpenClawSessions: LocalSessionLayout {
         }
     }
 
+    /// A transcript line counts only as the session header, a model change or a message with usage; prompts and tool
+    /// output, most of a transcript, are not decoded.
+    private static let transcriptMarkers = [#""session""#, #""model_change""#, #""usage""#].map { Data($0.utf8) }
+
     static func transcript(_ url: URL) throws -> ProviderSessions {
         let name = url.lastPathComponent, raw = String(name[..<(name.range(of: ".jsonl")?.lowerBound ?? name.endIndex)])
         let agent = url.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
         var session = ProviderSession(id: "openclaw:\(raw)", title: "OpenClaw · \(agent)", path: url.path, client: "OpenClaw")
         var usage = Usage()
-        try ProviderFiles.lines(url) { entry, line in
+        try ProviderFiles.lines(url, markers: transcriptMarkers) { entry, line in
             if entry["type"].stringValue == "session" {
-                session.workspace = entry["cwd"].stringValue; session.startedAt = ProviderDate.iso(entry["timestamp"].stringValue)
+                session.workspace = entry["cwd"].stringValue; session.startedAt = DateParsing.internet(entry["timestamp"].stringValue)
             } else if let event = try usage.event(entry, session: session.id, ordinal: line) { session.events.append(event) }
         }
         session.lastActivity = session.events.map(\.timestamp).max()
@@ -103,8 +107,10 @@ enum OpenClawSessions: LocalSessionLayout {
         let agent = url.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
         let cutoff = String(RecordCoding.milliseconds(since))
         var sessions: [(raw: String, session: ProviderSession, turn: SessionTurn?)] = []
+        // A session's label is the name the user gave it and wins, as in OpenClaw; the display name holds the title
+        // OpenClaw generated or the channel's name.
         try db.rows("""
-            SELECT w.session_id, COALESCE(w.display_name, n.display_name, n.label), w.created_at,
+            SELECT w.session_id, COALESCE(NULLIF(n.label, ''), NULLIF(w.display_name, ''), NULLIF(n.display_name, '')), w.created_at,
                    MAX(w.updated_at, COALESCE(w.transcript_updated_at, 0), COALESCE(w.ended_at, 0)), w.started_at, w.ended_at, w.status,
                    n.session_key, COALESCE(w.spawned_by, n.spawned_by), json_extract(n.entry_json, '$.lifecycleRunId'), json_extract(n.entry_json, '$.lastRunId'),
                    (SELECT CASE WHEN json_extract(e.event_json, '$.type') = 'session' THEN json_extract(e.event_json, '$.cwd') END
@@ -114,7 +120,7 @@ enum OpenClawSessions: LocalSessionLayout {
             """, strings: [cutoff]) { row in
             guard let raw = ReadOnlySQLite.text(row, 0), let observed = milliseconds(row, 3) else { throw ProviderFailure.format }
             let id = "openclaw:\(raw)"
-            let session = ProviderSession(id: id, title: ReadOnlySQLite.text(row, 1) ?? "OpenClaw · \(agent)", workspace: ReadOnlySQLite.text(row, 11),
+            let session = ProviderSession(id: id, title: SessionTitle.named(ReadOnlySQLite.text(row, 1)) ?? "OpenClaw · \(agent)", workspace: ReadOnlySQLite.text(row, 11),
                 path: url.path, client: "OpenClaw", startedAt: milliseconds(row, 2).map(RecordCoding.date), lastActivity: RecordCoding.date(observed))
             // Gateway lifecycle status belongs to the session's current window; sub-agents never finish their parent's turn.
             var turn: SessionTurn?

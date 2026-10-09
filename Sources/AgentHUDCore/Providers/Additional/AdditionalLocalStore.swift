@@ -16,6 +16,8 @@ actor AdditionalLocalStore {
         } ?? [])
     }
 
+    func fileChanges(_ paths: Set<String>?) { files.noteChanges(paths) }
+
     func index(since: Date) -> ProviderSessions {
         let pass = files.index(since: since)
         var failed = !pass.notices.isEmpty
@@ -37,34 +39,5 @@ actor AdditionalLocalStore {
         let notices = ([failed ? ProviderFailure.local.message : nil, mergeNotice] + pass.files.map(\.parsed.notice)).compactMap { $0 }
         return ProviderSessions(sessions: byID.keys.sorted().compactMap { byID[$0] }, notice: notices.isEmpty ? nil : Array(Set(notices)).sorted().joined(separator: " · "),
             indexing: pass.indexing, revision: pass.revision, files: pass.listedFiles { $0.sessions.map(\.id) })
-    }
-}
-
-enum ProviderFiles {
-    static func json(_ url: URL) throws -> ProviderJSON {
-        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size <= 16 * 1024 * 1024 else { throw ProviderFailure.limit }
-        return try ProviderJSON.read(Data(contentsOf: url))
-    }
-    static func lines(_ url: URL, consume: (ProviderJSON, Int) throws -> Void) throws {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        var carry = Data(), read = 0, ordinal = 0
-        let deadline = Date().addingTimeInterval(3)
-        while let chunk = try handle.read(upToCount: 256 * 1024), !chunk.isEmpty {
-            try Task.checkCancellation()
-            read += chunk.count
-            guard read <= 128 * 1024 * 1024, Date() <= deadline else { throw ProviderFailure.limit }
-            carry.append(chunk)
-            while let newline = carry.firstIndex(of: 10) {
-                let line = carry[..<newline]
-                ordinal += 1
-                if !line.isEmpty { try consume(ProviderJSON.read(Data(line)), ordinal) }
-                carry.removeSubrange(...newline)
-            }
-            guard carry.count <= 16 * 1024 * 1024 else { throw ProviderFailure.limit }
-        }
-        // Accept a complete last JSON value without a newline; retry a torn tail on the next changed-file scan.
-        if !carry.isEmpty, let value = try? ProviderJSON.read(carry) { try consume(value, ordinal + 1) }
     }
 }

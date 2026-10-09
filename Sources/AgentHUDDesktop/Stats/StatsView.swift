@@ -9,8 +9,19 @@ struct StatsView: View {
     var onIdealHeightChange: ((CGFloat) -> Void)?
     @Environment(\.colorScheme) private var scheme
     @State private var sessionSource: SessionSource?
-    /// The Sessions page lists only the sessions active in the last day, without days.
-    @State private var activeOnly = false
+    @State private var sessionProject: SessionProject?
+    @State private var sessionSearch: String
+    /// How the Sessions page lists its sessions: under their days, or those active in the last day without days.
+    @State private var arrangement = SessionArrangement.day
+
+    init(store: UsageStore, scrollable: Bool = true, onIdealHeightChange: ((CGFloat) -> Void)? = nil,
+         project: SessionProject? = nil, search: String = "") {
+        self.store = store
+        self.scrollable = scrollable
+        self.onIdealHeightChange = onIdealHeightChange
+        _sessionProject = State(initialValue: project)
+        _sessionSearch = State(initialValue: search)
+    }
 
     var body: some View {
         let theme = Theme.forScheme(scheme)
@@ -23,7 +34,7 @@ struct StatsView: View {
                 ScrollViewReader { proxy in
                     ScrollView { content(theme) }
                         .onChange(of: store.selectedQuotaId, initial: true) { _, id in
-                            guard let id, let vendor = quotaVendor(id) else { return }
+                            guard let id, let vendor = store.tokenCardVendors(for: id).first else { return }
                             withAnimation { proxy.scrollTo(AgentCards.anchor(vendor), anchor: .center) }
                             // The tile is pointed out for a moment; it keeps showing the window afterwards.
                             Task {
@@ -52,10 +63,6 @@ struct StatsView: View {
 
     private static let top = "stats-top"
 
-    private func quotaVendor(_ id: String) -> String? {
-        store.rowGroups.first { $0.rows.contains { $0.id == id } }?.vendor
-    }
-
     private func content(_ theme: Theme) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Color.clear.frame(height: 0).id(Self.top)
@@ -70,8 +77,10 @@ struct StatsView: View {
             case .sessions:
                 if let session = store.focusedSession {
                     SessionDetailView(session: session, store: store, theme: theme)
+                        .id(session.id)
                 } else {
-                    SessionList(store: store, theme: theme, source: sessionSource, activeOnly: activeOnly)
+                    SessionList(store: store, theme: theme, source: sessionSource, activeOnly: arrangement == .active,
+                                project: sessionProject, search: sessionSearch)
                 }
             }
         }
@@ -103,6 +112,9 @@ struct StatsView: View {
             .frame(maxWidth: .infinity)
             .accessibilityIdentifier("stats-tab")
             controls(theme).frame(height: 28)
+            if store.statsTab == .sessions && store.focusedSession == nil {
+                sessionFilters(theme)
+            }
         }
         .padding(EdgeInsets(top: 4, leading: 22, bottom: 10, trailing: 22))
         .background(theme.windowBackground)
@@ -128,23 +140,32 @@ struct StatsView: View {
                     theme: theme
                 )
             case .sessions where store.focusedSession != nil:
+                let parent = store.focusedSessionParent
                 Button {
-                    store.focusedSessionID = nil
+                    store.focusedSessionID = parent?.id
                 } label: {
-                    Label(L10n.text("全部会话", "All sessions"), systemImage: "chevron.left")
+                    Label(parent.map { $0.agentName ?? $0.task } ?? L10n.text("全部会话", "All sessions"), systemImage: "chevron.left")
+                        .lineLimit(1)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .font(.ui(12, .semibold))
                 .keyboardShortcut("[", modifiers: .command)
-                .help(L10n.text("回到会话列表", "Back to the session list"))
+                .help(parent == nil ? L10n.text("回到会话列表", "Back to the session list") : L10n.text("回到上级 agent", "Back to the parent agent"))
+                .accessibilityIdentifier("session-list-back")
                 Spacer(minLength: 12)
             case .sessions:
-                Toggle(L10n.text("只看活跃", "Active only"), isOn: $activeOnly.animation(.easeOut(duration: 0.15)))
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .font(.ui(12))
-                    .help(L10n.text("只列近 24 小时有活动的会话，不按日期分组", "Only the sessions active in the last 24 hours, without days"))
-                    .accessibilityIdentifier("sessions-active-only")
+                Picker(L10n.text("排列", "Arrange"), selection: $arrangement.animation(.easeOut(duration: 0.15))) {
+                    Text(L10n.text("按日", "Day")).tag(SessionArrangement.day)
+                    Text(L10n.text("活跃", "Active")).tag(SessionArrangement.active)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.small)
+                .fixedSize()
+                .help(L10n.text("按日期列出近 7 天的会话，或只列近 24 小时有活动的会话、不分日期",
+                                "The last seven days' sessions under their days, or only those active in the last 24 hours, without days"))
+                .accessibilityIdentifier("sessions-arrangement")
                 Spacer(minLength: 12)
                 sessionCount(theme)
                 SelectionMenu(
@@ -167,16 +188,55 @@ struct StatsView: View {
         }
     }
 
+    /// Local list filters leave the token charts' range and dimensions alone and survive opening a session's page.
+    private func sessionFilters(_ theme: Theme) -> some View {
+        HStack(spacing: 12) {
+            SelectionMenu(
+                title: L10n.text("项目路径", "Project path"),
+                options: [SegmentOption(value: Optional<SessionProject>.none, label: L10n.text("全部项目", "All projects"))]
+                    + sessionProjects.map { SegmentOption(value: Optional($0), label: $0.label) },
+                selection: $sessionProject,
+                theme: theme,
+                width: 260
+            )
+            .help(sessionProject?.label ?? L10n.text("按项目筛选，同一仓库的工作树归为一个项目", "Filter by project, including the repository's worktrees"))
+            .accessibilityIdentifier("session-project-filter")
+            SessionSearchField(text: $sessionSearch)
+                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("session-search")
+        }
+        .frame(height: 24)
+    }
+
+    private var sessionProjects: [SessionProject] {
+        var projects = Set(store.statsSessions.map(SessionProject.init))
+        if let sessionProject { projects.insert(sessionProject) }
+        return projects.sorted {
+            if $0 == .unassigned { return false }
+            if $1 == .unassigned { return true }
+            return $0.label.localizedStandardCompare($1.label) == .orderedAscending
+        }
+    }
+
     private func sessionCount(_ theme: Theme) -> some View {
-        let sessions = store.listedSessions(source: sessionSource, activeOnly: activeOnly)
-        let running = sessions.filter(store.isSessionLive).count
+        let activeOnly = arrangement == .active
+        let counts = Self.sessionCounts(store, source: sessionSource, activeOnly: activeOnly,
+                                        project: sessionProject, search: sessionSearch)
+        let listed = counts.listed, running = counts.running
         return HStack(spacing: 6) {
             Circle().fill(running > 0 ? theme.status(.ok) : theme.tertiary).frame(width: 6, height: 6)
-            Text(activeOnly ? L10n.text("近 24 小时 \(sessions.count) 个 · \(running) 个运行中", "\(sessions.count) in 24 hours · \(running) running")
-                            : L10n.text("近 7 天 \(sessions.count) 个 · \(running) 个运行中", "\(sessions.count) in 7 days · \(running) running"))
+            Text(activeOnly ? L10n.text("近 24 小时 \(listed) 个 · \(running) 个运行中", "\(listed) in 24 hours · \(running) running")
+                            : L10n.text("近 7 天 \(listed) 个 · \(running) 个运行中", "\(listed) in 7 days · \(running) running"))
         }
         .font(.ui(11))
         .foregroundStyle(theme.secondary)
+    }
+
+    /// How many sessions the list shows, and how many of them are running.
+    static func sessionCounts(_ store: UsageStore, source: SessionSource?, activeOnly: Bool,
+                              project: SessionProject? = nil, search: String = "") -> (listed: Int, running: Int) {
+        let sessions = store.listedSessions(source: source, activeOnly: activeOnly, project: project, search: search), view = store.view
+        return (sessions.count, sessions.filter { view.phase(of: $0).isInFlight }.count)
     }
 
     /// Which token kinds the charts count: what calls added, everything, or any kinds picked one by one.
@@ -204,6 +264,44 @@ struct StatsView: View {
         .accessibilityLabel(L10n.text("统计的 Token 种类", "Token kinds counted"))
     }
 
+}
+
+/// The same native search control as other Mac windows, with its clear button and immediate filtering.
+private struct SessionSearchField: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField(frame: .zero)
+        field.controlSize = .small
+        field.font = .systemFont(ofSize: 11)
+        field.placeholderString = L10n.text("搜索会话或路径", "Search sessions or paths")
+        field.setAccessibilityLabel(L10n.text("搜索会话", "Search sessions"))
+        field.sendsSearchStringImmediately = true
+        field.target = context.coordinator
+        field.action = #selector(Coordinator.search(_:))
+        return field
+    }
+
+    func updateNSView(_ field: NSSearchField, context: Context) {
+        context.coordinator.parent = self
+        if field.stringValue != text { field.stringValue = text }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSearchField, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 240, height: 22)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        var parent: SessionSearchField
+        init(_ parent: SessionSearchField) { self.parent = parent }
+
+        @objc func search(_ field: NSSearchField) {
+            parent.text = field.stringValue
+        }
+    }
 }
 
 private struct StatsIdealHeightKey: PreferenceKey {
@@ -260,9 +358,14 @@ final class StatsWindowController: HostedWindowController {
         fitHeightToContent()
     }
 
+    func windowDidDeminiaturize(_ notification: Notification) {
+        fitHeightToContent()
+    }
+
     /// Keep the top edge stable and let the scroll view handle content taller than the screen.
     private func fitHeightToContent() {
         guard idealContentHeight > 0, let window,
+              window.isVisible, !window.isMiniaturized,
               !window.inLiveResize, !window.styleMask.contains(.fullScreen),
               let screen = window.screen ?? NSScreen.main else { return }
         let available = screen.visibleFrame.insetBy(dx: 0, dy: 12)
@@ -273,5 +376,15 @@ final class StatsWindowController: HostedWindowController {
         frame.size.height = height
         guard abs(frame.height - window.frame.height) > 1 || abs(frame.minY - window.frame.minY) > 1 else { return }
         window.setFrame(frame, display: true)
+    }
+}
+
+private extension StatsTab {
+    /// The page's name in the window's picker.
+    var label: String {
+        switch self {
+        case .tokens: L10n.text("Token", "Tokens")
+        case .sessions: L10n.text("会话", "Sessions")
+        }
     }
 }

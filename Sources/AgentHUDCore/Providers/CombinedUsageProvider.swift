@@ -26,6 +26,7 @@ public struct CombinedUsageProvider: UsageProvider {
         /// Each session's breakdown with the counts it was read at, valid while the ledger keeps the writes it was read from.
         struct Breakdown: Sendable {
             let counts: [Int]
+            let request: SessionUsageRequest
             let usage: SessionUsage?
         }
         private var breakdowns: [String: Breakdown] = [:]
@@ -47,14 +48,18 @@ public struct CombinedUsageProvider: UsageProvider {
         self.ledger = ledger
     }
 
-    public static func standard(ledger: UsageLedger = .open()) -> CombinedUsageProvider {
-        removeLegacyCaches(in: AppSupport.directory)
+    /// - settings: the store the app collects with; GitHub Copilot's quota is read only while it holds the user's consent,
+    ///   asked each time a reading is due.
+    /// - persistent: false leaves the data directory as it is, for a read-only probe: no earlier version's file is
+    ///   removed or imported and no account identity is remembered; pass a ledger in memory as well.
+    public static func standard(settings: SettingsStore, ledger: UsageLedger = .open(), persistent: Bool = true) -> CombinedUsageProvider {
+        if persistent { removeLegacyCaches(in: AppSupport.directory) }
         return CombinedUsageProvider([
-            Source("Claude", ClaudeCodeProvider.standard(ledger: ledger)),
-            Source("Codex", CodexUsageProvider.standard(ledger: ledger)),
+            Source("Claude", ClaudeCodeProvider.standard(ledger: ledger, persistent: persistent)),
+            Source("Codex", CodexUsageProvider.standard(ledger: ledger, persistent: persistent)),
             Source("DeepSeek", DeepSeekUsageProvider.standard(ledger: ledger)),
-        ] + AdditionalSource.allCases.map { Source($0.vendor, AdditionalUsageProvider.standard($0, ledger: ledger)) }
-          + [Source("Open agents", OpenAgentUsageProvider.standard(ledger: ledger))], ledger: ledger)
+        ] + AdditionalSource.allCases.map { Source($0.vendor, AdditionalUsageProvider.standard($0, settings: settings, ledger: ledger, persistHistory: persistent)) }
+          + [Source("Open agents", OpenAgentUsageProvider.standard(ledger: ledger, persistHistory: persistent))], ledger: ledger)
     }
 
     public func refreshAccountUsage(historyHours: Int) async {
@@ -107,10 +112,20 @@ public struct CombinedUsageProvider: UsageProvider {
         }
         await ledger.commitPass()
         let reports = results.compactMap { $0.1 }
-        var notices: [String: String] = [:]
+        var notices: [String: String] = [:], quotaNotices: [String: String] = [:], issues: [String: ReadingIssue] = [:]
         for (index, report, error) in results {
-            if let report { notices.merge(report.sourceNotices, uniquingKeysWith: { _, new in new }) }
-            if let message = error ?? (report?.sourceNotices.isEmpty == true ? report?.notice : nil) { notices[vendors[index].vendor] = message }
+            if let report {
+                notices.merge(report.sourceNotices, uniquingKeysWith: { _, new in new })
+                quotaNotices.merge(report.quotaNotices ?? report.sourceNotices, uniquingKeysWith: { _, new in new })
+                issues.merge(report.typedReadingIssues, uniquingKeysWith: { _, new in new })
+            }
+            // An unclassified notice is a failed source. Explicitly classified account failures keep their scope.
+            if let message = error ?? (report?.sourceNotices.isEmpty == true && report?.readingIssues == nil
+                && report?.quotaNotices == nil ? report?.notice : nil) {
+                notices[vendors[index].vendor] = message
+                quotaNotices[vendors[index].vendor] = message
+                issues[vendors[index].vendor] = .readFailed(message)
+            }
         }
         guard !reports.isEmpty else { throw UsageProviderError(notices.keys.sorted().map { "\($0): \(notices[$0]!)" }.joined(separator: " · ")) }
         let now = reports.map(\.generatedAt).max() ?? Date()
@@ -122,7 +137,7 @@ public struct CombinedUsageProvider: UsageProvider {
         let usage = ((try? await ledger.buckets(since: since)) ?? []) + reported
         var periods = (try? await ledger.periods(endingAt: now)) ?? UsagePeriods()
         periods.add(reported, endingAt: now)
-        let sessions = reports.flatMap(\.sessions)
+        let sessions = GrokBotUsage.merge(reports.flatMap(\.sessions))
         let progress = reports.compactMap(\.indexing)
         let sessionUsage = await breakdowns(of: sessions)
         return UsageReport(generatedAt: now, snapshots: Dictionary(grouping: reports.flatMap(\.snapshots), by: \.agentId).values.compactMap { $0.max { $0.updatedAt < $1.updatedAt } }.sorted { $0.agentId < $1.agentId },
@@ -136,6 +151,7 @@ public struct CombinedUsageProvider: UsageProvider {
                            indexing: progress.isEmpty ? nil : IndexProgress(done: progress.reduce(0) { $0 + $1.done }, total: progress.reduce(0) { $0 + $1.total }),
                            insightsByAgent: reports.reduce(into: [:]) { $0.merge($1.insightsByAgent, uniquingKeysWith: { _, new in new }) },
                            subscriptions: reports.reduce(into: [:]) { $0.merge($1.subscriptions, uniquingKeysWith: { _, new in new }) }, sourceNotices: notices,
+                           quotaNotices: quotaNotices, readingIssues: issues,
                            consumerIdsByQuota: reports.reduce(into: [:]) { $0.merge($1.consumerIdsByQuota, uniquingKeysWith: { $0.union($1) }) },
                            billing: Self.mergeBilling(reports.flatMap(\.billing)), codexResetCredits: reports.first { $0.codexResetCredits != nil }?.codexResetCredits,
                            codexResetCreditsObservedAt: reports.first { $0.codexResetCredits != nil }?.codexResetCreditsObservedAt,
@@ -154,13 +170,14 @@ public struct CombinedUsageProvider: UsageProvider {
     /// Where each session's tokens went. A session is read again when its counts move or when the ledger has written any
     /// log it is made of since its breakdown was read: sub-agents spend without the session's own log changing, and a
     /// source can record a session's events a pass or more after first reporting it.
-    private func breakdowns(of sessions: [LiveSession]) async -> [String: SessionUsage] {
+    private func breakdowns(of roots: [LiveSession]) async -> [String: SessionUsage] {
+        let sessions = roots.flatMap { [$0] + $0.descendantSessions }
         let (known, mark) = await results.breakdowns(generation: await ledger.generation)
         let changed = await ledger.changedKeys(after: mark), now = await ledger.writeMark
         var kept: [String: Results.Breakdown] = [:], requests: [SessionUsageRequest] = []
         for session in sessions {
             let counts = [session.tokensIn, session.tokensOut, session.cacheReadTokens], request = SessionUsageRequest(session)
-            if let breakdown = known[session.id], breakdown.counts == counts, !request.touches(changed) {
+            if let breakdown = known[session.id], breakdown.counts == counts, breakdown.request == request, !request.touches(changed) {
                 kept[session.id] = breakdown
             } else {
                 requests.append(request)
@@ -168,7 +185,7 @@ public struct CombinedUsageProvider: UsageProvider {
         }
         if !requests.isEmpty, let read = try? await ledger.sessionUsage(requests) {
             let counts = Dictionary(sessions.map { ($0.id, [$0.tokensIn, $0.tokensOut, $0.cacheReadTokens]) }, uniquingKeysWith: { first, _ in first })
-            for request in requests { kept[request.sessionID] = .init(counts: counts[request.sessionID] ?? [], usage: read[request.sessionID]) }
+            for request in requests { kept[request.sessionID] = .init(counts: counts[request.sessionID] ?? [], request: request, usage: read[request.sessionID]) }
             await results.storeBreakdowns(kept, mark: now)
         } else {
             // Nothing could be read: keep what was known, and the mark it was read at, so the next pass reads it again.
@@ -208,7 +225,7 @@ public struct CombinedUsageProvider: UsageProvider {
                 .first { !$0.costs.isEmpty || !$0.sessionCosts.isEmpty } ?? latest
             return APIBilling(vendor: latest.billingPool?.provider ?? latest.vendor, balances: latest.balances, isAvailable: latest.isAvailable,
                 updatedAt: latest.updatedAt, costs: costs.costs, sessionCosts: costs.sessionCosts,
-                notice: latest.notice, billingPool: latest.billingPool)
+                notice: latest.notice, readingIssue: latest.readingIssue, billingPool: latest.billingPool)
         }.sorted { $0.id < $1.id }
     }
 

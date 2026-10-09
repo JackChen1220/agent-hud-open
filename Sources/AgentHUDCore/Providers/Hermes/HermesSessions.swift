@@ -7,7 +7,7 @@ enum HermesSessions: LocalSessionLayout {
     static let installPaths = [".hermes/state.db"]
 
     static func roots(home: URL, environment: [String: String]) -> [URL] {
-        guard let value = environment["HERMES_HOME"]?.trimmingCharacters(in: .whitespaces), !value.isEmpty else { return [home.appendingPathComponent(".hermes")] }
+        guard let value = ClientHome.variable("HERMES_HOME", in: environment) else { return [home.appendingPathComponent(".hermes")] }
         return [URL(fileURLWithPath: value)]
     }
 

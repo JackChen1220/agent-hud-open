@@ -11,31 +11,38 @@ public struct ClaudeUsageWindow: Hashable, Sendable {
         self.resetsAt = resetsAt
     }
 
-    public var remainingPct: Double { max(0, min(100, 100 - utilizationPct)) }
+    public var remainingPct: Double { QuotaMath.remaining(usedPercent: utilizationPct) }
 }
 
-/// One quota window as a row: "当前会话 · 5h", "本周 · 全部模型", "本周 · Fable". Each has its own reset cadence.
+/// One quota window as a row: Current session, Weekly limit · All models, Weekly limit · Fable. Each has its own reset
+/// cadence.
 public struct ClaudeQuotaWindowRow: Hashable, Sendable, Identifiable {
     public let id: String
     public let label: String
     public let window: ClaudeUsageWindow
     public let duration: TimeInterval
     public let account: ProviderAccount?
+    /// False for a model family's weekly window; the session and the weekly window cover every model.
+    public let allModels: Bool
 
-    public init(id: String, label: String, window: ClaudeUsageWindow, duration: TimeInterval, account: ProviderAccount? = nil) {
+    public init(id: String, label: String, window: ClaudeUsageWindow, duration: TimeInterval, account: ProviderAccount? = nil,
+                allModels: Bool = true) {
         self.id = id
         self.label = label
         self.window = window
         self.duration = duration
         self.account = account
+        self.allModels = allModels
     }
 
     public var descriptor: AgentDescriptor {
-        AgentDescriptor(id: id, vendor: "Claude", model: label, source: L10n.sourceClaudeCode, enabled: true, account: account)
+        AgentDescriptor(id: id, vendor: "Claude", model: label, source: L10n.sourceClaudeCode, enabled: true, account: account,
+                        allModels: allModels)
     }
 
     func scoped(to account: ProviderAccount) -> ClaudeQuotaWindowRow {
-        ClaudeQuotaWindowRow(id: account.windowID(id), label: label, window: window, duration: duration, account: account)
+        ClaudeQuotaWindowRow(id: account.windowID(id), label: label, window: window, duration: duration, account: account,
+                             allModels: allModels)
     }
 }
 
@@ -65,7 +72,8 @@ public struct ClaudeUsage: Hashable, Sendable {
         for family in modelWeekly.keys.sorted() {
             guard let window = modelWeekly[family] else { continue }
             let name = family.prefix(1).uppercased() + family.dropFirst()
-            rows.append(ClaudeQuotaWindowRow(id: "claude-weekly-\(family)", label: L10n.windowWeeklyPrefix + name, window: window, duration: 7 * 86400))
+            rows.append(ClaudeQuotaWindowRow(id: "claude-weekly-\(family)", label: L10n.windowWeeklyPrefix + name, window: window,
+                                             duration: 7 * 86400, allModels: false))
         }
         return rows
     }

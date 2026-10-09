@@ -28,31 +28,6 @@ public enum ClaudeDataError: Error, Hashable, Sendable, LocalizedError {
     }
 }
 
-/// Finds the Claude Code engine binary. GUI apps get a minimal PATH, so well-known install locations are checked
-/// directly; the desktop app's Code tab installs the same engine under `~/.local/share/claude/versions`.
-public enum ClaudeEngineLocator {
-    public static func candidates(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [URL] {
-        var list = [
-            home.appendingPathComponent(".local/bin/claude"),
-            home.appendingPathComponent(".claude/local/claude"),
-            URL(fileURLWithPath: "/opt/homebrew/bin/claude"),
-            URL(fileURLWithPath: "/usr/local/bin/claude"),
-        ]
-        let versions = home.appendingPathComponent(".local/share/claude/versions", isDirectory: true)
-        if let names = try? FileManager.default.contentsOfDirectory(atPath: versions.path) {
-            let sorted = names.filter { !$0.hasPrefix(".") }.sorted { lhs, rhs in
-                lhs.compare(rhs, options: .numeric) == .orderedDescending
-            }
-            list += sorted.map { versions.appendingPathComponent($0) }
-        }
-        return list
-    }
-
-    public static func find(home: URL = FileManager.default.homeDirectoryForCurrentUser, fileManager: FileManager = .default) -> URL? {
-        candidates(home: home).first { fileManager.isExecutableFile(atPath: $0.path) }
-    }
-}
-
 /// Payload of the engine's `get_usage` control response.
 public struct ClaudeEngineUsage: Hashable, Sendable {
     public let usage: ClaudeUsage
@@ -106,7 +81,9 @@ public struct ClaudeEngineUsageClient: Sendable {
         AppSupport.directory.appendingPathComponent("engine", isDirectory: true)
     }
 
-    public static let request = #"{"type":"control_request","request_id":"agent-hud-usage","request":{"subtype":"get_usage"}}"#
+    /// `skip_behaviors` spares the engine its scan of the week's transcripts for a section that is never read; engines
+    /// that predate the flag ignore it.
+    public static let request = #"{"type":"control_request","request_id":"agent-hud-usage","request":{"subtype":"get_usage","skip_behaviors":true}}"#
 
     private func environment() -> [String: String] {
         var environment = ProcessInfo.processInfo.environment

@@ -32,7 +32,7 @@ extension AdditionalSource {
         case .cursor: nil
         case .kiro: KiroSessions.self
         case .antigravity: AntigravitySessions.self
-        case .grok: GrokSessions.self
+        case .grok: GrokLocalSessions.self
         case .copilot: CopilotSessions.self
         case .openclaw: OpenClawSessions.self
         case .hermes: HermesSessions.self

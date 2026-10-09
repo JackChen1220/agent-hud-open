@@ -18,9 +18,9 @@ actor OpenAgentLocalStore {
         func pi(_ data: Data, _ url: URL) throws -> [OpenAgentSession] {
             url.pathExtension == "json" ? [try PiSessionObserver.read(data).session] : try OpenAgentParser.pi(data, path: url.path)
         }
-        func listing(_ source: OpenAgentSource, _ roots: [URL], accepts: @escaping (URL) -> Bool,
+        func listing(_ source: OpenAgentSource, _ roots: [URL], accepts: @escaping (URL) -> Bool, related: @escaping (URL) -> [URL] = { _ in [] },
                      parse: @escaping (Data, URL) throws -> [OpenAgentSession]) -> WholeFileStore<[OpenAgentSession]>.Listing {
-            .init(name: source.name, files: LogFiles(roots: roots, watchesChanges: false, limit: 20000, accepts: accepts), parse: { url, _ in
+            .init(name: source.name, files: LogFiles(roots: roots, watchesChanges: false, limit: 20000, accepts: accepts), related: related, parse: { url, _ in
                 let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
                 guard size <= 64 * 1024 * 1024 else { throw ProviderFailure.limit }
                 return try parse(Data(contentsOf: url), url)
@@ -35,7 +35,13 @@ actor OpenAgentLocalStore {
                 guard let id = value["id"].stringValue, let sid = value["sessionID"].stringValue else { throw ProviderFailure.format }
                 return try OpenAgentParser.openCodeMessage(value, id: id, sessionID: sid, path: url.path).map { [$0] } ?? []
             },
-            listing(.kimi, paths.roots(for: .kimi), accepts: { $0.lastPathComponent == "wire.jsonl" }) { data, url in
+            // Completed turns of the OpenCode plugin.
+            listing(.opencode, [paths.openCodeTurns], accepts: { $0.pathExtension == "json" }) { data, _ in
+                [try OpenCodeSessionObserver.read(data).session]
+            },
+            // The session's title lives in `state.json`, which a rename changes without touching the wire log.
+            listing(.kimi, paths.roots(for: .kimi), accepts: { $0.lastPathComponent == "wire.jsonl" },
+                    related: { [OpenAgentParser.kimiSession($0).folder.appendingPathComponent("state.json")] }) { data, url in
                 try OpenAgentParser.kimi(data, path: url.path)
             },
             listing(.pi, paths.roots(for: .pi), accepts: { $0.pathExtension == "jsonl" }, parse: pi),
@@ -43,6 +49,8 @@ actor OpenAgentLocalStore {
             listing(.pi, [paths.piTurns], accepts: { ["jsonl", "json"].contains($0.pathExtension) }, parse: pi),
         ])
     }
+
+    func fileChanges(_ paths: Set<String>?) { files.noteChanges(paths) }
 
     func index(since: Date) -> Result {
         let pass = files.index(since: since)
@@ -63,10 +71,18 @@ actor OpenAgentLocalStore {
                     }
                 }
                 if var prior = grouped[item.id] {
-                    if (item.end ?? .distantPast) > (prior.end ?? .distantPast) {
-                        prior.title = item.title; prior.workspace = item.workspace ?? prior.workspace
+                    let newer = (item.end ?? .distantPast) > (prior.end ?? .distantPast)
+                    // The observer's copy settles after the log's last reply but may hold an older name.
+                    if item.titleSource == prior.titleSource ? newer : item.titleSource > prior.titleSource {
+                        prior.title = item.title; prior.titleSource = item.titleSource
+                    }
+                    if newer {
+                        prior.workspace = item.workspace ?? prior.workspace
                         prior.currentModel = item.currentModel ?? prior.currentModel
                         if !item.path.isEmpty { prior.path = item.path }
+                    }
+                    if let navigation = item.navigation, navigation.observedAt > (prior.navigation?.observedAt ?? .distantPast) {
+                        prior.navigation = navigation
                     }
                     prior.events = UsageAggregation.usageUnion([prior.events, item.events])
                     prior.models.merge(item.models, uniquingKeysWith: { old, _ in old })

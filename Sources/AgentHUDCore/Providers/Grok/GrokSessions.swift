@@ -6,7 +6,7 @@ enum GrokSessions: LocalSessionLayout {
     static let installPaths = [".grok"]
 
     static func directory(home: URL, environment: [String: String]) -> URL {
-        environment["GROK_HOME"].map { URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".grok")
+        ClientHome.variable("GROK_HOME", in: environment).map { URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".grok")
     }
 
     static func roots(home: URL, environment: [String: String]) -> [URL] {
@@ -32,6 +32,7 @@ enum GrokSessions: LocalSessionLayout {
             guard isInference(item), let previous = updates[item.id] else { return item }
             var item = item
             item.title = previous.title; item.workspace = previous.workspace
+            item.path = previous.path
             item.turns = previous.turns; item.completions = previous.completions
             item.startedAt = previous.startedAt
             item.lastActivity = [item.lastActivity, previous.lastActivity].compactMap { $0 }.max()
@@ -40,8 +41,13 @@ enum GrokSessions: LocalSessionLayout {
     }
 
     static func notice(merging sessions: [ProviderSession]) -> String? {
-        let updates = updateLogs(sessions)
-        guard sessions.contains(where: { isInference($0) && updates[$0.id]?.events.isEmpty == false }) else { return nil }
+        let inferenceStarts = Dictionary(sessions.filter(isInference).compactMap { session in
+            session.events.map(\.timestamp).min().map { (session.id, $0) }
+        }, uniquingKeysWith: min)
+        guard sessions.contains(where: { session in
+            guard session.path?.hasSuffix("/updates.jsonl") == true, let start = inferenceStarts[session.id] else { return false }
+            return session.events.contains { $0.timestamp < start }
+        }) else { return nil }
         return L10n.text("Grok 新旧日志并存：采用新版请求记录，旧历史可能不完整", "Grok log formats overlap: using inference records; older history may be incomplete")
     }
 
@@ -58,7 +64,10 @@ enum GrokSessions: LocalSessionLayout {
         let workspace = directory.deletingLastPathComponent().lastPathComponent.removingPercentEncoding
         let summary = (try? ProviderFiles.json(directory.appendingPathComponent("summary.json"))) ?? .null
         var model = "Unknown"
-        let title = summary["title"].stringValue ?? workspace.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Grok CLI"
+        // Grok keeps a generated title current as the conversation goes on, and a `/rename` pins it.
+        let title = SessionTitle.named(summary["generated_title"].stringValue) ?? SessionTitle.named(summary["title"].stringValue)
+            ?? SessionTitle.named(summary["session_summary"].stringValue)
+            ?? workspace.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "Grok CLI"
         var session = ProviderSession(id: id, title: title, workspace: workspace, path: url.path, client: "Grok CLI")
         var seen = Set<String>(), turnID: String?, turnStart: Date?, incomplete = false, hasContextOnly = false
         try ProviderFiles.lines(url) { json, line in
@@ -76,6 +85,11 @@ enum GrokSessions: LocalSessionLayout {
             if kind == "user_message_chunk", turnID == nil {
                 turnID = meta["promptId"].stringValue ?? eventID
                 turnStart = ProviderDate.milliseconds(meta["turnStartMs"]) ?? date
+            }
+            // Older user updates lack a prompt id; the following agent/tool update supplies the client's real turn id.
+            if let previous = turnID, let observed = meta["promptId"].stringValue, observed != previous {
+                session.turns.removeAll { $0.turnID == previous }
+                turnID = observed
             }
             if let turnID, kind == "user_message_chunk" || kind == "agent_message_chunk" || kind == "agent_thought_chunk" || kind == "tool_call" || kind == "tool_call_update" {
                 session.turns.removeAll { $0.turnID == turnID }
@@ -103,7 +117,7 @@ enum GrokSessions: LocalSessionLayout {
                 startedAtMs: turnStart.map(RecordCoding.milliseconds), observedAtMs: RecordCoding.milliseconds(date)))
             if succeeded {
                 session.completions.append(.init(sessionID: id, vendor: "Grok", turnID: completedID, task: title,
-                    model: model, startedAt: turnStart, completedAt: date))
+                    model: model, startedAt: turnStart, completedAt: date, client: "Grok CLI"))
             }
             turnID = nil; turnStart = nil
         }
@@ -111,11 +125,15 @@ enum GrokSessions: LocalSessionLayout {
             ? L10n.text("部分 Grok 旧会话只有上下文计数，无法还原实际 Token 消耗", "Some older Grok sessions only report context size, not token consumption") : nil)
     }
 
+    /// The messages the inference log is read for, as quoted strings; the rest of the log is not decoded.
+    private static let unifiedMessages = ["AuthManager::new", "model changed", "model catalog: notifying clients", "backend_search: model switch",
+                                          "shell.turn.inference_done"].map { Data("\"\($0)\"".utf8) }
+
     static func unified(_ url: URL) throws -> ProviderSessions {
         var sessions: [String: ProviderSession] = [:], models: [String: String] = [:], seen = Set<String>()
         var generations: [Int: Int] = [:], processModels: [String: String] = [:], processSessions: [String: Set<String>] = [:]
         var pendingModels: [String: (process: String, model: String)] = [:]
-        try ProviderFiles.lines(url) { json, _ in
+        try ProviderFiles.lines(url, markers: unifiedMessages) { json, _ in
             let pid = json["pid"].countValue
             if json["msg"].stringValue == "AuthManager::new", let pid { generations[pid, default: 0] += 1; return }
             let process = pid.map { "\($0):\(generations[$0, default: 0])" }
@@ -139,7 +157,7 @@ enum GrokSessions: LocalSessionLayout {
             case "shell.turn.inference_done": break
             default: return
             }
-            guard let date = ProviderDate.iso(json["ts"].stringValue) ?? ProviderDate.milliseconds(json["ts"]),
+            guard let date = DateParsing.internet(json["ts"].stringValue) ?? ProviderDate.milliseconds(json["ts"]),
                   let input = context["prompt_tokens"].countValue, let output = context["completion_tokens"].countValue else { throw ProviderFailure.format }
             let cache = try context["cached_prompt_tokens"].optionalCounter()
             guard cache <= input else { throw ProviderFailure.format }

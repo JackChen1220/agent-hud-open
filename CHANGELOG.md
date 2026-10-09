@@ -1,63 +1,281 @@
 # Changelog
 
-Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the same number. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
+Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the three-part numeric version `X.Y.Z`. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
-## 0.4.35 — Local build, 2026-09-30
+## Unreleased
 
-- Add Testing, Awaiting merge and Awaiting release to manual branch progress, with distinct colors; existing Awaiting tests notes retain their meaning.
-- Allow branch switching with compatible uncommitted changes, including staged files. Explain when Git refuses an overwrite; protect ignored files and keep worktree-occupancy, conflict and in-progress-operation restrictions.
+## Local fork — 2026-10-09
 
-## 0.4.34 — Local build, 2026-09-29
+- Integrate upstream `f60b0a2` (0.4.39-beta.2), preserving its full commit history and local Mac improvements.
+- Migrate the repository/worktree Hub, manual branch progress, selected-file Git actions and compatible dirty branch switching to the new HUD layout.
+- Preserve the configurable Hub shortcut, pinning, dark Hub appearance and centered logo queue clearance below a physical notch.
+- Retain Kiro account credit pools and CLI completed-turn metadata, with exact reported tokens and separate local metered credits; old caches remain readable.
+- Keep local lifecycle collection independent of slow serial account requests, and preserve incremental oversized Codex line handling alongside upstream compressed-log restart support.
 
-- Read Kiro CLI completed-turn metadata as session snapshots change. Report exact token counters when provided, and keep local metered credits separate from token totals.
-- Show Kiro CLI credits, completed turns and missing-count coverage in the Hub, agent card and session details instead of describing unreported tokens as no usage.
-- Host API: optional `LiveSession.localUsage` and `LocalUsageRecord`; older report caches remain readable.
+## 0.4.39-beta.2 — 2026-10-09
 
-## 0.4.33 — Local build, 2026-09-28
+- Requires Agent HUD for iPhone 1.5 or later for iPhone and Apple Watch viewing. Use the corresponding TestFlight build while 1.5 is awaiting App Store review.
+- The distributed Mac app computes canonical record IDs once before ordering LAN snapshots and replay batches, removing repeated encoding from the sorting hot path.
+- Native Grok Bot quota reading recognises personal SuperGrok accounts whose usage records include both a user principal and a team ID.
+- Codex permission hooks leave automatic and unknown reviewers unanswered, so Codex can continue its own approval flow. The HUD only handles confirmed user review.
+- Known issue: Grok prepaid and on-demand wallet amounts, zero-dollar wallets and the missing-quota placeholder remain outstanding in [issue #20](https://github.com/jazzenchen/agent-hud-open/issues/20).
 
-- Match the borderless Kiro icon’s visible size to outlined icons in the island queue while preserving alignment and spacing.
+## 0.4.39-beta.1 — 2026-10-09
 
-## 0.4.32 — Local build, 2026-09-28
+- Beta compatibility: requires Agent HUD Remote for iPhone 1.5 or later for iPhone and Apple Watch viewing. Update the iPhone app first; use the corresponding TestFlight build while 1.5 is unavailable on the App Store.
+- The distributed Mac app recovers cross-device publication after partial upload failures and serves consistent local-network readings during refreshes, fixing communication problems in earlier LAN Betas.
+- Confirmed Grok CLI/Bot account links use the valid native Bot quota cache, keep its original reading time and retire duplicate account rows. Bot cache changes refresh the reading immediately; expired CLI credentials do not break an unambiguous confirmed identity.
+- Sessions omit Grok Bot subagents known only from billing records, including restored reports from older builds. Their token usage remains counted; native Bot conversations and identified children remain available.
+- Host API: `LiveSession.isBillingOnlyGrokBotSubagent` identifies these internal billing records. `ReportView.sessions` excludes them while the report retains their accounting data.
+- The README shows the HUD animation directly, adds desktop session and iPhone screenshots, and links to Mac downloads, the App Store and source builds.
 
-- Remove the additional dark outline from Kiro in the island logo queue; preserve the supplied purple artwork.
+## 0.4.38 — 2026-10-09
 
-## 0.4.31 — Local build, 2026-09-28
+- Release status: **Beta / Pre-release**. **Critical known issue:** the LAN changes conflict with the communication mechanism in existing Agent HUD Remote iOS versions and may disrupt cross-device communication or sync. Wait for a verified compatibility fix before upgrading.
+- Bot subagent billing conversations use their native identity namespace to show Grok Bot as the execution client, even when absent from the local conversation roster. Their titles include distinct subagent IDs, and their Cursor billing totals count once.
+- Expanded reply reminders have a visible close button. Closing a reply advances the event queue while leaving waiting permissions unanswered.
 
-- Replace the Kiro icon with the user-provided 128 px purple PNG.
+## 0.4.37 — 2026-10-09
 
-## 0.4.30 — Local build, 2026-09-28
+- Release status: **Beta / Pre-release**. **Critical known issue:** the LAN changes conflict with the communication mechanism in existing Agent HUD Remote iOS versions and may disrupt cross-device communication or sync. Wait for a verified compatibility fix before upgrading.
+- Grok Bot sessions show token usage and billing model identifiers from Cursor dashboard conversations with the same native agent ID. Matched sessions retain their Bot title, conversation and navigation, while unmatched conversations stay under Cursor; billing events count once.
+- Host API: `LiveSession.usageKey` optionally references another provider's canonical ledger contribution. `SessionUsageRequest` uses that contribution for the session's own breakdown and calls; execution identity and billing consumer identity remain separate.
+- Grok accounts and quota stay under Grok. Grok CLI and Grok Bot have distinct client entries and artwork; Bot installation is detected independently, with its session reading capability shown explicitly.
+- Grok CLI sessions can return to their verified live iTerm pane, and Grok Bot sessions open their native Agent view. Bot's account-scoped local conversation cache and Antigravity's SQLite conversation text are available to read-only conversation consumers; Bot cache gaps and unavailable live state stay explicit.
+- Grok can use an unexpired personal Bot quota cache when CLI quota is unavailable, keeping the original read time. Account headers show quota failures in yellow and local-data notices in secondary text; overlapping CLI log formats warn only when older usage lies outside the inference history.
+- Host API: `SourceStatus.provider` groups execution clients under their account provider; `supportsLiveStatus` describes the client's reading capability. `AgentSettingsGroup.clients` lists those execution clients, and `SessionSource.agentVendor` selects client-specific status and artwork without changing the account provider.
+- Host API: `SessionCompletion.client` optionally names its execution client, including in serialized records; older records keep their existing provider identity. `agentVendor` supplies its client-specific presentation name.
+- Sessions from one Git repository, including its worktrees, share a project group. Directories outside Git keep their recorded path.
+- Codex session details list their direct sub-agents, each with its own name, task, workspace, status and usage breakdown. Open a child and return to its parent; copied parent history no longer replaces a fork's identity or counts its inherited usage again.
+- The distributed Agent HUD Mac app supports local-network viewing from compatible iPhones, with automatic connection or QR pairing. Shared sessions preserve their project paths and Codex parent-child relationships.
+- Host API: `LiveSession.agentName` and `subagentSessions` represent the child-session tree. `ReportView.session(_:)` resolves descendants, and `parentSession(of:)` finds a direct parent. `SessionProject` groups a repository and its worktrees.
+- ZCode questions can be answered on the HUD. Compatible DeepSeek Harness web hosts expose questions through their local event API; other hosts keep questions in Harness.
+- The hover panel prioritizes waiting and running sessions, shows client marks and keeps a short recently ended list. Session titles without a client destination open their details, and question badges offer inline answers.
+- The HUD shows quota and balances, then Tokens, then local sessions. Tokens always show the latest 24 hours in 96 quarter-hour columns with every token kind, independently of Dashboard filters; account-wide billing receipts no longer displace local sessions or inflate the hidden-running count.
+- Hover glow and shadow preparation runs in the background and reuses matching installed materials. The distributed Mac app also prepares shared readings in the background and combines redundant refreshes, preserving responsive window interactions during synchronization.
+- Host API: `PermissionDecision.answer` carries `[String: PermissionQuestion.Answer]`, separating selected labels from custom text. `PermissionQuestion.id` is optional; `answerKey` uses that identity when present. Hook responses still serialize answers under the original question text.
 
-- Use Kiro’s purple app icon with its original colors throughout the Hub, settings and menus.
+## 0.4.36 — 2026-10-08
 
-## 0.4.29 — Local build, 2026-09-28
+- Completion reminders offer separate actions for returning to the agent and viewing token usage. In Active sessions, the title returns to the agent, the token count opens that session's usage, and the heading opens the session list.
+- Native return targets are captured for Codex Desktop, Claude Desktop Code and Cowork through exact session mapping, and Antigravity's running standalone app. Codex CLI, Claude Code CLI, Pi and OpenCode can return to their existing iTerm2 pane when a terminal destination is available.
+- New replies and permission requests share an event panel, separate from usage, with one card open and the remaining replies and requests available to select. Replies arriving during approval remain available without answering the waiting request.
+- A failed session return keeps the reminder available for retry or token usage. Missing destinations leave usage available, and newer source observations replace stale return targets.
+- Button hit areas include the space between icons and text; token bars stay inside their cards, and the Active sessions heading matches Tokens.
+- Holding Command no longer draws a dashed outline around the HUD; drag outlines appear during repositioning.
+- Host API:
+  - `SessionNavigationTarget` carries native client identities. `LiveSession.navigationTarget` and `SessionCompletion.navigationTarget` are optional, with initializer arguments defaulting to `nil`; they stay in local memory and are excluded from session reports, report caches and remote serialization.
+  - `CodexSessionOrigins` and `ClaudeSessionOrigins` expose local origin records and hook configuration. `SessionObservers.configure(executable:enabled:home:)` manages these hooks with the existing client-hook setting, and `HookEntry.handle(arguments:)` accepts `--session-origin-hook codex|claude`.
 
-- Show the Kiro logo in the Hub, settings and menus, with automatic contrast on light and dark backgrounds.
+## 0.4.35 — 2026-10-07
 
-## 0.4.28 — Local build, 2026-09-28
+- Antigravity quota refreshes request a fresh summary as its native quota popover does, avoiding stale cached readings; older per-model readings do not replace an available summary.
+- Antigravity local token accounting uses the recorded counters, includes cache writes in input and counts thinking tokens only once within output. Usage records match their recorded timestamps through exact message or execution identifiers.
+- False Antigravity local-session warnings from summary databases and failed generations without token usage are fixed. Usage that genuinely lacks a verifiable timestamp remains excluded with a warning.
+- Account-wide reading warnings appear only under current accounts, rather than repeating under retained accounts; client-home and account-specific notices keep their own scope.
+- Antigravity's native permission requests can be answered from the HUD with Allow once or Deny, without installing an execution hook or changing its permission settings. Requests answered in Antigravity disappear automatically; dismissing a request leaves its native prompt unanswered.
+- Codex completion reminders use the current conversation title and show the last paragraph of the final reply when available. The View token usage button opens the session's usage statistics.
+- Host API:
+  - `PermissionHooks.Source.antigravity` identifies approvals supplied by Antigravity's running local service; its `usesHook` is `false`.
+  - `SessionCompletion.message` holds an optional final-reply preview only in memory. Its initializer's `message` argument defaults to `nil`; the preview is excluded from serialization, preserving the existing encoded format.
 
-- Add Kiro account credits using its existing local sign-in: plan, used/total/remaining credits, reset date and separate trial, bonus and add-on pools. No token counts are inferred from credits; expired login prompts the user to open Kiro. Authentication is read-only and requests only target official Kiro management hosts.
+## 0.4.34 — 2026-10-07
 
-## 0.4.27 — Local build, 2026-09-28
+- Long usage panels fit the display height and scroll above a fixed footer, keeping Settings, Stats and host controls visible.
+- Dynamic Dock can be dragged to any position along all four display edges; hidden logos reveal their drag area while Command is held. Display settings can reset its position.
+- Panel height, glow and shadow are prepared during the hover delay without retaining a hidden panel. Hidden glow previews stop rendering, and HUD glow animations share their drawing budget.
+- Opening and closing keep the dock's contact edge fixed and clean up the native window after the geometry animation completes.
+- An optional setting opens the HUD immediately when the pointer reaches the display's top edge directly above it; other hover opening keeps the configured delay.
+- Statistics windows restore their content size correctly after restoring a minimized window.
+- Host API: `Settings.openImmediatelyAtTop` defaults to `false`; existing settings and desktop host entry points remain compatible.
 
-- Read local task lifecycle events independently of serial account requests, so slow quota queries no longer delay completion status. File event delivery uses a shorter batching interval, and filesystem paths such as `/private/var` are mapped back to the watched log roots correctly.
+## 0.4.34-beta.4 — 2026-10-03
 
-## 0.4.26 — Local build, 2026-09-28
+- The distributed Mac application's New Version menu entry uses blue text with the regular menu font.
+- Host API: additional menu items retain their attributed title in the shared menu row, including its foreground color and font. The selected row still uses the system selection text color.
 
-- Add a Pin button next to Hub settings. Pinned panels stay open when the pointer leaves or another window is clicked; unpinning restores hover collapse. Explicit dismissal clears the pin.
+## 0.4.34-beta.3 — 2026-10-03
 
-## 0.4.25 — Local build, 2026-09-27
+- The distributed Mac application announces available updates with a download button beside Stats in the HUD and a New Version entry below Settings in its existing menu. Background checks do not open an update window; either entry opens it when selected.
+- Host API: `DesktopApplication(..., additionalHUDControls:)` accepts a main-actor view factory for controls immediately before the expanded HUD's Stats button. The factory receives a dismissal action for that display's HUD, which a host calls before opening another window. The default adds no controls; service state remains in the embedding application.
 
-- Keep the Hub and its hover cards dark while settings and independent detail windows continue to follow the selected appearance.
+## 0.4.32 — 2026-10-03
 
-## 0.4.24 — Local build, 2026-09-27
+- The distributed Mac application's Subscription page uses clearer account requirements, activation status and license-removal explanations.
+- Agent HUD Open and the Host API are unchanged from 0.4.31.
 
-- Expanded Hub content, quota hover details and the Branches tab now follow light, dark and system appearance settings. The collapsed notch stays black.
+## 0.4.31 — 2026-10-03
 
-## 0.4.23 — Local build, 2026-09-27
+- Turn notifications say New reply and use a blue speech bubble, distinguishing them from quota recovery and warnings.
+- The distributed Mac application's update check is in Settings → Updates; the menu contains Settings and Quit.
+- iPhone and Apple Watch sync still requires Agent HUD for iPhone 1.4 or later.
+- Host API: unchanged.
 
-- Add a configurable shortcut to expand or collapse the Hub and Agent / Branches tabs with larger click targets and immediate panel resizing.
-- Add local repository and worktree status, branch switching, selected-file commits, reviewed pushes and safe local branch deletion. Branch notes support colored progress labels and TEST / UAT ancestry checks.
-- Find the Codex engine in the updated desktop app layout while retaining support for older installations. A missing executable no longer incorrectly asks signed-in users to log in.
+## 0.4.30 — 2026-10-02
+
+- The distributed Agent HUD Mac application requires Agent HUD for iPhone 1.4 or later for iPhone and Apple Watch sync. Update the iPhone app before updating the Mac; iPhone 1.3 cannot read this release's data.
+- The distributed Mac application checks for stable releases and offers to download, verify and install updates. Automatic downloading and installation can be enabled in Settings; desktop betas are excluded.
+- Includes the desktop improvements listed under 0.4.30-beta.1 below.
+- Host API:
+  - `DesktopApplication.additionalMenuItems` lets an embedding application add its own menu items after the desktop settings entry. The standalone open-source application has no updater dependency.
+
+## 0.4.30-beta.1 — 2026-10-02
+
+- This is a Mac desktop beta distribution: the distributed Agent HUD Mac beta disables Agent HUD Remote; keep Agent HUD 0.4.29 on your Mac to sync with the iPhone app version 1.3.
+- Quota windows are named in their vendors' own words, in Chinese as each vendor writes it where it does. Claude's read Current session, Weekly limit · All models and Weekly limit · Fable (当前会话, 每周限制 · 所有模型, 每周限制 · Fable), where they read Session · 5h, Weekly · all models and Weekly · Fable (当前会话 · 5h, 本周 · 全部模型, 本周 · Fable). Codex's read as its own client names them, 5h limit, Weekly limit and Luna Reserve · Weekly limit (5 小时额度, 每周额度, Luna Reserve · 每周额度), where they read 5h, Weekly (本周) and Luna Reserve · Weekly; a window of a day, a month or a year is a Daily, Monthly or Annual limit, one of another length an Nh or Nm limit, and one without a length Usage limit or Secondary usage limit, where it was Primary or Secondary (主额度, 次额度).
+- Cursor's windows read Included usage, Cursor Models, Other Models, Individual spending limit, Pooled usage and On-demand usage (包含用量, Cursor 模型, 其他模型, 个人支出限额, 共享用量, 按需用量), where they read Plan usage, Cursor models, Third-party models, Personal budget, Team pool and Extra usage budget (套餐总额度, Cursor 模型, 第三方模型, 个人预算, 团队共享额度, 额外用量预算). Grok's read Weekly usage limit or Monthly usage limit (每周用量额度, 每月用量额度), Usage limit (用量额度) when the service names no period, and Extra usage (额外用量), where they read Weekly credits, Monthly credits, Subscription credits and Extra usage budget (每周额度, 每月额度, 订阅额度, 额外用量预算). GitHub Copilot's chat and completions windows read Chat messages (聊天消息) and Code completions, where they read Chat (对话) and Completions. Antigravity's earlier per-model windows read Gemini Models and Claude and GPT models, where they read Gemini and Claude + GPT.
+- A Kimi, GLM or OpenCode Go window is named by its period and then its plan, in the vendor's words: 5-hour quota, Weekly quota and Monthly total quota for Kimi (5 小时额度, 周额度, 月总额度), 5-hour credits, Weekly credits, 5-hour limit, Weekly limit and MCP usage (1 month) for GLM (5 小时积分, 每周积分, 每 5 小时限额, 每周限额, MCP 每月用量), and 5-hour limit, Weekly limit and Monthly limit for OpenCode Go (5 小时限制, 每周限制, 每月限制), which reports no plan. They read as the service's units or keys with the pool's label, such as 7d · CN · PLAN · Account 15e866 · Allegretto, 300m or rolling, and Kimi's month and GLM's credits wrote their plan twice. The pool's label, such as CN · PLAN · Account 15e866, now names the account above its windows, where the account read Account 15e866.
+- Every window also has a short name, which the menu uses for its row when it lists a single one, and which a host shows in tight places. It keeps only what tells the window apart from the account's other windows, in the same period words for every vendor: 5h, Daily, Weekly, Monthly and Annual (每日, 每周, 每月, 每年), any other length as its unit; a Claude model family by its name (Fable), a Codex bucket or an Antigravity group by its word and, where it has two windows, its period, with the week as 7d in English (Reserve, Spark 5h, Spark 7d, Gemini 5h, 3rd-party 7d); and a window named by its kind by the vendor's word for it (Included, First-party, Third-party, Spend limit, Pooled, On-demand, Premium, Credits, Chat, Completions, Extra). The menu took the full name's first word, such as Session, Weekly Fable, Luna, Cursor or 300m. Two windows of one account that would read alike keep their full names, except a GLM token limit and credits of one length, which read Tokens 5h and Credits 5h.
+- A quota row in the panel whose full name is too long for its column shows the window's short name, such as Weekly for Claude's Weekly limit · All models and Reserve for Luna Reserve · Weekly limit in English, where a long name was cut short with an ellipsis. A name that fits is shown in full.
+- Window ids do not change, so every window keeps its switch and its place.
+- A Codex session run in the desktop app signed in to a work workspace, whose rollout names its client `codex_work_desktop`, is filed under Codex Desktop with the app's other sessions, in the list, on its page and in the Sessions filter, where it showed that name as written. So are the other names Codex's own code gives its desktop app and CLI: `codex_desktop` under Codex Desktop, and `codex_cli_rs` and `codex-cli` under Codex CLI.
+- A model a Kimi, OpenCode or Pi session ran on is named without the route its calls went through where the name already shows it: Kimi Code's plan model reads Kimi For Coding, as Kimi names it, where it read kimi-code/kimi-for-coding · kimi-code, or kimi-for-coding · kimi-coding through Pi, and so does a Claude Code session that calls it, and another model Kimi Code logs under its route reads without the route, such as real-model for kimi-code/real-model · kimi-code. A model called through another route keeps it beside the name, such as kimi-k2 · moonshotai, and one logged without a route no longer ends in " · ".
+- Host API:
+  - `AgentDescriptor.shortName` gives a window's short name: the one its provider built, which `AgentDescriptor.shortModel` holds and `init` takes as `shortModel:`, else `L10n.shortModelLabel(_:)` of `model`, which now gives Claude's windows theirs; a window without a short name gives its full name. `name` and `L10n.modelLabel(_:)` give the vendors' names. `SettingsStore.mergeDiscovered` refreshes a row's short name with its name.
+  - `WindowNames` holds the naming rules: `Period(seconds:)` reads a window's length as Codex's client does, within 5 %, with its `shortName` and its `afterWord` form (7d for the week in English); `word(_:)` is the word a long service name is known by, `leading(_:)` keeps a name of up to eight characters whole and else its first word, and `distinct(_:)` gives up the short names that would read alike within one account. `VendorCatalog.windowWord(_:vendor:)` and `VendorCatalog.Entry.windowWords` name a service's window in short (`gpt-reserve` → Reserve). `CodexRateLimits.Row.shortLabel` is a Codex window's short name.
+  - `QuotaAlert.otherExhaustedWindows` lists the account's other exhausted windows as `AgentDescriptor`s, which the island names through their descriptors; it listed their models.
+  - A Kimi, GLM or OpenCode Go account's `AccountObservation.label` is its pool's label.
+  - `ModelCatalog.consumerName(of:)` names any consumer from its id alone, as every provider now names its consumers and as a host names an id its report lacks: the model after the client's `<source>-model:` prefix, then " · " and the route after `#` unless the name already shows it, a route that prefixes the model left out of both, a product's model as the product (`kimi-for-coding` → Kimi For Coding) without a route that is one of its own services, and a Claude Code model as its family and version. `UsageStore.consumerName(_:)` falls back to it for an id no row names.
+  - The vendor catalog files the Codex originators `codex_work_desktop` and `codex_desktop` under Desktop, and `codex_cli_rs` and `codex-cli` under CLI.
+  - `AccountBalance.runsOutAt` is when an API balance runs out at the pace it fell over the day before its reading, which `BalanceTrend.runsOutAt(_:at:)` works out from the balance's `BalanceSample` readings: from the first of the day or from its latest rise, a top-up, with nothing for readings spanning less than `BalanceTrend.minimumSpan` (three hours), a balance that did not fall or one at or below zero. The usage ledger keeps each billing account's balance readings per currency for `BalanceTrend.lookback` (a day), written with `LedgerWriter.appendBalances(_:billing:at:)` and read with `UsageLedger.balanceSamples(billing:currency:since:)`; the DeepSeek provider keeps its balance's readings there, through the ledger `DeepSeekUsageProvider` now takes, and fills in the estimate at every reading.
+  - `ModelCatalog.cost(of:regions:)` gives a usage bucket's list price kind by kind as `ModelCatalog.KindCosts`, in the currency of the list that priced it: the China list in yuan for a client `PriceRegions` finds on the China platform, the international list in US dollars otherwise, at the base rates, and DeepSeek's peak rates for a bucket that starts in its peak hours, as the Tokens page prices its buckets. A kind without tokens is absent, and a model without a list price on that platform has none.
+  - `AgentDescriptor.allModels` says whether a quota window is its provider's plan-wide quota. It is false for a window that limits a subset of the plan's models or features: Claude's weekly window of one family and every Codex window outside the `codex` bucket, as `ClaudeQuotaWindowRow.allModels` and `CodexRateLimits.Row.allModels` set it, Cursor's Cursor Models and Other Models pools, each Antigravity group's windows where the account has several groups, GitHub Copilot's chat messages and code completions, and GLM's MCP window. It is true for every other row, such as Cursor's included usage, Copilot's premium requests or AI credits and every Kimi, GLM and OpenCode Go period. A row saved without it reads as true, only a false one is saved with it, and `SettingsStore.mergeDiscovered` refreshes it with a row's name.
+
+## 0.4.29 — 2026-10-01
+
+- Agent HUD Open is unchanged from 0.4.28. This version carries the release of the Agent HUD app built on it.
+
+## 0.4.28 — 2026-09-30
+
+- Agent HUD Open is unchanged from 0.4.27. This version carries the release of the Agent HUD app built on it.
+
+## 0.4.27 — 2026-09-30
+
+- Only one Agent HUD runs at a time. Agent HUD Open and any app built on it share one lock: a launch while another copy runs says where that copy is and quits before it reads or writes anything. Hook commands, snapshots and probes are not affected, and a demo run, which keeps its own settings, starts beside it.
+- The copy that runs points every Agent HUD hook in the clients' settings at itself, whichever copy wrote it, and keeps whatever else you changed in the entry; turning Client hooks off removes every Agent HUD hook. The hooks of another installation are no longer left to it, and installing no longer fails over them. A copy running from a disk image or a translocated path still adds none.
+- A Kimi, GLM or OpenCode Go account whose quota reading fails, or whose identity cannot be confirmed, holds back only its own windows. The vendor's other accounts used to lose their levels, their place in the glow and their alerts with it, and Kimi's and GLM's showed its failure above their own windows in the panel.
+- A window keeps its colour and its place in the glow however long ago it was read, as long as the reading is sound and belongs to the signed-in account. Windows used to go grey 30 minutes after their last reading, which happened to every client nobody was using, since such a client is read again only when a window resets or its work starts. Quota alerts and added usage resets still need a reading under 30 minutes old. A reading dated after the Mac's clock shows no colour, and when every source fails to read, every window goes grey and its account says when it was last read, where the colours of the last report stayed.
+- A window whose reading failed, could not be verified, is dated in the future or is past its reset is greyed and counted nowhere: the menu bar's figure leaves it out, it has no hover hint on the island or in the menu, its row shows no burn rate, projection or token rate, and a reset alert no longer names it as still exhausted. The menu bar used to show the highest share of any signed-in account's window whatever its reading, and the menu gave every row a hint, other accounts' included.
+- Only a failed or unverified reading holds anything back. A notice about a client's logs or hooks no longer keeps Codex's added usage resets from being announced, or keeps a window a Codex read left out. An account's header says Current account only while its readings are sound; when its client's read failed it says when the account was last read, where it said Current account. The menu's tooltip on an account now says what the island shows above it, the reason and then the client's other notices, where the menu gave the account's own failure alone and the island left the client's notices out when the account had one.
+- Grok's extra usage budget keeps its colour, alerts and place in the glow when the service leaves out the subscription's used credits, where the whole vendor went grey. A Cursor plan that reports no percentage, and a Claude Code login without plan limits, are likewise shown as notices rather than failed reads. Antigravity not running and GitHub Copilot without a token still count as failed reads.
+- An API balance follows the rules of a quota window. A balance whose read failed keeps its last amount but loses its colour and its place in the glow, and its card and menu row say why; it used to keep its colour however old it was, and the reason was never shown. A balance at or below zero is red in the menu as well as on its card, where the menu turned red only for an account its service marked unavailable, and a balance in a currency without a warning line, such as euros, is green until it runs out, where it had no colour and no place in the glow until then.
+- A window counts as exhausted with half a point or less left, as its cap count already did: the running-out alert, the Exhausted label and the hint arrive at 0.5% left, where they waited for zero. Kimi, GLM and OpenCode Go read a window's history as every other client does, a week back or from the start of a longer cycle, and count its caps over the last week; they followed the statistics range, so a host that widened it counted up to a month of cap hits, and a window longer than a week lost the start of its cycle.
+- An alert's pulse lights its agent's part of the glow when an API balance has a segment in it; the balance's segment used to shift the pulse off the colours it belonged to.
+- A Pi ChatGPT login that fails no longer keeps the Pi client's last sessions on screen as if Pi's own read had failed, and a Codex login that fails before it was ever read is shown under Codex, where it was filed apart from it.
+- A window that at its pace runs out only after its reset has a hover hint that says what it will have used by then, such as 70% by reset, as its island row does; the hint gave a time to run out that lay past the reset.
+- A quota row's burn rate on the island says what the window's hover hint says, except that it gives the time the window runs out at: a window without a reset shows no forecast, one of unknown length says No estimate, one used at no pace No usage, and one whose pace gives no time to run out Insufficient data, where each showed the share it would use by the reset or, without a reset, a time to run out. An exhausted window's burn rate is always in the warning colour, where it was green when its provider gave no time to run out, and the row projects the share used by the reset only for a window that runs out after it.
+- One rule decides which rows the panel, the menu and Settings show. Before the first read, the panel and the menu list Kimi, GLM and OpenCode Go windows as Settings does, where they stayed hidden until a read; a window of an account its provider no longer lists leaves all of them at once. A Codex window a failed read left out keeps its row, switch and place in Settings, as it keeps its reading, where Settings dropped it on a run's first read without a saved report.
+- Every client hook reads a settings file up to 16 MB and takes an empty one as empty settings. The approval and notification hooks gave up on a file over 4 MB, and a completion hook on an empty file.
+- Switching GitHub Copilot's Read quota on or off takes effect at once, where it used to wait for the next change in a client's files or the next account reading, up to five minutes later.
+- A session whose client is waiting for an answer to a permission request needs approval among the island's sessions, on its card and on its page, and counts as running, for as long as the client waits. Only Claude Code's own notification marked a session as waiting before: a Codex session blocked on a request read as running, and a CodeBuddy, WorkBuddy, ZCode or Qwen Code one as finished.
+- A Codex session counts as quiet from the newest event in its rollout, as every other client's counts from its own records, not from when the file was last modified: a rollout written to without new events no longer keeps a session that went silent showing as running for up to half an hour more. DeepSeek Harness's check of its process likewise starts two minutes after a running turn's last event, not after the log file's last write.
+- A session whose last reading is too old for the Mac to vouch for says Status out of date on its card on the Sessions page, as its page did, where the card said Waiting for you. With Live status off, a session's page no longer shows what the agent last said, as it shows no state.
+- A running session's page counts its time from its turn's start, as its card does, where it counted from the session's start, and a finished session's page says how long ago its last event was, as its card does, where it counted from the end its log recorded. A turn whose start was never seen counts from the session's start rather than its latest line, and a session running without turns is dated by its log's last line rather than the latest read, so it no longer climbs the list with every read.
+- The Sessions page lists every session whose last event is at most seven days old. It listed the sessions whose run overlapped the seven days before the latest data, so a session that started after the last report was missing from it while the island showed it running.
+- The Sessions page puts each session under the day it was last active, and a running one under today, where it went under the day the session started: a session resumed today, or one that ran past midnight, is with today's sessions. Earlier holds the sessions last active before the named days.
+- The Sessions page's Active only switch is a choice of how the list is arranged, Day or Active: Day lists the last seven days under their days, and Active lists what Active only listed, the sessions in flight or active in the last 24 hours, without days. The card above the list sums the sessions under today in both, the sessions last active today or in flight with their whole totals, where it counted the sessions that started today.
+- A session shows the state and the message of the turn that started last, where it showed those of the turn its client listed last, which could be an older one, and sessions whose last events fall at the same moment are ordered by agent, then by id.
+- `--probe` also prints where each client's engine and data are, how one step of reading Claude Code's transcripts, the account refresh and the report went, and what the report holds by window, client, balance and session, without conversation text or credentials.
+- `--snapshot` renders only in a debug build, such as `make snapshot`; a release build says so and quits, and carries none of the rendering code.
+- A session page's share of a token kind or a model reads 1% from half a percent up, as the agent cards' shares do; it read <1% below a whole percent.
+- Every JSON Lines log parsed whole is read up to 256 MB, as GitHub Copilot's session events already were, where Grok's, OpenClaw's, CodeBuddy's, WorkBuddy's and Qwen Code's logs and Copilot's telemetry files stopped at 128 MB; a line over 16 MB that the reader does not decode is skipped rather than failing the read.
+- Settings → Agents → Pi has a row for Agent HUD's Pi extension, through which Pi reports its running and finished turns: whether it is installed, when it last reported, and that a Pi already open starts reporting after one `/reload`. When the version Pi last recorded is older than 0.80.5, the first release that tells an extension a run has settled, the row says so, since that Pi never reports a finished turn. The extension is also installed when Pi's directory appears while Agent HUD runs, the first time Pi is used, where it waited for the next launch.
+- OpenCode turns get completion reminders. Agent HUD keeps a plugin in OpenCode's global plugin directory, `~/.config/opencode/plugin/agent-hud.js`, which records a turn once its session goes idle after a final answer: an error, an abort, a reply cut short, a summary `/compact` wrote and a sub-agent's session record nothing, while a context overflow that OpenCode compacts and then answers still completes its turn. The plugin reports no running state and answers no approvals, and tokens still come from OpenCode's own records. Settings → Agents → OpenCode shows whether the plugin is installed and when it last reported, and an OpenCode already open loads it once restarted. Client hooks in Settings → General switches it with the other hooks, and switching them off names OpenCode's reminders among what stops.
+- Claude Code's engine is also found on `PATH`, after its install places, as Codex's engine and Node.js already were; a client counts as installed for its hooks by its own places alone, as before.
+- A variable that moves a client's directory, such as `XDG_DATA_HOME` or `GROK_HOME`, counts as unset when it is empty or only whitespace, for every client: Grok, OpenCode, Kimi and Pi looked in the current directory instead, and the whitespace around a value is now ignored everywhere.
+- List prices cover Claude Sonnet 5.5 and GPT-6.1 Sol, and OpenAI's GPT-5 models the list lacked: GPT-5.5 Pro, GPT-5.4 Pro, mini and nano, GPT-5.2, GPT-5.1 and GPT-5 with their Codex, mini, nano and pro versions, and codex-mini-latest. A GPT-6 or GPT-5.6 cache write costs 1.25 times the input rate, as OpenAI bills it, where the list priced it as input.
+- A GitHub Copilot plan billed by usage shows its premium row as AI credits, as VS Code does, and so does a Free plan's chat row; a plan still on premium requests keeps its names. Copilot's premium snapshot is also read under its newer name, `premium_models`, in the same row, and a row resets when its own snapshot says, before the account's date.
+- Kimi's current plans are read from the report Kimi Code's own CLI reads: the 5 hours and, on older plans, the week keep their rows, and the month's total quota is a row of its own, named Monthly total quota with the plan. Accounts that answer only in the earlier report read as before.
+- An Antigravity bucket named Five Hour Limit, in any case, counts as a 5-hour window, as Weekly Limit counts as a week.
+- A GLM plan that meters credits names its windows 5-hour credits and Weekly credits with the plan; token limits and the MCP window of older plans keep their names.
+- Host API:
+  - `InstanceLock.claim(at:executable:)` and `InstanceLock.sharedURL` in Core, and `SingleInstance.claim(at:)` in Desktop, which a host calls at launch; `HookSettings.write(_:to:)` is public, for a host's own hook entries.
+  - `AttentionHooks.configure`, `PermissionHooks.configure` and `CompletionHooks.configure` lose `replacingExisting:`, since every call now takes the handlers over.
+  - `UsageReport.quotaNotice(for:)` gives a billing pool's row its own account's notice only, and the Kimi, GLM and OpenCode Go report puts each pool's notice in its `AccountObservation.quotaNotice`, leaving `quotaNotices` empty.
+  - `CombinedUsageProvider.standard(settings:ledger:persistent:)` replaces `standard(ledger:persistent:)` and takes the `SettingsStore` the host collects with, which GitHub Copilot's quota reading asks for consent whenever a reading is due.
+  - A running `UsageStore` sets `SettingsStore.onChange` to wake collection, so a host follows settings through Observation.
+  - `AlertPolicy` holds every threshold: `exhaustedRemaining` (half a point, which `UsageAnalytics.capStats` counts as a cap too), `maximumReadingAge`, `resetRise`, `insightsLookback` and `balanceWarnings` join it, with `balanceLevel(_:isAvailable:)` for an API account's balances, and `QuotaForecast.maximumReadingAge` reads the policy's.
+  - `UsageStore.accountNotice(for:)` gives what an account section's header says about its readings, and `UsageStore.alertPulseVendors` the vendors whose part of the glow an alert's pulse lights.
+  - `QuotaMath` holds the quota calculations: `remaining(usedPercent:)` turns the share used that Claude Code, Codex, Cursor, Grok, Kimi, GLM and OpenCode Go report into the share left; `historyStart(for:now:)` and `insights(snapshot:samples:now:)` build a window's insights from its stored readings for every provider, counting cap hits over the last week; `outlook(snapshot:insights:now:)` gives its `QuotaOutlook`, which `QuotaForecast.hint` puts into words; `exhaustion(insights:resetAt:now:)` tells how long the window lasts at its pace and whether that ends before its reset, for the outlook and the alerts; `projectedUsedAtReset(usedPct:insights:resetAt:now:)` gives the share used by the reset; and `tokensPerHour(snapshot:consumers:usage:now:)` is the rate `UsageStore.quotaTokensPerHour(for:)` returns.
+  - `SessionPhase` says what a session is doing as the Mac shows it: its `state` (`running`, `waitingForApproval`, `idle` or `unverified`), `since`, `validUntil`, `nextChange` and `isInFlight`. `init(session:turn:lastEventAt:liveStatus:now:)` works it out from a report at a given time and `init(hook:now:)` from a turn a client's hooks saw (`SessionPhase.HookTurn`); `hookPrevails(_:over:lastEventAt:)` says whether that turn takes the place of the reading's phase. `SessionPhase.Limits` holds the session limits, which `LiveSession.isLive(at:)`, `UsageRefresh.liveThreshold`, `UsageRefresh.abandonedTurnTimeout` and `ClaudeCodeProvider.liveThreshold` read.
+  - `SessionPhase.read(_:rule:at:)` says whether a client's records have a session in flight when its provider reads it, and which turn the provider reports, from a `SessionPhase.SourceEvidence` (the newest turn, the last write, sub-agents still at work, a `SessionPhase.Approval` and what the process table says) by a `SessionPhase.SourceRule` (`transcript` for Claude Code's logs, `rollout` for Codex's, `process` for DeepSeek Harness's, `turns` for every other client's turns), as a `SessionPhase.SourceReading`, `SessionPhase.stopped(_:atMs:)` completes the running turns a session's latest Stop hook follows, and `SessionPhase.lapsed(_:at:)` ends a Pi turn whose heartbeat stopped; `TranscriptSession.isLive(now:threshold:abandonedAfter:)`, `CodexTranscript.isLive(now:modifiedAt:freshness:abandonedAfter:)` and `DeepSeekTranscript.isLive(processStarts:)` forward to it and are deprecated; their limits are `SessionPhase.Limits`, whatever their limit parameters say; a rollout's quiet counts from its newest event, whatever `modifiedAt` says.
+  - `ReportView(report:agents:settings:now:)` holds everything the Mac shows of a report at one time: the visible and enabled rows, quota rows, groups, balances, levels, pulse vendors, menu figure and subscriptions, `accountSections(_:)` and `accountNotice(for:)`, a window's `tokensPerHour(for:)`, `outlook(for:)` and `forecastHint(for:)`, and its sessions, newest first, each a `ReportView.Session` with its source, newest turn, last event, message, live status and phase; `session(_:)`, `session(for:)` and `phase(of:)` read one session, and `liveSessions`, `workingVendors` and `queueVendors` what they add up to. `UsageStore.view` is the store's `ReportView`, built again only when the report, the agent list, the settings or the time changed; the store's `visibleAgents`, `enabledAgents`, `rows`, `row(for:)`, `rowGroups`, `enabledBilling`, `levels`, `alertPulseVendors`, `maxUsedPct`, `subscriptions`, `accountSections(_:)`, `accountNotice(for:)`, `quotaTokensPerHour(for:)` and `quotaForecastHint(for:)` read it, and so do `sessions`, `liveSessions`, `hasLiveSession`, `workingVendors`, `queueVendors`, `focusedSession`, `sessionSource(_:)`, `liveStatusEnabled(for:)`, `isSessionLive(_:)`, `isSessionWaiting(_:)`, `sessionState(_:)`, `sessionStatusLabel(_:)` and `sessionMessage(_:)`.
+  - `ReportView(report:agents:settings:approvals:now:)` takes the permission requests waiting for an answer and marks each one's session as waiting for approval, and `UsageStore.view` passes `PermissionRequests.shared.pending`; every `SessionPhase.SourceRule`, `SessionPhase.stopped(_:atMs:)` and `SessionPhase.lapsed(_:at:)` treat a turn waiting for approval as in flight, as they treat a running one.
+  - `UsageStore.hookTurns` takes the turns a host's prompt and Stop hooks saw, by session id, and `ReportView(report:agents:settings:approvals:hookTurns:now:)` shows a hook turn's phase in place of the report's wherever `SessionPhase.hookPrevails(_:over:lastEventAt:)` says the hooks saw more, so the panel changes at the Stop hook; `SessionPhase.init(hook:now:)` runs an open hook turn for `SessionPhase.Limits.vouched` from its prompt and then gives it out of date, when it no longer takes the place of a reading in flight; `init(hook:)`, which never lapses, is deprecated. `SessionPhase.HookTurn.message`, with its `init` parameter, is what the agent said at the Stop hook, and the report view shows it as the session's message when the hook turn takes the log's place.
+  - `ReportView.recentSessions` holds the sessions whose last event is at most seven days old, which `UsageStore.statsSessions` reads.
+  - `ReportView.Session.turn` is the turn that started last, one without a start counting from its observation, then the one observed last, the later listed of equals; `message` is the newest such turn's that carries one; and `ReportView.sessions` go by last event, then vendor, then id.
+  - `LiveSession.lastActivityAt`, with its `init` parameter, is when the session's log last recorded anything; every provider fills it, and it dates a session in flight without turns. `SessionPhase.since` is, in flight, the turn's start or else the session's, and otherwise the session's last event. `Countdown.sessionLabel(_:now:)` takes a `SessionPhase`; its `LiveSession` form, which counts from the session's start and end, is deprecated.
+  - `UsageReport.status(of:)` gives a reading's `ReadingStatus` (`normal`, `readFailed(reason:)` or `unverified(reason:)`) and `assess(_:now:)` its `ReadingAssessment`: its status, whether it is the current account's, when it was taken, whether it is stale, from the future or past its reset, and so whether it `showsLevel` and `confirmsEvents`. A `ReadingSubject` names the reading: a window's (`window(_:)`), an account's (`account(_:)`) or a balance's (`balance(_:)`). `ReadingIssue` is what a provider says about a reading, a `kind` and a `reason`; a kind a version does not know reads as a failed read. `AgentRow.assessment` is the assessment its `level` follows, and `isCurrentAccount` reads it.
+  - `UsageReport.confirmsCompleteInventory(_:)` says whether an account's reading lists every window of the account, for the retained report and the settings alike. `UsageReport.quotaNotice(for:)` and `quotaNotice(vendor:)` stay for hosts that read the notice text and give the reason of `status(of:)`. `ReportView.assessment(of:)` weighs an account's reading at the view's time and `ReadingAssessment.accountLabel(now:)` puts it into a header's words, which `UsageStore.accountLabel(for:)` gives; `AccountObservation.statusLabel(now:)` stays and judges the observation on its own.
+  - Providers type their reading issues: `UsageReport.readingIssues` by vendor, `AccountObservation.readingIssue` and `APIBilling.readingIssue`, each with its `init` parameter, and `status(of:)` reads them; `quotaNotices`, `AccountObservation.quotaNotice` and `APIBilling.notice` are still written with each issue's reason, and a report without typed issues, such as a restart copy of an earlier version, counts them as failed reads. `CombinedUsageProvider` gives a source that does not type its issues its notices about readings as failed reads. A host that rebuilds reports passes `readingIssues` through.
+  - `ReadingAssessment.showsLevel` no longer depends on the reading's age and is false for a reading from the future; `confirmsEvents` needs a level and a reading under `AlertPolicy.maximumReadingAge`. `ReportView(report:agents:settings:approvals:hookTurns:now:failure:)` takes the error of a pass in which every source failed, which `ReadingAssessment.failing(_:)` gives every reading of the view, and `UsageStore.view` passes `lastError`.
+  - `ReportView.maxUsedPct`, `tokensPerHour(for:)`, `outlook(for:)` and `forecastHint(for:)`, and so the store's `maxUsedPct`, `quotaTokensPerHour(for:)` and `quotaForecastHint(for:)`, count only rows whose readings show a level.
+  - `status(of:)` gives an account that is not a billing pool its vendor's issue when it has none of its own, which `ProviderAccount.isBillingPool` tells, and `accountNotice(for:)` gives the reason first, then the client's notices, for the island and the menu alike. Claude Code files a login without plan limits under `sourceNotices` alone.
+  - `AlertPolicy.balanceLevel(remaining:currency:)` gives every currency a level on one ladder: ok, warning when low, critical when depleted. `ReportView.assessment(of:)` also weighs a balance, and `level(of:)` gives its level, none while its reading shows none; `UsageStore.balanceLevel(_:billing:)` stays and follows it.
+  - `ReportView.glowSegments` lists the glow's parts, each a `ReportView.GlowSegment` with its vendor and level, and `levels` and `alertPulseVendors` read it.
+  - Every provider files `sourceNotices` and `readingIssues` under vendor names: Codex puts an account's failed read only on its `AccountObservation` and a home that failed before it was ever read under `Codex`, and the Kimi, GLM and OpenCode Go provider files OpenCode Go's pool notices under `OpenCode Go`.
+  - `QuotaForecast.hint(snapshot:insights:now:)` gives a window that runs out only after its reset the share it will have used by then, in the words of `QuotaForecast.byReset(_:)`.
+  - `ReportView.isPresent(_:in:)` decides whether a row is present for the view's rows, `AgentSettingsGroup.make(sources:agents:report:)` and the retained report, and a plan pool's rows are present without a report. `SettingsStore.mergeDiscovered(from:)` merges the rows of a displayed report, which the collector calls; `mergeDiscovered(_:activeQuotaPoolIDs:accounts:replaceQuotaWindows:)` stays and judges a Codex inventory on its accounts alone.
+  - `UsageReport.visibleRows(_:)`, `StatusLevel.severity` and `worse(_:_:)`, `LiveSession.hasTokenCounts` and `TranscriptSession.turnInProgress`, which nothing read, are removed. The desktop library's `observeChanges(_:onChange:)`, which re-arms Observation tracking, is renamed `trackChanges(_:onChange:)`, leaving `UsageStore.observeChanges(_:)` the only function of that name.
+  - `HookEntry.handle(arguments:)` runs the hook and adapter commands a process was started for, `--install-pi-observer` included, and returns the exit status, nil when the application should start; `UsageAssembly.settings(defaults:defaultAgents:language:)` and `store(settings:ledger:hooks:)` build the settings and the store as the standalone application does; `UsageProbe.run(settings:)` prints the probe. `ChildProcess`, `HookCommand` and `PermissionHooks.Source.configuration(home:)` are public, `HookInstaller` reads a hook's settings file and runs its install and removal, and `UnixSocket` with `UnixSocketListener` is the channel between the application and a hook process, which `PermissionRequests` serves through.
+  - `SnapshotRunner` renders only in a debug build and is a stub in a release build.
+  - `UsageStore` no longer falls back to the demo's turn calls without a ledger: a host sets `UsageStore.sampleTurnCalls`, which `UsageAssembly.store(settings:ledger:hooks:)` does for the demo. `PermissionRequest.demo(now:)` becomes `DemoData.permissionRequests(now:)`, and `DemoData.sources` and `SeededRandom` move to the demo's files.
+  - `L10n.dateLocale` is the locale dates are written in, `TokenFormat.share(_:of:)` writes a part of a whole, and `Countdown.forecast(_:)`, `age(_:)` and `waited(_:)` write a forecast's duration, how long ago and how long a client has waited, where the views each wrote their own.
+  - `OpenCodeSessionObserver` installs, updates and removes the OpenCode plugin, and `SessionObservers.configure(executable:enabled:)` includes it. `PiSessionObserver.fileState()` and `OpenCodeSessionObserver.fileState()` say whether an observer's file is in place, as a `ClientObserverFile`, and `PiSessionObserver.unsupportedVersion()` gives the version Pi recorded when it is older than `PiSessionObserver.firstSettlingRelease`. `SessionObservers.observedClients()` names the clients whose observer directory exists and `SessionObservers.installObservers()` installs their observers; `DesktopApplication` uses them to install an observer when its client's directory appears after launch.
+  - The glow's geometry, matrix, motion and colours (`GlowGeometry`, `GlowPattern`, `GlowMatrix`, `GlowMotion`, `GradientStop`, `GlowAppearance`, `GlowGradient`), `HoverMachine`, `StatusPalette` and `AgentPalette` move from `AgentHUDCore` to `AgentHUDDesktop`, as do `GlowSettings.pattern(scale:)`, `GlowSettings.geometry(islandWidth:islandHeight:islandRadius:scale:)` and `UsageStore.glowAppearance(light:on:)`, now extensions there; `GlowSettings` itself stays in Core. `StatsTab` stays with the store's selections and loses its `label`, which the statistics window gives it.
+  - `ClaudeEngineLocator.candidates(home:path:)` and `find(home:fileManager:path:)` take the `PATH` they search last.
+  - `AgentDescriptor.name`, `shortName` and `compactName` name a row as the island, the menu, alerts, Settings and the statistics window write it, beside `displayName`, which reads `name`.
+  - Every provider asks its service at every `refreshAccountUsage(historyHours:)` and keeps the last answer for the reports between; only the collector spaces the calls, by `UsageRefresh.accountRequestSpacing`, so a host that calls it itself spaces its own calls. `ClaudeCodeProvider.engineMinimumInterval` is removed.
+  - `ChildProcess.line(before:)` returns as soon as stdout outgrows its cap, with the whole lines still there or nil, rather than at its deadline.
+  - `MoneyFormat.price(_:currency:)` writes a price someone pays with its ISO code in both languages, `USD 2.99`, as the website does, while `MoneyFormat.amount(_:currency:estimated:)` keeps writing balances and estimates with the currency's symbol.
+  - `UsageStore.sessionsByDay(_:calendar:)` puts a session under the local day of its last event, and a session in flight under today, where it used the day the session started.
+
+## 0.4.26 — 2026-09-29
+
+- A Claude Code response is counted once. A forked session's log starts with a copy of its parent's history, and a session resumed after its project folder moved leaves its log in both folders. Both used to be counted again, so a fork's totals included its parent's whole history. A line now counts only in the log named after its own session, and of several copies of a moved session's log only the newest is read. The first launch reads the last month of Claude Code logs again once, which takes under a minute even for a large history.
+- Waiting permission requests stay when a display goes away or is rearranged. A HUD that closes hands its requests to the display under the pointer, oldest first, and picking a request that waits on another display moves it to this one.
+- A client settings file that is a symbolic link, as dotfiles managers make them, is written through the link and keeps its permissions. It used to be replaced by a plain file with mode 0755.
+- Changes you make to Agent HUD's own hook entries stay: an Antigravity hook you disabled, or a Claude Code matcher you edited, is no longer reset at every launch. The command inside an entry is still brought up to date.
+- Hooks, the Claude Code account profile and the Antigravity reader follow `CLAUDE_CONFIG_DIR` and `GEMINI_CLI_HOME` when they are set.
+- A Claude Code session waiting for approval keeps showing it while its sub-agents work.
+- Pi sessions stop showing as running when a run ends, also on Pi versions that report no settled state.
+- A second copy of the app that quits no longer removes the approval socket the first one serves.
+- An OpenCode database of any size is read. The reader used to stop at 10,000 rows or three seconds and keep showing old data.
+- A log or database that fails to parse is retried after a pause that grows from 30 seconds to five minutes, and an unreadable Claude Code log no longer keeps the HUD indexing, or makes every source read in full every two seconds.
+- OpenCode's and Cursor's 30-day totals keep the history their readers can no longer see, and a Hermes session older than the reader's window keeps adding to its total.
+- A Kimi, GLM or OpenCode Go account whose reading fails once stays on screen with a notice, instead of looking signed out. Cursor's usage stays under its account when a quota read fails.
+- Whole-file and DeepSeek Harness sources look only at the paths that changed, and a listing that stops at its limit no longer treats the files it didn't reach as deleted. A DeepSeek Harness log decodes only its new frames: reading one new turn in a 5,000-turn log takes about 60 ms instead of 220 ms.
+- A forecast that a window will run out is announced once per cycle. A reading that wobbles back up to 100% no longer announces a reset: a window counts as reset only after a real rise of at least 5 points.
+- JSON lines from every source are parsed directly into their values, about 14 times faster per line, and the Claude Code plan is worked out once per quota reading instead of decoding the whole `~/.claude.json` each time.
+- The glow stops drawing when its HUD closes. With no agent running, the glow keeps moving at its idle pace, as the Display settings now say; the session page says its list counts sub-agents' tokens too.
+- `--probe` no longer writes the usage ledger.
+- Host API: `FastTranscriptParser.titles(in:session:)`, whose `session` defaults to none, and the Claude Code log reader's stored state moves to version 4, so a host's first launch reads the month's logs again once. `JSONValue.parse(_:)`. `standard(ledger:persistent:)` on the combined, Claude Code and Codex providers, with `persistent` defaulting to true. `DeepSeekTranscriptStore.fileChanges` and `DeepSeekUsageProvider.fileChanges`. `UsageStore.sessionOwnTokens` is removed.
+
+## 0.4.25 — 2026-09-29
+
+- A Claude Code session stays running while the sub-agents and workflows it started in the background work, where it showed as finished as soon as it had started them. An agent that works again without a prompt, woken by a sub-agent's report, a queued notification or a Stop hook's feedback, resumes its stopped turn, and a turn whose answer Claude Code stamped just before its deferred-tools record no longer keeps the session running for half an hour.
+- A slash command Claude Code runs itself, such as /exit, /clear or /model, no longer starts a turn: a session closed with /exit after its answer showed as running for up to half an hour, and its command lines were counted as prompts.
+- Codex quota is read with the engine inside the Codex app again, which current versions of the app keep in `codex-cli`. Since the app moved it, the HUD fell back to an installed CLI, or read no Codex quota when none was installed. A Codex account read by an engine that leaves out its workspace keeps its key instead of appearing twice, and the copy such readings left beside the account goes with its first complete reading.
+- An approval always shows what an allow lets run: the command, the file and the lines it would change, the URL or the tool's own input, even when the one-line summary says the same, and a request that arrives while the panel is open shows it in up to three lines at the top. Always allow writes out the rule it adds, such as `Bash(npm test:*)`, and a Write request shows the content it writes.
+- Launch at login, on by default, is registered on a new install; since 0.4.10 it showed as on and stayed unregistered until it was switched off and on. At start it is registered only if it never was, so turning it off in System Settings holds.
+- Client hooks left by a copy of the app that has since moved or gone — one opened from its disk image or where it was downloaded, or deleted — are replaced by the installed copy, and turning Client hooks off removes them along with this copy's own; the hooks of another installation that is still there stay with it. A copy running from a disk image or a translocated path adds no hooks.
+- A notice about a client's local logs or completion hooks no longer switches off that vendor's quota alerts, levels and glow: only a quota or balance reading that failed or could not be verified holds them back, and only that keeps the client's last sessions on screen.
+- Qwen Code, Pi, GitHub Copilot, Grok, OpenClaw and CodeBuddy logs are read in a fraction of the time: lines are cut without moving the rest of the buffer, times are parsed without building a formatter each, and Grok's and OpenClaw's lines that cannot hold what is counted are skipped undecoded. A Qwen chat of about 30 MB, which hit the three-second read limit and was never recorded, now reads in about 1.5 s.
+- Host API: `TranscriptEvent.returnsStructuredOutput`, with its `init` parameter. `CodexRateLimits.partialKeys` replaces `keyWithoutEmail` and also names the key without the workspace; `CodexRateLimits.rememberedWorkspace`. `CodexLocator.candidates(home:applications:path:registered:)` and `find(home:applications:path:registered:)` look for the app's engine at `Contents/Resources/codex-cli/bin/codex` before `Contents/Resources/codex`. `UsageReport.quotaNotices`, with its `init` parameter, and `UsageReport.quotaNotice(vendor:)`: a host that rebuilds reports passes `quotaNotices` through, or every source notice holds back alerts as before. `PermissionRequest.alwaysAllowRule`; `PermissionRequest.detail` is always set, and `alwaysAllow` no longer offers a rule that names no tool. The hook `configure` functions replace abandoned handlers, keep another installation's, and refuse to install from a transient path.
+
+## 0.4.24 — 2026-09-28
+
+- With Press Option to open on, Option is needed only to open the panel: a tap while hovering is enough and holding still works, and the open panel stays until the pointer leaves, where letting go of Option used to close it under the pointer. A pointer that slips off the panel and comes back before the collapse delay runs out keeps it open without Option.
+
+## 0.4.23 — 2026-09-28
+
+- A session's title is the one its client keeps — a name the user gave, else one the client generated — else the first line of its first prompt, else its workspace folder, where most clients used to show the first prompt and the rest a placeholder. A Claude Code session takes the title the desktop app generates or a `/rename` gives, else the one Claude Code generates; CodeBuddy and WorkBuddy take the title lines of their transcripts, and a WorkBuddy sidebar rename from its database; Grok takes the title it keeps current, where the key read before no longer exists; Kimi takes the title in the session's `state.json`, Pi a `/name` or else the first message, ZCode and Antigravity the titles they store, and a Cursor conversation the name of its IDE composer or agent CLI chat on this Mac. An OpenCode session whose title call failed shows its folder instead of New session and a time, a label an OpenClaw user gave wins over the generated name, and a Copilot name written as a YAML block is read. The titles reach the panel, the Sessions page, the island's completed turns and the iPhone. The first launch reads the week's Claude Code logs again once, so sessions already read take their titles.
+- OpenCode, Kimi and Pi calls are priced at the list price of the model they name when they went through that vendor's own API or plan, so their sessions, turns, Tokens cards and model rows show a cost at API prices; their ids used to hide the model, and none had one. A gateway, cloud or proxy sells a vendor's model at prices of its own, so a call through OpenCode Zen or Go, OpenRouter, Azure, Bedrock, Vertex, Copilot or a proxy, or a model named the gateway's way such as `openai/gpt-5.5`, has no list price. Usage recorded under the older ids moves to the route's id the first time a log names that route again, and the cost figures the logs carry are no longer read. `gpt-5.6-sol` is priced at its regular list rather than its promotion.
+- OpenCode 1.15 sessions show again: the reader took a session's replies from `session_message`, where OpenCode 1.15 keeps only agent and model switches, and found none. A session is read from that table once it holds the session's replies, else from `message`.
+- DeepSeek Harness 0.1.7 sessions are read. Their logs use format 4, which the reader refused, and a session forked in 0.1.7 no longer reads as wholly inherited.
+- Antigravity CLI conversations are read after agy quits. agy removes its databases' `-wal` and `-shm` files on exit, which a read-only connection cannot create again; a database without them or a rollback journal is now read as an immutable file, and the read fails rather than mix pages if the file changes during it.
+- Reading Claude's quota asks the engine to skip its scan of the week's transcripts, which fills a section Agent HUD never reads: on Claude Code 2.1.273 a read takes about 0.8 s of CPU instead of 5.8 s and 190 MiB less memory. Engines that predate the flag ignore it.
+- Host API: `SessionTitle.named(_:)`, `FastTranscriptParser.titles(in:)` and `TranscriptAccumulator.noteTitles(custom:generated:)`, and the Claude Code log reader's stored state moves to version 3, so a host's first launch reads the week's logs again once. `LedgerWriter.moveConsumer(_:to:)`; `UsageAttribution.estimatedUSD` is removed.
 
 ## 0.4.22 — 2026-09-26
 
@@ -260,3 +478,62 @@ Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` on `main`; `CFBundle
 
 - `AgentHUDSupport`: `JSONValue` (integer-preserving JSON) and `RecordCoding` (deterministic encoding, millisecond dates, hashed identities).
 - Apache-2.0 license and the roadmap.
+
+## Earlier local build history
+
+### 0.4.35 — Local build, 2026-09-30
+
+- Add Testing, Awaiting merge and Awaiting release to manual branch progress, with distinct colors; existing Awaiting tests notes retain their meaning.
+- Allow branch switching with compatible uncommitted changes, including staged files. Explain when Git refuses an overwrite; protect ignored files and keep worktree-occupancy, conflict and in-progress-operation restrictions.
+
+### 0.4.34 — Local build, 2026-09-29
+
+- Read Kiro CLI completed-turn metadata as session snapshots change. Report exact token counters when provided, and keep local metered credits separate from token totals.
+- Show Kiro CLI credits, completed turns and missing-count coverage in the Hub, agent card and session details instead of describing unreported tokens as no usage.
+- Host API: optional `LiveSession.localUsage` and `LocalUsageRecord`; older report caches remain readable.
+
+### 0.4.33 — Local build, 2026-09-28
+
+- Match the borderless Kiro icon’s visible size to outlined icons in the island queue while preserving alignment and spacing.
+
+### 0.4.32 — Local build, 2026-09-28
+
+- Remove the additional dark outline from Kiro in the island logo queue; preserve the supplied purple artwork.
+
+### 0.4.31 — Local build, 2026-09-28
+
+- Replace the Kiro icon with the user-provided 128 px purple PNG.
+
+### 0.4.30 — Local build, 2026-09-28
+
+- Use Kiro’s purple app icon with its original colors throughout the Hub, settings and menus.
+
+### 0.4.29 — Local build, 2026-09-28
+
+- Show the Kiro logo in the Hub, settings and menus, with automatic contrast on light and dark backgrounds.
+
+### 0.4.28 — Local build, 2026-09-28
+
+- Add Kiro account credits using its existing local sign-in: plan, used/total/remaining credits, reset date and separate trial, bonus and add-on pools. No token counts are inferred from credits; expired login prompts the user to open Kiro. Authentication is read-only and requests only target official Kiro management hosts.
+
+### 0.4.27 — Local build, 2026-09-28
+
+- Read local task lifecycle events independently of serial account requests, so slow quota queries no longer delay completion status. File event delivery uses a shorter batching interval, and filesystem paths such as `/private/var` are mapped back to the watched log roots correctly.
+
+### 0.4.26 — Local build, 2026-09-28
+
+- Add a Pin button next to Hub settings. Pinned panels stay open when the pointer leaves or another window is clicked; unpinning restores hover collapse. Explicit dismissal clears the pin.
+
+### 0.4.25 — Local build, 2026-09-27
+
+- Keep the Hub and its hover cards dark while settings and independent detail windows continue to follow the selected appearance.
+
+### 0.4.24 — Local build, 2026-09-27
+
+- Expanded Hub content, quota hover details and the Branches tab now follow light, dark and system appearance settings. The collapsed notch stays black.
+
+### 0.4.23 — Local build, 2026-09-27
+
+- Add a configurable shortcut to expand or collapse the Hub and Agent / Branches tabs with larger click targets and immediate panel resizing.
+- Add local repository and worktree status, branch switching, selected-file commits, reviewed pushes and safe local branch deletion. Branch notes support colored progress labels and TEST / UAT ancestry checks.
+- Find the Codex engine in the updated desktop app layout while retaining support for older installations. A missing executable no longer incorrectly asks signed-in users to log in.

@@ -93,7 +93,8 @@ public enum UsageRefresh {
     public static let runningAccountInterval: TimeInterval = 60
     /// Quota and balance readings while a session is live between turns.
     public static let liveAccountInterval: TimeInterval = 180
-    /// A provider never repeats an account request sooner than this, whoever asks.
+    /// The collector never runs a source's account steps again sooner than this, whoever asks; only consent to read
+    /// GitHub Copilot's quota, given or withdrawn, reads Copilot's sooner.
     public static let accountRequestSpacing: TimeInterval = 60
     /// A source that cannot name its directories is read this often.
     public static let pollInterval: TimeInterval = 5
@@ -101,13 +102,10 @@ public enum UsageRefresh {
     public static let indexingInterval: TimeInterval = 2
     /// Local reads start at most this often; changes arriving sooner are read together.
     public static let readSpacing: TimeInterval = 2
-    /// How long a quiet log keeps a session that never said what its turn is doing. A source that reports turn states
-    /// ignores it: there, only the turn decides.
-    public static let liveThreshold: TimeInterval = 120
-    /// The far side of a running turn's silence. One tool call can keep a log quiet for minutes, so silence alone does
-    /// not end a turn; a turn this quiet was abandoned — its client was killed, or its logs stopped reaching this Mac.
-    /// TODO: drop this once every provider reports a client heartbeat and can say so outright.
-    public static let abandonedTurnTimeout: TimeInterval = 30 * 60
+    /// How long a quiet log keeps a session that never said what its turn is doing: `SessionPhase.Limits.quiet`.
+    public static let liveThreshold: TimeInterval = SessionPhase.Limits.quiet
+    /// The far side of a running turn's silence: `SessionPhase.Limits.abandoned`.
+    public static let abandonedTurnTimeout: TimeInterval = SessionPhase.Limits.abandoned
     /// A running turn counts as current work while its latest source observation is this recent.
     static let activeTurnFreshness: TimeInterval = 300
 }

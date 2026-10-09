@@ -31,7 +31,7 @@ struct KiroClient: Sendable {
 
     static func request(auth: ProviderJSON, profile: ProviderJSON?, now: Date) throws -> (url: URL, headers: [String: String]) {
         guard let token = auth["accessToken"].stringValue, !token.isEmpty,
-              let expires = ProviderDate.iso(auth["expiresAt"].stringValue), expires > now else {
+              let expires = DateParsing.internet(auth["expiresAt"].stringValue), expires > now else {
             throw UsageProviderError(L10n.text("请打开 Kiro 更新登录状态，再刷新额度", "Open Kiro to renew its sign-in, then refresh quota"))
         }
         let region = auth["region"].stringValue ?? "us-east-1"
@@ -88,6 +88,7 @@ struct KiroClient: Sendable {
                     label: L10n.text("加购额度", "Add-on credits"), reset: expiry)
             }
         }
+        quota.quotaWindowIDs = Set(quota.windows.map(\.id))
         if quota.windows.isEmpty || incomplete {
             quota.notice = L10n.text("部分 Kiro credits 未返回有效限额或已用量，未计入统计", "Some Kiro credits lack a valid limit or usage and are not included")
         }
@@ -96,6 +97,6 @@ struct KiroClient: Sendable {
 
     private static func date(_ value: ProviderJSON) -> Date? {
         if let seconds = value.numberValue, seconds.isFinite, seconds > 0 { return Date(timeIntervalSince1970: seconds) }
-        return ProviderDate.iso(value.stringValue)
+        return DateParsing.internet(value.stringValue)
     }
 }

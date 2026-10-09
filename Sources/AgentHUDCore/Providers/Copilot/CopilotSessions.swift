@@ -11,11 +11,11 @@ enum CopilotSessions: LocalSessionLayout {
                                                 "assistant.turn_end", "abort", "hook.start", "session.shutdown"]
 
     static func roots(home: URL, environment: [String: String]) -> [URL] {
-        let base = environment["COPILOT_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".copilot")
+        let base = ClientHome.variable("COPILOT_HOME", in: environment).map { URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".copilot")
         let otel = base.appendingPathComponent("otel")
         var roots = [base.appendingPathComponent("session-state"), otel]
         // An exporter file outside the otel directory is found by scanning only its own folder.
-        if let path = environment[exporterVariable], !path.isEmpty {
+        if let path = ClientHome.variable(exporterVariable, in: environment) {
             let folder = URL(fileURLWithPath: path).deletingLastPathComponent().standardizedFileURL
             if !(folder.path + "/").hasPrefix(otel.standardizedFileURL.path + "/") { roots.append(folder) }
         }
@@ -29,7 +29,7 @@ enum CopilotSessions: LocalSessionLayout {
     static func accepts(_ url: URL) -> Bool {
         if isLog(url) { return true }
         guard url.pathExtension == "jsonl", !url.pathComponents.contains("session-state") else { return false }
-        return url.pathComponents.contains("otel") || ProcessInfo.processInfo.environment[exporterVariable]
+        return url.pathComponents.contains("otel") || ClientHome.variable(exporterVariable, in: ProcessInfo.processInfo.environment)
             .map { URL(fileURLWithPath: $0).standardizedFileURL.path == url.standardizedFileURL.path } == true
     }
 
@@ -84,7 +84,7 @@ enum CopilotSessions: LocalSessionLayout {
                                        startedAtMs: turn.started, observedAtMs: turn.observed))
         }
         try events(url, types: logTypes) { json in
-            guard let type = json["type"].stringValue, let date = ProviderDate.iso(json["timestamp"].stringValue) else { return }
+            guard let type = json["type"].stringValue, let date = DateParsing.internet(json["timestamp"].stringValue) else { return }
             let ms = RecordCoding.milliseconds(date), data = json["data"], main = json["agentId"] == .null
             session.startedAt = min(session.startedAt ?? date, date)
             session.lastActivity = max(session.lastActivity ?? date, date)
@@ -120,7 +120,8 @@ enum CopilotSessions: LocalSessionLayout {
             default: break
             }
         }
-        session.title = metadata["name"] ?? metadata["summary"] ?? session.workspace.map { URL(fileURLWithPath: $0).lastPathComponent } ?? client
+        session.title = SessionTitle.named(metadata["name"]) ?? SessionTitle.named(metadata["summary"])
+            ?? session.workspace.map { URL(fileURLWithPath: $0).lastPathComponent } ?? client
         // Each snapshot is the process's running total per model; a resumed session writes another one.
         var peaks: [String: [Int]] = [:], seen = Set<String>()
         for snapshot in snapshots.enumerated().sorted(by: { ($0.element.date, $0.offset) < ($1.element.date, $1.offset) }).map(\.element)
@@ -191,17 +192,23 @@ enum CopilotSessions: LocalSessionLayout {
         return ProviderSessions(sessions: sessions.keys.sorted().compactMap { sessions[$0] })
     }
 
-    /// Top-level scalars of `workspace.yaml`; nested and block values are not needed.
+    /// Top-level scalars of `workspace.yaml`, including the block scalar Copilot writes for a long name; nested values
+    /// are not needed.
     static func workspace(_ url: URL) -> [String: String] {
         guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 1024 * 1024,
               let text = try? String(contentsOf: url, encoding: .utf8) else { return [:] }
         var values: [String: String] = [:]
-        for line in text.split(whereSeparator: \.isNewline) where !(line.first?.isWhitespace ?? true) {
+        let lines = text.split(whereSeparator: \.isNewline)
+        for (index, line) in lines.enumerated() where !(line.first?.isWhitespace ?? true) {
             guard let colon = line.firstIndex(of: ":") else { continue }
             let key = String(line[..<colon])
             var value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-            guard ["name", "summary", "cwd"].contains(key), !value.isEmpty, !value.hasPrefix("|"), !value.hasPrefix(">") else { continue }
-            if value.count >= 2, let quote = value.first, quote == "\"" || quote == "'", value.last == quote {
+            guard ["name", "summary", "cwd"].contains(key), !value.isEmpty else { continue }
+            if let style = value.first, style == "|" || style == ">" {
+                // The indented lines that follow, kept as lines (`|`) or folded into one (`>`).
+                value = lines[(index + 1)...].prefix { $0.first?.isWhitespace ?? false }
+                    .map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: style == "|" ? "\n" : " ")
+            } else if value.count >= 2, let quote = value.first, quote == "\"" || quote == "'", value.last == quote {
                 value = String(value.dropFirst().dropLast())
                 value = quote == "'" ? value.replacingOccurrences(of: "''", with: "'")
                     : value.replacingOccurrences(of: "\\\"", with: "\"").replacingOccurrences(of: "\\\\", with: "\\")
@@ -213,36 +220,13 @@ enum CopilotSessions: LocalSessionLayout {
 
     /// Decodes only lines whose leading `type` is wanted, so tool output and message bodies stay unparsed.
     static func events(_ url: URL, types: Set<String>, consume: (ProviderJSON) throws -> Void) throws {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        let marker = Data(#""type":""#.utf8), deadline = Date().addingTimeInterval(3)
+        let marker = Data(#""type":""#.utf8)
         func wanted(_ line: Data) -> Bool {
             guard let range = line.prefix(96).range(of: marker) else { return true }
             let rest = line[range.upperBound...].prefix(64)
             guard let end = rest.firstIndex(of: 34) else { return true }
             return types.contains(String(decoding: rest[rest.startIndex..<end], as: UTF8.self))
         }
-        var carry = Data(), read = 0, skipping = false
-        while let chunk = try handle.read(upToCount: 256 * 1024), !chunk.isEmpty {
-            try Task.checkCancellation()
-            read += chunk.count
-            guard read <= 256 * 1024 * 1024, Date() <= deadline else { throw ProviderFailure.limit }
-            carry.append(chunk)
-            var start = carry.startIndex
-            while let newline = carry[start...].firstIndex(of: 10) {
-                let line = carry[start..<newline]
-                if !skipping, !line.isEmpty, wanted(line) { try consume(ProviderJSON.read(Data(line))) }
-                skipping = false
-                start = newline + 1
-            }
-            carry.removeSubrange(carry.startIndex..<start)
-            // An oversized unwanted line (a large tool result) is dropped up to its newline.
-            if carry.count > 16 * 1024 * 1024 {
-                guard !wanted(carry) else { throw ProviderFailure.limit }
-                carry.removeAll(); skipping = true
-            }
-        }
-        // Accept a complete last JSON value without a newline; retry a torn tail on the next changed-file scan.
-        if !skipping, !carry.isEmpty, wanted(carry), let value = try? ProviderJSON.read(carry) { try consume(value) }
+        try ProviderFiles.lines(url, wanted: wanted) { json, _ in try consume(json) }
     }
 }

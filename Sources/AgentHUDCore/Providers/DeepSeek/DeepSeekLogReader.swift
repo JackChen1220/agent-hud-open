@@ -1,50 +1,76 @@
 import Foundation
 
-public enum DeepSeekLocator {
-    public static var dataDirectory: URL { dataDirectory(environment: ProcessInfo.processInfo.environment) }
-
-    public static func dataDirectory(environment: [String: String], home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
-        guard let path = environment["DSH_HOME"], !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return home.appendingPathComponent(".dsh", isDirectory: true)
-        }
-        let expanded = path == "~" ? home.path : path.hasPrefix("~/") ? home.appendingPathComponent(String(path.dropFirst(2))).path : path
-        return URL(fileURLWithPath: expanded, isDirectory: true).standardizedFileURL
-    }
-
-    public static func isInstalled(directory: URL = dataDirectory) -> Bool {
-        ["profiles", "sessions"].contains { name in
-            var isDirectory: ObjCBool = false
-            return FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path, isDirectory: &isDirectory) && isDirectory.boolValue
-        }
-    }
-
-    /// Harness itself requires Node with Zstandard support. GUI launches may have a minimal PATH.
-    public static func nodeExecutable(path: String = ProcessInfo.processInfo.environment["PATH"] ?? "") -> URL? {
-        let candidates = path.split(separator: ":").map { URL(fileURLWithPath: String($0)).appendingPathComponent("node") }
-            + ["/opt/homebrew/bin/node", "/usr/local/bin/node"].map { URL(fileURLWithPath: $0) }
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
-    }
-
-
-}
-
 enum DeepSeekLogReader {
+    /// A whole log's text.
     static func read(_ url: URL) async throws -> Data {
-        guard url.pathExtension == "zstd" else { return try Data(contentsOf: url, options: .mappedIfSafe) }
-        // Node's decoder stops at one frame. Harness appends a frame per write batch.
-        return try await DeepSeekNode.run(script: """
-        const {readFileSync} = require('node:fs');
+        try await read(url, from: DecodedPosition())?.data ?? Data(contentsOf: url, options: .mappedIfSafe)
+    }
+
+    /// A compressed log's text from `start`, a frame's start, with the start of every complete frame after it; nil for a
+    /// plain log, which is read from its offset. Harness appends a frame per write batch, so a log that grew is decoded
+    /// from the last frame read before rather than from its first.
+    static func read(_ url: URL, from start: DecodedPosition) async throws -> DecodedLog? {
+        guard url.pathExtension == "zstd" else { return nil }
+        // Node's decoder stops at one frame, and decodes a frame that is still being written as far as it goes; the
+        // frame's own layout says where it ends. Each frame goes out as its size in the file, a size of 0 for the frame
+        // still being written, then the length and bytes of its text.
+        let output = try await DeepSeekNode.run(script: """
+        const {openSync, fstatSync, readSync} = require('node:fs');
         const {zstdDecompressSync, constants} = require('node:zlib');
-        const input = readFileSync(process.argv[1]);
-        for (let offset = 0; offset < input.length;) {
-          if (input.length - offset < 4) break;
-          const {buffer, engine} = zstdDecompressSync(input.subarray(offset),
-            {info: true, finishFlush: constants.ZSTD_e_flush});
-          if (!engine.bytesWritten) throw new Error('Invalid Zstandard frame');
-          process.stdout.write(buffer);
-          offset += engine.bytesWritten;
+        const fd = openSync(process.argv[1], 'r'), start = Number(process.argv[2]);
+        const input = Buffer.alloc(Math.max(0, fstatSync(fd).size - start));
+        readSync(fd, input, 0, input.length, start);
+        function frameSize(at) {
+          if (input.length - at < 8) return 0;
+          const magic = input.readUInt32LE(at);
+          if (magic >= 0x184D2A50 && magic <= 0x184D2A5F) {
+            const size = 8 + input.readUInt32LE(at + 4);
+            return at + size <= input.length ? size : 0;
+          }
+          if (magic !== 0xFD2FB528) throw new Error('Invalid Zstandard frame');
+          const descriptor = input[at + 4], single = (descriptor >> 5) & 1;
+          let p = at + 5 + (single ? 0 : 1) + [0, 1, 2, 4][descriptor & 3] + [single, 2, 4, 8][descriptor >> 6];
+          for (;;) {
+            if (input.length - p < 3) return 0;
+            const header = input[p] | (input[p + 1] << 8) | (input[p + 2] << 16), type = (header >> 1) & 3;
+            if (type === 3) throw new Error('Invalid Zstandard block');
+            p += 3 + (type === 1 ? 1 : header >>> 3);
+            if (header & 1) break;
+          }
+          p += (descriptor >> 2) & 1 ? 4 : 0;
+          return p <= input.length ? p - at : 0;
         }
-        """, arguments: [url.path], timeout: 10)
+        function emit(stored, text) {
+          const header = Buffer.alloc(8);
+          header.writeUInt32LE(stored, 0);
+          header.writeUInt32LE(text.length, 4);
+          process.stdout.write(header);
+          process.stdout.write(text);
+        }
+        for (let offset = 0; input.length - offset >= 4;) {
+          const size = frameSize(offset);
+          if (!size) {
+            try { emit(0, zstdDecompressSync(input.subarray(offset), {finishFlush: constants.ZSTD_e_flush})); }
+            catch { /* Too little of the frame is written to decode any of it. */ }
+            break;
+          }
+          emit(size, zstdDecompressSync(input.subarray(offset, offset + size)));
+          offset += size;
+        }
+        """, arguments: [url.path, String(start.stored)], timeout: 10)
+        var data = Data(), restarts: [DecodedPosition] = [], position = start, index = output.startIndex
+        func number(_ at: Int) -> Int { (0..<4).reduce(0) { $0 | Int(output[at + $1]) << (8 * $1) } }
+        while output.endIndex - index >= 8 {
+            let stored = number(index), count = number(index + 4)
+            index += 8
+            guard output.endIndex - index >= count else { throw ProviderFailure.format }
+            data.append(output[index..<(index + count)])
+            index += count
+            guard stored > 0 else { break }
+            position = DecodedPosition(stored: position.stored + stored, decoded: position.decoded + count)
+            restarts.append(position)
+        }
+        return DecodedLog(start: start, data: data, restarts: restarts)
     }
 }
 

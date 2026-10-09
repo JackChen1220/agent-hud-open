@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="36" viewBox="0 0 180 36" role="img" aria-labelledby="title">
+  <title id="title">下载 Agent HUD Mac 版</title>
+  <rect x=".5" y=".5" width="179" height="35" rx="9" fill="#161b22" stroke="#465160"/>
+  <g fill="none" stroke="#66e6b0" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 9v12m-4-4 4 4 4-4M15 23v4h14v-4"/>
+  </g>
+  <text x="48" y="22.5" fill="#fff" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="600">下载 Mac 版</text>
+</svg>

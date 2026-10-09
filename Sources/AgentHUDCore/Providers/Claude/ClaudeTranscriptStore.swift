@@ -16,7 +16,8 @@ public actor ClaudeTranscriptStore {
 
     public struct Result: Sendable {
         public let sessions: [TranscriptSession]
-        /// Files still waiting to be (re)read; zero once the index is complete.
+        /// Files still waiting to be (re)read; zero once the index is complete, including while one that cannot be read
+        /// waits to be tried again.
         public let pending: Int
     }
 
@@ -86,7 +87,8 @@ public actor ClaudeTranscriptStore {
         scan.files = pass.logs.count
         scan.filesRead = pass.filesRead
         scan.bytesRead = pass.bytesRead
-        scan.pending = pass.pending + pass.failures.count
+        // A transcript that cannot be read waits out a pause; it is not work still to do.
+        scan.pending = pass.pending
         scan.elapsed = Date().timeIntervalSince(started)
         lastScan = scan
         return Result(sessions: result, pending: scan.pending)
@@ -97,19 +99,29 @@ public actor ClaudeTranscriptStore {
     }
 }
 
-/// Claude Code transcripts; each counts on its own.
+/// Claude Code transcripts; each counts on its own, and only the lines of the session it is named after.
 enum ClaudeTranscripts: TailLog {
     static let source = "claude"
     static let summaryKey = "accumulator"
-    /// 2: cache writes, thinking, prompts and compactions.
-    static let version = 2
+    /// 2: cache writes, thinking, prompts and compactions. 3: the session's given and generated titles. 4: the lines a
+    /// fork copied from its parent, and the older copies of a session's log, no longer count.
+    static let version = 4
 
     static func summary(for url: URL) -> TranscriptAccumulator {
         TranscriptAccumulator(path: url.path, isSubagent: ClaudeTranscriptStore.isSubagent(url))
     }
 
+    /// Resuming a session in another directory can leave its log in the first project's folder and continue a copy of
+    /// it, under the same name, in the other's. A sub-agent's log is named after the agent and never copied.
+    static func copyName(_ path: String) -> String? {
+        let url = URL(fileURLWithPath: path, isDirectory: false)
+        return ClaudeTranscriptStore.isSubagent(url) ? nil : url.lastPathComponent
+    }
+
     static func ingest(_ lines: Data, into accumulator: inout TranscriptAccumulator) -> [UsageLedger.Event] {
-        accumulator.ingest(FastTranscriptParser.parse(lines))
+        let titles = FastTranscriptParser.titles(in: lines, session: accumulator.ownSession)
+        accumulator.noteTitles(custom: titles.custom, generated: titles.generated)
+        return accumulator.ingest(FastTranscriptParser.parse(lines))
     }
 
     static func drainMarks(_ accumulator: inout TranscriptAccumulator) -> [UsageLedger.Mark] { accumulator.drainMarks() }

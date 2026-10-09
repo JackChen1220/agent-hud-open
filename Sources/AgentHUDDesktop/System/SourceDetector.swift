@@ -6,6 +6,14 @@ enum SourceDetector {
     static func resolve(_ sources: [SourceStatus], report: UsageReport?) -> [SourceStatus] {
         guard let report else { return sources }
         return sources.map { source in
+            // Shared account quota does not establish that either execution client supplied sessions.
+            if source.provider == "Grok", source.name == "Grok CLI" || source.name == "Grok Bot" {
+                guard report.sessions.contains(where: {
+                    SessionSource(vendor: SessionSource.vendor(impliedBy: $0.agentId), client: $0.client).agentVendor == source.name
+                }) else { return source }
+                return SourceStatus(id: source.id, name: source.name, detail: source.detail, state: .ready(plan: nil),
+                                    provider: source.provider, supportsLiveStatus: source.supportsLiveStatus)
+            }
             let vendor: String
             switch source.id {
             case "claude-code": vendor = "Claude"
@@ -17,19 +25,23 @@ enum SourceDetector {
                 else { return source }
             }
             if vendor == "DeepSeek", report.discoveredAgents.contains(where: { $0.id == "deepseek" && $0.connected }) {
-                return SourceStatus(id: source.id, name: source.name, detail: source.detail, state: .ready(plan: nil))
+                return SourceStatus(id: source.id, name: source.name, detail: source.detail, state: .ready(plan: nil),
+                                    provider: source.provider, supportsLiveStatus: source.supportsLiveStatus)
             }
             let hasQuota = report.discoveredAgents.contains { agent in
                 (agent.vendor == vendor || vendor == "OpenCode" && agent.vendor == "OpenCode Go") && report.snapshots.contains { $0.agentId == agent.id }
             }
             let hasSessions = report.consumers.contains { $0.vendor == vendor }
             let plan = report.subscriptions[vendor]
-            if let notice = report.sourceNotices[vendor] {
+            if let notice = report.quotaNotice(vendor: vendor) ?? report.sourceNotices[vendor]
+                ?? (vendor == "OpenCode" ? report.sourceNotices["OpenCode Go"] : nil) {
                 return SourceStatus(id: source.id, name: source.name, detail: notice,
-                    state: hasQuota || hasSessions || plan != nil ? .ready(plan: plan) : .unavailable)
+                    state: hasQuota || hasSessions || plan != nil ? .ready(plan: plan) : .unavailable,
+                    provider: source.provider, supportsLiveStatus: source.supportsLiveStatus)
             }
             guard hasQuota || hasSessions || plan != nil else { return source }
-            return SourceStatus(id: source.id, name: source.name, detail: source.detail, state: .ready(plan: plan))
+            return SourceStatus(id: source.id, name: source.name, detail: source.detail, state: .ready(plan: plan),
+                                provider: source.provider, supportsLiveStatus: source.supportsLiveStatus)
         }
     }
 
@@ -65,8 +77,16 @@ enum SourceDetector {
                              ? L10n.text("Harness 会话、API 余额与费用", "Harness sessions, API balance and costs")
                              : L10n.text("启动 Harness 后读取用量", "Reads usage after starting Harness"),
                          state: deepseekReady ? .installed : .notDetected),
-        ] + AdditionalSource.allCases.map {
-            SourceStatus(id: $0.rawValue, name: $0.vendor, detail: $0.detail, state: $0.isInstalled(home: home) ? .installed : .notDetected)
+        ] + AdditionalSource.allCases.flatMap { source -> [SourceStatus] in
+            let status = SourceStatus(id: source.rawValue, name: source == .grok ? "Grok CLI" : source.vendor,
+                                     detail: source == .grok ? L10n.text("本地会话与用量", "Local sessions and usage") : source.detail,
+                                     state: source.isInstalled(home: home) ? .installed : .notDetected,
+                                     provider: source.vendor)
+            guard source == .grok else { return [status] }
+            return [status, SourceStatus(id: "grok-bot", name: "Grok Bot",
+                detail: L10n.text("本机缓存会话、额度与用量；实时状态暂不可读", "Cached sessions, quota and usage; live status unavailable"),
+                state: GrokBotLocator.isInstalled(home: home) ? .installed : .notDetected,
+                provider: "Grok", supportsLiveStatus: false)]
         } + OpenAgentSource.allCases.map {
             SourceStatus(id: $0.rawValue, name: $0.name, detail: $0.detail, state: $0.isInstalled(home: home) ? .installed : .notDetected)
         }

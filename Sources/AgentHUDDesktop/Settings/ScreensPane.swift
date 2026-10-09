@@ -3,7 +3,7 @@ import SwiftUI
 import AgentHUDCore
 
 /// Per-screen HUD placement: pick a display, then pick how it presents the HUD. Every display keeps its
-/// own setting, so a laptop can hold its island while the monitor beside it runs the logo queue — and a
+/// own setting, so a laptop can hold its island while the monitor beside it runs the Dynamic Dock — and a
 /// display with no notch stops pretending to have one.
 struct ScreensPane: View {
     let settings: SettingsStore
@@ -55,8 +55,22 @@ struct ScreensPane: View {
             SettingRow(label: L10n.text("HUD 形态", "HUD"), subtitle: subtitle) {
                 SegmentedPills(options: [
                     SegmentOption(value: HUDMode.notch, label: L10n.text("刘海", "Notch")),
-                    SegmentOption(value: HUDMode.logos, label: L10n.text("Logo 队列", "Logo queue")),
+                    SegmentOption(value: HUDMode.logos, label: L10n.text("动态 Dock", "Dynamic Dock")),
                 ], selection: binding(\.mode), theme: theme)
+            }
+            Text(L10n.text("直接拖动可见的 HUD。拖动刘海会切换为动态 Dock。",
+                           "Drag the visible HUD directly. Dragging the notch switches to Dynamic Dock."))
+                .font(.ui(11)).foregroundStyle(theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16).padding(.bottom, 12)
+            SettingsDivider(theme: theme)
+            SettingRow(label: L10n.text("位置", "Position"),
+                       subtitle: L10n.text("回到这块屏幕的顶部安全位置。", "Return to a reachable position at the top of this display.")) {
+                Button(L10n.text("重置位置", "Reset Position"), action: resetPosition)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("hud-reset-position")
+                    .disabled(current == nil)
             }
             if placement.mode == .logos {
                 let size = placement.logoSize
@@ -85,11 +99,22 @@ struct ScreensPane: View {
 
     private var subtitle: String {
         guard let current else { return "" }
+        if placement.mode == .logos {
+            return L10n.text("贴着屏幕边缘停靠，向屏幕内展开。", "Dock on a screen edge and open inward.")
+        }
         return current.hasNotch
-            ? L10n.text("这块屏有刘海；居中的 Logo 队列会显示在刘海下方。",
-                        "This display has a notch; a centred logo queue appears below it.")
+            ? L10n.text("围绕这块屏幕的刘海显示。", "Use this display's physical notch.")
             : L10n.text("这块屏没有刘海，刘海形态会画一条替代的黑条。",
                         "No notch here — the notch shape draws a stand-in bar instead.")
+    }
+
+    private func resetPosition() {
+        guard let current else { return }
+        var next = placement
+        next.edge = .top
+        // Centered queues clear the physical notch without changing their horizontal alignment.
+        next.offset = 0.5
+        settings.update { $0.screens[current.key] = next }
     }
 
     private func refresh() {

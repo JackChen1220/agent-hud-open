@@ -26,11 +26,11 @@ enum KiroSessions: LocalSessionLayout {
         var session = ProviderSession(id: id,
             title: json["title"].stringValue.flatMap(SessionTitle.from) ?? "Kiro CLI · \(rawID.prefix(8))",
             workspace: json["cwd"].stringValue, path: path, client: "Kiro CLI",
-            startedAt: ProviderDate.iso(json["created_at"].stringValue),
-            lastActivity: ProviderDate.iso(json["updated_at"].stringValue))
+            startedAt: DateParsing.internet(json["created_at"].stringValue),
+            lastActivity: DateParsing.internet(json["updated_at"].stringValue))
         var seen = Set<String>(), incomplete = false
         for turn in turns {
-            guard let date = ProviderDate.iso(turn["end_timestamp"].stringValue) else { incomplete = true; continue }
+            guard let date = DateParsing.internet(turn["end_timestamp"].stringValue) else { incomplete = true; continue }
             // A completed turn has one end time even if the same record occurs twice in a rewritten snapshot.
             let key = RecordCoding.hash([id, turn["end_timestamp"].stringValue!])
             guard seen.insert(key).inserted else { continue }

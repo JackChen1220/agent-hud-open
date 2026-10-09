@@ -9,6 +9,8 @@ enum TencentBuddySessions {
         let parent = folder.lastPathComponent == "subagents" ? folder.deletingLastPathComponent().lastPathComponent : nil
         let client = source == .codebuddy ? "CodeBuddy Code" : source.vendor
         var sessions: [String: ProviderSession] = [:], events: [String: [String: ProviderEvent]] = [:], incomplete = false
+        // The latest title of each kind the engine appended, by its rank in `titleFields`.
+        var named: [String: [Int: String]] = [:]
         try ProviderFiles.lines(url) { json, line in
             let raw = parent ?? json["sessionId"].stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? stem
             let id = "\(source.rawValue):\(raw)", date = ProviderDate.milliseconds(json["timestamp"])
@@ -20,6 +22,11 @@ enum TencentBuddySessions {
             if let date { session.startedAt = min(session.startedAt ?? date, date); session.lastActivity = max(session.lastActivity ?? date, date) }
             sessions[id] = session
             let kind = json["type"].stringValue, provider = json["providerData"]
+            if parent == nil, let rank = titleFields.firstIndex(where: { $0.type == kind }),
+               let title = SessionTitle.named(json[titleFields[rank].field].stringValue), !placeholderTitles.contains(title),
+               !title.hasPrefix("<image_local_path>") {
+                named[id, default: [:]][rank] = title
+            }
             guard kind == "function_call" || (kind == "message" && json["role"].stringValue == "assistant"),
                   json["status"] == .null || json["status"].stringValue == "completed",
                   let usage = [json["message"]["usage"], provider["usage"], provider["rawUsage"]].first(where: { $0.objectValue != nil }) else { return }
@@ -36,10 +43,18 @@ enum TencentBuddySessions {
             events[id, default: [:]][key] = event
         }
         return ProviderSessions(sessions: sessions.keys.sorted().compactMap { key in
-            sessions[key].map { var item = $0; item.events = (events[key] ?? [:]).values.sorted { ($0.timestamp, $0.id) < ($1.timestamp, $1.id) }; return item }
+            sessions[key].map { var item = $0
+                if let title = named[key]?.min(by: { $0.key < $1.key })?.value { item.title = title }
+                item.events = (events[key] ?? [:]).values.sorted { ($0.timestamp, $0.id) < ($1.timestamp, $1.id) }; return item }
         }, notice: incomplete ? L10n.text("部分 \(source.vendor) 记录缺少时间或计数无法核对，未计入统计",
                                           "Some \(source.vendor) records lack a time or have inconsistent counts and were excluded") : nil)
     }
+
+    /// Title lines the engine appends to a session's transcript, in the order it prefers them: the name the user gave,
+    /// the generated title, then the topic it tracks. The folder name stands in until one arrives.
+    static let titleFields: [(type: String, field: String)] = [("custom-title", "customTitle"), ("ai-title", "aiTitle"), ("topic", "topic")]
+    /// Values the engine itself passes over when it picks a title.
+    static let placeholderTitles: Set<String> = ["(No content)", "/compact"]
 
     /// A reported total equal to input + output, or cached tokens nested in the input details, proves that input holds cache
     /// reads and output holds reasoning; otherwise the counts are additive. In keeps cache writes; Cache is cache reads only.
@@ -84,12 +99,8 @@ enum TencentBuddySessions {
     static func lastAssistantMessage(_ url: URL, session: String) -> (id: String, model: String?)? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
-        guard let size = try? handle.seekToEnd() else { return nil }
-        let start = size > 1 << 20 ? size - (1 << 20) : 0
-        guard (try? handle.seek(toOffset: start)) != nil, let data = try? handle.readToEnd() else { return nil }
-        var lines = data.split(separator: 10)
-        if start > 0, !lines.isEmpty { lines.removeFirst() }
-        for line in lines.reversed() {
+        guard let data = try? ProviderFiles.tail(handle, bytes: 1 << 20) else { return nil }
+        for line in data.split(separator: 10).reversed() {
             guard let json = try? ProviderJSON.read(Data(line)), json["type"].stringValue == "message",
                   json["sessionId"].stringValue.map({ $0 == session }) != false else { continue }
             if json["role"].stringValue == "user" { return nil }
@@ -121,7 +132,7 @@ enum CodeBuddySessions: LocalSessionLayout {
     static let installPaths = [".codebuddy/projects"]
     /// CodeBuddy Code's configuration and data folder: `CODEBUDDY_CONFIG_DIR`, else `~/.codebuddy`.
     static func home(_ home: URL, environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
-        environment["CODEBUDDY_CONFIG_DIR"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".codebuddy")
+        ClientHome.variable("CODEBUDDY_CONFIG_DIR", in: environment).map { URL(fileURLWithPath: $0) } ?? home.appendingPathComponent(".codebuddy")
     }
     static func roots(home: URL, environment: [String: String]) -> [URL] { [self.home(home, environment: environment).appendingPathComponent("projects")] }
     static func accepts(_ url: URL) -> Bool { url.pathExtension == "jsonl" }
@@ -136,5 +147,24 @@ enum WorkBuddySessions: LocalSessionLayout {
     static func accepts(_ url: URL) -> Bool { url.pathExtension == "jsonl" }
     static func skips(_ url: URL) -> Bool { url.lastPathComponent == "tool-results" }
     static func read(_ url: URL) throws -> ProviderSessions { try TencentBuddySessions.read(url, source: .workbuddy) }
-    static func merge(_ sessions: [ProviderSession]) -> [ProviderSession] { TencentBuddySessions.merge(sessions) }
+    static func merge(_ sessions: [ProviderSession]) -> [ProviderSession] { names(TencentBuddySessions.merge(sessions)) }
+
+    /// The app keeps a session's name in `workbuddy.db` beside `projects`, where a rename from its sidebar goes: the
+    /// name the user gave, else the generated one. Read on every pass, so a rename shows without reparsing transcripts.
+    static func names(_ sessions: [ProviderSession]) -> [ProviderSession] {
+        guard let path = sessions.lazy.compactMap(\.path).first,
+              let projects = sequence(first: URL(fileURLWithPath: path).deletingLastPathComponent(), next: {
+                  $0.pathComponents.count > 1 ? $0.deletingLastPathComponent() : nil
+              }).first(where: { $0.lastPathComponent == "projects" }),
+              let database = try? ReadOnlySQLite(projects.deletingLastPathComponent().appendingPathComponent("workbuddy.db")) else { return sessions }
+        let prefix = "\(AdditionalSource.workbuddy.rawValue):"
+        let ids = sessions.map { String($0.id.dropFirst(prefix.count)) }
+        guard let list = try? JSONSerialization.data(withJSONObject: ids), let json = String(data: list, encoding: .utf8) else { return sessions }
+        var titles: [String: String] = [:]
+        try? database.rows("SELECT id, custom_title, title FROM sessions WHERE id IN (SELECT value FROM json_each(?))", strings: [json]) { row in
+            if let id = ReadOnlySQLite.text(row, 0),
+               let title = SessionTitle.named(ReadOnlySQLite.text(row, 1)) ?? SessionTitle.named(ReadOnlySQLite.text(row, 2)) { titles[prefix + id] = title }
+        }
+        return sessions.map { var item = $0; if let title = titles[item.id] { item.title = title }; return item }
+    }
 }
