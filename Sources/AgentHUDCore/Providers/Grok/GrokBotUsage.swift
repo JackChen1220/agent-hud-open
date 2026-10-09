@@ -1,11 +1,20 @@
 import Foundation
 
 /// Bot owns its account-scoped session metadata; Cursor owns the dashboard's billing events. Join their exact native
-/// conversation identities for display without copying events to another source or inferring Cloud Agent children.
+/// conversation identities for display without copying events to another source or inventing parent relationships.
 enum GrokBotUsage {
+    /// The native Bot coordinator recognizes this namespace independently of roster membership or model selector.
+    /// It identifies the execution client, but carries no parent-session identity.
+    static func subagentID(_ conversationID: String) -> String? {
+        let prefix = "sand-subagent-"
+        guard conversationID.hasPrefix(prefix) else { return nil }
+        let id = String(conversationID.dropFirst(prefix.count))
+        return GrokBotCache.isAgentID(id) ? id : nil
+    }
+
     static func merge(_ sessions: [LiveSession]) -> [LiveSession] {
         let billed = Dictionary(grouping: sessions.filter {
-            $0.client == "Cursor" && conversationID($0.id) != nil
+            conversationID($0.id) != nil
         }, by: { conversationID($0.id)! })
         let bots = Dictionary(grouping: sessions.filter {
             $0.client == "Grok Bot" && nativeID($0) != nil

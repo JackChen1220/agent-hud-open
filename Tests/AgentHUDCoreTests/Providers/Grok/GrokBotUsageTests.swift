@@ -91,6 +91,81 @@ final class GrokBotUsageTests: XCTestCase {
         }
     }
 
+    func testNativeSubagentNamespaceIdentifiesBotWithoutARosterAndKeepsOneBillingContribution() async throws {
+        let ids = ["sand-subagent-11111111-1111-1111-1111-111111111111",
+                   "sand-subagent-22222222-2222-2222-2222-222222222222",
+                   "sand-subagent-33333333-3333-3333-3333-333333333333"]
+        let models = ["grok-bot-default", "grok-bot-cua", "ordinary-model"]
+        let billing = try CursorClient.parseEvents(zip(ids, models).map { row(conversation: $0, model: $1) }, account: "billing-account")
+        let ledger = UsageLedger.inMemory()
+        let report = try await combined(bot: .init(), billing: billing, ledger: ledger)
+            .fetchAccountAndLocalUsage(agents: [], historyHours: 168)
+        XCTAssertEqual(report.sessions.count, 3)
+        XCTAssertEqual(Set(report.consumers.map(\.vendor)), ["Cursor"])
+        let account = ProviderAccount(provider: "Cursor", user: "billing-owner", workspace: "", evidence: .account)
+        XCTAssertEqual(Set(report.usage.compactMap(\.account)), [account.id])
+        XCTAssertEqual(report.usage.reduce(0) { $0 + $1.tokensIn }, 36)
+        XCTAssertEqual(report.usage.reduce(0) { $0 + $1.tokensOut }, 15)
+        XCTAssertEqual(report.usage.reduce(0) { $0 + $1.cacheReadTokens }, 60)
+        XCTAssertEqual(Set(report.sessions.map(\.task)).count, 3, "the native suffix distinguishes each child")
+        for (id, model) in zip(ids, models) {
+            let key = "cursor-account:billing-account:" + id
+            let session = try XCTUnwrap(report.sessions.first { $0.id == key })
+            XCTAssertEqual(session.client, "Grok Bot")
+            XCTAssertEqual(session.agentId, "cursor-model:" + model)
+            XCTAssertTrue(session.task.hasPrefix("Grok Bot"))
+            XCTAssertTrue(session.task.hasSuffix(String(id.dropFirst("sand-subagent-".count).prefix(8))))
+            XCTAssertTrue(session.accountWide)
+            XCTAssertNil(session.usageKey, "the unchanged session ID already addresses its canonical billing contribution")
+            XCTAssertNil(session.transcriptPath)
+            XCTAssertNil(session.navigationTarget)
+            XCTAssertNil(session.subagentSessions, "the child namespace does not identify a parent")
+            let source = SessionSource(vendor: "Cursor", client: session.client)
+            XCTAssertEqual(source.vendor, "Grok")
+            XCTAssertEqual(source.agentVendor, "Grok Bot")
+            let usage = try XCTUnwrap(report.sessionUsage?[key])
+            XCTAssertEqual(usage.calls, 1)
+            XCTAssertEqual(usage.total, .init(tokensIn: 12, tokensOut: 5, cacheReadTokens: 20, cacheWriteTokens: 2))
+            XCTAssertEqual(usage.models.map(\.agentId), [session.agentId])
+            let calls = try await ledger.turnCalls(SessionUsageRequest(session), from: now.addingTimeInterval(-60), through: now)
+            XCTAssertEqual(calls.count, 1)
+            XCTAssertEqual(calls.first?.source, "cursor")
+            XCTAssertEqual(calls.first?.log, key)
+        }
+        let contributions = try await ledger.write { writer in
+            ["cursor": try writer.contributions(source: "cursor"), "grok": try writer.contributions(source: "grok")]
+        }
+        XCTAssertEqual(Set(contributions["cursor"] ?? []), Set(billing.sessions.map(\.id)))
+        XCTAssertEqual(contributions["grok"], [])
+    }
+
+    func testModelNamesAndSimilarOrMissingIDsDoNotEstablishBotOrigin() async throws {
+        let ids: [String?] = ["ordinary-conversation", "sand-subagent", "sand-subagent-", "other-sand-subagent-child",
+                              "sand-subagent-child:other", nil]
+        let billing = try CursorClient.parseEvents(ids.map { row(conversation: $0) }, account: "account-a")
+        let report = try await combined(bot: .init(), billing: billing).fetchAccountAndLocalUsage(agents: [], historyHours: 168)
+        XCTAssertEqual(report.sessions.count, ids.count)
+        XCTAssertTrue(report.sessions.allSatisfy { $0.client == "Cursor" && $0.usageKey == nil })
+        XCTAssertEqual(Set(report.sessions.map(\.agentId)), ["cursor-model:grok-bot-default"])
+    }
+
+    func testSubagentNativeMetadataStillJoinsItsExactBillingIdentity() async throws {
+        let id = "sand-subagent-fixture-child"
+        let billing = try CursorClient.parseEvents([row(conversation: id)], account: "account-a")
+        let report = try await combined(bot: metadata(agent: id), billing: billing)
+            .fetchAccountAndLocalUsage(agents: [], historyHours: 168)
+        let session = try XCTUnwrap(report.sessions.first)
+        XCTAssertEqual(report.sessions.count, 1, "a known child keeps one native session, rather than a separate billing row")
+        XCTAssertEqual(session.id, GrokBotCache.sessionID(account: "bot-account", agent: id))
+        XCTAssertEqual(session.task, "Native title")
+        XCTAssertEqual(session.navigationTarget, .grokBotAgent(id: id))
+        XCTAssertEqual(session.client, "Grok Bot")
+        XCTAssertEqual(session.tokensIn, 12)
+        XCTAssertEqual(session.usageKey, billing.sessions.first?.id)
+        XCTAssertEqual(report.sessionUsage?[session.id]?.calls, 1)
+        XCTAssertNil(session.subagentSessions)
+    }
+
     func testAnExactNativeIDJoinsAnOrdinaryModelWithoutChangingItsIdentity() async throws {
         let billing = try CursorClient.parseEvents([row(conversation: "native-agent", model: "cursor-grok-4.6-medium")], account: "account-a")
         let report = try await combined(bot: metadata(agent: "native-agent"), billing: billing)
@@ -167,12 +242,14 @@ final class GrokBotUsageTests: XCTestCase {
         return ProviderSessions(sessions: [session])
     }
 
-    private func row(conversation: String, model: String = "grok-bot-default", at: TimeInterval = -5,
+    private func row(conversation: String?, model: String = "grok-bot-default", at: TimeInterval = -5,
                      input: Int64 = 10, output: Int64 = 5, cache: Int64 = 20, write: Int64 = 2) -> ProviderJSON {
-        .object(["timestamp": .integer(Int64(now.addingTimeInterval(at).timeIntervalSince1970 * 1000)),
-                 "conversationId": .string(conversation), "model": .string(model),
+        var value: [String: ProviderJSON] = ["timestamp": .integer(Int64(now.addingTimeInterval(at).timeIntervalSince1970 * 1000)),
+                 "model": .string(model),
                  "tokenUsage": .object(["inputTokens": .integer(input), "outputTokens": .integer(output),
-                                        "cacheReadTokens": .integer(cache), "cacheWriteTokens": .integer(write)])])
+                                        "cacheReadTokens": .integer(cache), "cacheWriteTokens": .integer(write)])]
+        if let conversation { value["conversationId"] = .string(conversation) }
+        return .object(value)
     }
 
     private func provider(_ source: AdditionalSource, sessions: ProviderSessions, ledger: UsageLedger) -> AdditionalUsageProvider {
