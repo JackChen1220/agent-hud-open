@@ -33,14 +33,14 @@ Requires an Apple Silicon Mac running macOS 14 or later.
       <agenthudMinimumIOSVersion>1.4</agenthudMinimumIOSVersion>
     </item>
     <item>
-      <title>0.4.38</title>
-      <pubDate>Fri, 09 Oct 2026 09:21:57 +0800</pubDate>
-      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.38</link>
-      <sparkle:version>477</sparkle:version>
-      <sparkle:shortVersionString>0.4.38</sparkle:shortVersionString>
+      <title>0.4.36</title>
+      <pubDate>Thu, 08 Oct 2026 02:06:40 +0800</pubDate>
+      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.36</link>
+      <sparkle:version>467</sparkle:version>
+      <sparkle:shortVersionString>0.4.36</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-      <description sparkle:format="markdown"># Agent HUD 0.4.38
+      <description sparkle:format="markdown"># Agent HUD 0.4.36
 
 ## Compatibility
 
@@ -52,10 +52,14 @@ Requires an Apple Silicon Mac running macOS 14 or later.
 
 ## Changes
 
-- Restore a visible close button on expanded reply reminders. Closing a reply advances the event queue while leaving waiting permission requests unanswered.
-- Identify Grok Bot subagent billing conversations from their native session namespace, including subagents absent from the local conversation roster. Titles include their distinct IDs. Original billing identities and token totals are preserved without double counting; available native conversation metadata is joined only by exact ID.
+- Open a supported desktop conversation or focus the originating iTerm2 pane from a new reply, with a separate action to view token usage. In Active sessions, click the title to return to the agent or the token count to view usage.
+- Return destinations are available for Codex Desktop, Claude Desktop Code and Cowork, and Antigravity's running standalone app. Codex CLI, Claude Code CLI, Pi and OpenCode can return to their existing iTerm2 pane when a destination is available.
+- New replies and permission requests now share one event panel. Select a reply or request to see its details while the others remain available.
+- Failed session returns keep the reminder open for retry or token usage. Token usage remains available when the original session cannot be located.
+- Buttons respond across their icons, text and spacing, and token bars stay within their cards.
+- Holding Command no longer adds a dashed outline around the HUD; drag outlines appear during repositioning.
 </description>
-      <enclosure url="https://github.com/jazzenchen/agent-hud-open/releases/download/v0.4.38/Agent-HUD-0.4.38-arm64.dmg" length="12670540" type="application/octet-stream" sparkle:edSignature="zhv/+bLwp5cUrroJw+jaeKfBANoRJlvkYmi1+pNAz4BUPkFvqNRwbtPwCjJuDn1yj9gIlNsA66rvTrB7bBPEBQ==" />
+      <enclosure url="https://github.com/jazzenchen/agent-hud-open/releases/download/v0.4.36/Agent-HUD-0.4.36-arm64.dmg" length="11842893" type="application/octet-stream" sparkle:edSignature="sVONs8TQDRPO4WYkMwFAbB33IQ8iGP8cbP26dq6ZLkEm/d1EHnOe0SQrhKVg/BXtecn5bjc3gH/KndvT1UfXAA==" />
       <agenthudMacOnly>false</agenthudMacOnly>
       <agenthudMinimumIOSVersion>1.4</agenthudMinimumIOSVersion>
     </item>

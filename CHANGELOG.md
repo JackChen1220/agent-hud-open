@@ -9,11 +9,13 @@ Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` o
 
 ## 0.4.38 — 2026-10-09
 
+- Release status: **Beta / Pre-release**. **Critical known issue:** the LAN changes conflict with the communication mechanism in existing Agent HUD Remote iOS versions and may disrupt cross-device communication or sync. Wait for a verified compatibility fix before upgrading.
 - Bot subagent billing conversations use their native identity namespace to show Grok Bot as the execution client, even when absent from the local conversation roster. Their titles include distinct subagent IDs, and their Cursor billing totals count once.
 - Expanded reply reminders have a visible close button. Closing a reply advances the event queue while leaving waiting permissions unanswered.
 
 ## 0.4.37 — 2026-10-09
 
+- Release status: **Beta / Pre-release**. **Critical known issue:** the LAN changes conflict with the communication mechanism in existing Agent HUD Remote iOS versions and may disrupt cross-device communication or sync. Wait for a verified compatibility fix before upgrading.
 - Grok Bot sessions show token usage and billing model identifiers from Cursor dashboard conversations with the same native agent ID. Matched sessions retain their Bot title, conversation and navigation, while unmatched conversations stay under Cursor; billing events count once.
 - Host API: `LiveSession.usageKey` optionally references another provider's canonical ledger contribution. `SessionUsageRequest` uses that contribution for the session's own breakdown and calls; execution identity and billing consumer identity remain separate.
 - Grok accounts and quota stay under Grok. Grok CLI and Grok Bot have distinct client entries and artwork; Bot installation is detected independently, with its session reading capability shown explicitly.
