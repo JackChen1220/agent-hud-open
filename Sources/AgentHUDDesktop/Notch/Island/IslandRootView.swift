@@ -14,6 +14,7 @@ struct IslandRootView: View {
     var additionalHUDControls: @MainActor () -> AnyView = { AnyView(EmptyView()) }
     var alert: IslandAlert? = nil
     var onOpenAlert: () -> Void = {}
+    var onDismissAlert: () -> Void = {}
     var onOpenAlertSession: () -> Void = {}
     var onOpenAlertUsage: () -> Void = {}
     var sessionNavigationFailed = false
@@ -146,12 +147,14 @@ struct IslandRootView: View {
             Group {
                 if alert.isSessionEvent {
                     IslandEventPanelView(alert: alert, onOpen: onOpenAlert, onDecide: onDecideAlert,
+                                         onDismiss: onDismissAlert,
                                          onOpenSession: onOpenAlertSession, onOpenUsage: onOpenAlertUsage,
                                          sessionNavigationFailed: sessionNavigationFailed,
                                          events: sessionEvents, waitingRequests: waitingRequests,
                                          onSelectRequest: onSelectRequest)
                 } else {
                     IslandAlertDetailView(alert: alert, onOpen: onOpenAlert, onDecide: onDecideAlert,
+                                          onDismiss: onDismissAlert,
                                           onOpenSession: onOpenAlertSession, onOpenUsage: onOpenAlertUsage,
                                           sessionNavigationFailed: sessionNavigationFailed,
                                           waitingRequests: waitingRequests, onSelectRequest: onSelectRequest)

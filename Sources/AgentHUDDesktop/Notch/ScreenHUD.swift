@@ -367,6 +367,13 @@ final class ScreenHUD {
         setTyping(false)
     }
 
+    /// Closing a reply removes that reminder; an unanswered request must stay with its client.
+    func dismissCompletionAlert() {
+        guard case .completion? = activeAlert else { return }
+        cancelSessionNavigation()
+        dismissAlert()
+    }
+
     private func dismissAlert() {
         let surface = alerts.current?.inUsagePanel
         if let next = alerts.dismiss() {
@@ -702,6 +709,7 @@ final class ScreenHUD {
             },
             alert: previewPlacement == nil ? activeAlert : nil,
             onOpenAlert: { [weak self] in self?.openAlert() },
+            onDismissAlert: { [weak self] in self?.dismissCompletionAlert() },
             onOpenAlertSession: { [weak self] in Task { await self?.openAlertSession() } },
             onOpenAlertUsage: { [weak self] in self?.openAlertUsage() },
             sessionNavigationFailed: sessionNavigationFailed,

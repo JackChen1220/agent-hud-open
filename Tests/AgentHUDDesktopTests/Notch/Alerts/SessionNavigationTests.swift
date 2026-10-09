@@ -95,6 +95,50 @@ final class SessionNavigationTests: XCTestCase {
     }
 
     @MainActor
+    func testClosingAReplyDismissesWithoutChoosingADestination() throws {
+        let fixture = try NavigationFixture { _ in XCTFail("Closing a reply must not navigate"); return true }
+        defer { fixture.close() }
+        let reply = fixture.completion(target: .codexThread(id: UUID().uuidString))
+        fixture.hud.present(reply)
+        fixture.hud.openAlert()
+        fixture.hud.island.rootView.onDismissAlert()
+        XCTAssertFalse(fixture.hud.holds(reply.id))
+        XCTAssertNil(fixture.hud.island.rootView.alert)
+        XCTAssertFalse(fixture.hud.island.rootView.isOpen)
+        XCTAssertEqual(fixture.statsOpens, 0)
+        XCTAssertNil(fixture.store.focusedSessionID)
+    }
+
+    @MainActor
+    func testClosingASelectedReplyRestoresAndPreservesTheWaitingPermission() throws {
+        let fixture = try NavigationFixture { _ in XCTFail("Closing a reply must not navigate"); return true }
+        defer { fixture.close() }
+        let question = PermissionQuestion(question: "Continue?", options: [.init(label: "Continue")])
+        let request = PermissionRequest(id: "waiting-permission-" + UUID().uuidString,
+                                        source: .claude, sessionID: "session", toolName: "AskUserQuestion",
+                                        summary: "Choose the next step", detail: nil,
+                                        cwd: "/tmp/agenthud-tests", questions: [question], at: Date())
+        fixture.hud.present(.permission(request))
+        let draft = QuestionDraft.draft(for: request.id)
+        draft.type("Continue after review", of: 0, in: question)
+        let reply = fixture.completion(target: nil)
+        fixture.hud.present(reply)
+        fixture.hud.selectRequest(reply.id)
+        fixture.hud.openAlert()
+        let dismiss = fixture.hud.island.rootView.onDismissAlert
+        dismiss()
+        XCTAssertFalse(fixture.hud.holds(reply.id))
+        XCTAssertTrue(fixture.hud.holds(request.id))
+        XCTAssertEqual(fixture.hud.island.rootView.alert?.id, request.id)
+        XCTAssertTrue(fixture.hud.island.rootView.showsAlertDetails)
+        dismiss()
+        XCTAssertTrue(fixture.hud.holds(request.id), "A stale reply button cannot dismiss a waiting permission")
+        XCTAssertTrue(QuestionDraft.draft(for: request.id) === draft)
+        XCTAssertEqual(draft.answer(0, of: question), .init(custom: "Continue after review"))
+        XCTAssertEqual(fixture.statsOpens, 0)
+    }
+
+    @MainActor
     func testCompletionReturnsToTheClientEvenWithoutAUsageSession() async throws {
         var opened: [SessionNavigationTarget] = []
         let fixture = try NavigationFixture { target in opened.append(target); return true }

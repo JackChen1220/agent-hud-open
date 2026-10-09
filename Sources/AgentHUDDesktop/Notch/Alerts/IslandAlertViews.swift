@@ -47,6 +47,7 @@ struct IslandAlertDetailView: View {
     let alert: IslandAlert
     let onOpen: () -> Void
     let onDecide: (PermissionDecision) -> Void
+    var onDismiss: () -> Void = {}
     var onOpenSession: () -> Void = {}
     var onOpenUsage: () -> Void = {}
     var sessionNavigationFailed = false
@@ -71,6 +72,17 @@ struct IslandAlertDetailView: View {
                     TurnEndedSymbol()
                     Text(L10n.text("有新回复", "New reply"))
                         .font(.ui(11)).foregroundStyle(Color(alert.accent))
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.65))
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("island-alert-dismissCompletion")
+                    .accessibilityLabel(L10n.text("关闭回复提醒", "Dismiss reply"))
+                    .help(L10n.text("关闭回复提醒", "Dismiss reply"))
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Text(event.task).font(.ui(15, .medium)).lineLimit(2)
@@ -100,6 +112,7 @@ struct IslandEventPanelView: View {
     let alert: IslandAlert
     let onOpen: () -> Void
     let onDecide: (PermissionDecision) -> Void
+    var onDismiss: () -> Void = {}
     var onOpenSession: () -> Void = {}
     var onOpenUsage: () -> Void = {}
     var sessionNavigationFailed = false
@@ -130,6 +143,7 @@ struct IslandEventPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             IslandAlertDetailView(alert: alert, onOpen: onOpen, onDecide: onDecide,
+                                  onDismiss: onDismiss,
                                   onOpenSession: onOpenSession, onOpenUsage: onOpenUsage,
                                   sessionNavigationFailed: sessionNavigationFailed,
                                   waitingRequests: requests, onSelectRequest: onSelectRequest)
