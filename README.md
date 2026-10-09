@@ -2,44 +2,89 @@
 
 <p align="center">
   <strong>Your agents, at a glance.</strong><br>
-  A native macOS utility for agent activity, remaining usage, and local usage statistics.
+  Activity, quotas, tokens and sessions in your Mac notch or Dynamic Dock.
+</p>
+
+<p align="center">
+  <a href="https://agenthud.app/mac"><img src="docs/buttons/mac.svg" alt="Download Agent HUD for Mac" width="180" height="36"></a>
+  <a href="https://apps.apple.com/app/id6812113619"><img src="docs/buttons/app-store.svg" alt="App Store: iPhone and Apple Watch" width="138" height="36"></a>
+  <a href="#build-from-source"><img src="docs/buttons/source.svg" alt="Build Agent HUD Open from source" width="181" height="36"></a>
 </p>
 
 <p align="center">
   <a href="https://agenthud.app">Website</a> ·
-  <a href="#quick-start">Quick start</a> ·
+  <a href="#local-and-remote">Local &amp; Remote</a> ·
   <a href="#supported-clients">Supported clients</a> ·
-  <a href="#documentation">Documentation</a>
+  <a href="#documentation">Documentation</a><br>
+  <sub>Native macOS 14+ &nbsp;·&nbsp; Swift 6 &nbsp;·&nbsp; Apache-2.0</sub>
 </p>
 
 <p align="center">
-  macOS 14+ &nbsp;·&nbsp; Swift 6 &nbsp;·&nbsp; Apache-2.0
+  <img src="docs/screenshots/approvals.webp" alt="Agent HUD notch with a queue of tool requests and an expanded edit diff" width="800">
 </p>
+
+Agent HUD Open is the macOS core and standalone source edition of [Agent HUD](https://agenthud.app). Local monitoring is free. The official Agent HUD app also offers connections to your iPhone and Apple Watch.
+
+## On your Mac
+
+| Stay in the flow | Know your usage | Follow your sessions |
+| --- | --- | --- |
+| Hover over the notch for a quick overview. On any display, drag Dynamic Dock to one of its four edges. | Check plan quotas, reset times, burn rates and API balances. Explore tokens by model, token kind and time. | Browse and search sessions by client and project. Git repositories and their worktrees share one project group. |
+| Get turn-completion reminders, quota warnings and reset alerts. Answer supported approvals and questions directly in the HUD. | The HUD always shows the past 24 hours of tokens in 15-minute bars, followed by up to five recent or active sessions. | Open per-turn usage, context and cache details, including identified Codex subagents. Return to a supported client's conversation or existing terminal pane. |
+
+Choose visible agents and accounts, per-display placement, and a soft glow or halftone, ASCII, block, Braille or binary effects. Press **⌘⌥H** to toggle the glow.
+
+### Approve without switching windows
+
+Inspect the command, file, tool input or edit diff before answering. Claude Code, Codex, Antigravity and other supported clients keep ownership of their permission flow; available choices depend on the client. Questions from Claude Code, ZCode and compatible DeepSeek Harness hosts can also be answered in the HUD.
+
+<details>
+<summary>See the HUD in motion</summary>
 
 <p align="center">
   <img src="docs/videos/agent-hud-loop.gif" alt="Agent HUD notch glow breathing and expanded usage panel" width="800">
 </p>
 
-## At a glance
+</details>
 
-- **Activity in your notch.** A breathing glow follows agent activity. Expand the panel to see quotas, token usage, and active sessions. Every display gets its own HUD — a screen without a notch shows the watched agents' logos in a row instead of a bar pretending to have one.
-- **Answers without a detour.** When a client stops to ask whether a tool may run, the request arrives on the HUD. Hover to read what it wants — the file, the command, the lines it would change — and allow or deny it there. Saying nothing is always available: the client keeps waiting on its own prompt in the terminal, exactly as if the HUD were closed.
-- **Usage in context.** Track reset times, quota trends, model usage, and available API balances in one statistics window.
-- **Make it yours.** Choose visible agents, glow appearance (a soft blur or a halftone, ASCII, block, Braille or binary grid, each with breathe, flow, scan, ripple, shimmer and boot effects), language, and startup preferences. Usage alert levels are fixed at 70% / 90% used.
+### See where your tokens go
 
-<p align="center">
-  <img src="docs/screenshots/approvals.webp" alt="Four tool calls waiting on the island: an edit with its diff open, and a shell command, an MCP call and a file read behind it" width="760">
-</p>
-
-Press **⌘⌥H** to toggle the glow. The menu bar gives you quick access to usage and settings.
+Compare models, inspect session turns, follow cache usage and view activity heatmaps. Costs at published API prices are estimates, shown separately from subscription quotas and actual account balances.
 
 <p align="center">
-  <img src="docs/screenshots/usage-statistics.webp" alt="Usage statistics with token charts, API balance, sessions, and an activity heatmap" width="680">
+  <img src="docs/screenshots/usage-statistics.webp" alt="Token statistics with model breakdowns, cache usage, API balance and an activity heatmap" width="680">
 </p>
 
-## Quick start
+## Local and Remote
 
-**Requirements:** macOS 14 or later, plus Xcode or the Xcode Command Line Tools with a Swift 6 toolchain.
+| Connection | What you can do | Availability |
+| --- | --- | --- |
+| **On your Mac** | Monitor local activity, quotas, tokens and sessions; use the HUD, statistics, approvals and reminders. | Free, with no Agent HUD account or subscription. Available in Agent HUD Open and the official Mac app. |
+| **Local network · Beta** | Pair a compatible phone with your Mac by QR code for read-only viewing on the same network. | Official Mac app with compatible Beta clients. Local pairing does not require an Agent HUD Remote subscription. |
+| **Agent HUD Remote** | View your Macs together on iPhone, read shared recent conversations, and follow quotas and sessions through widgets, Live Activities and the paired Apple Watch. | Paid Remote access on the official Mac app. The iPhone and Apple Watch apps are free to download. |
+
+> [!WARNING]
+> **Critical LAN Beta issue:** LAN-enabled Mac Beta releases conflict with the communication mechanism in existing Agent HUD iOS versions and may disrupt Mac–iPhone communication or synchronization. Use the stable channel for cross-device viewing and wait for a verified compatibility fix before trying LAN. See the [release notes](https://github.com/jazzenchen/agent-hud-open/releases).
+
+[Get Agent HUD on the App Store](https://apps.apple.com/app/id6812113619) for **iPhone and Apple Watch**. Requires iOS 17+ and watchOS 10+; automatic Live Activities require iOS 18+, with watchOS 11+ for the Watch Smart Stack. Remote viewing uses the same Apple Account in your Mac and iPhone system settings; Apple Watch uses its paired iPhone.
+
+The source edition in this repository provides the local Mac features. Device connections and push services belong to the official Agent HUD app. See [Agent HUD Remote](https://agenthud.app/#pricing) for plans.
+
+## Supported clients
+
+**Claude Code** · **Codex Desktop / CLI** · **DeepSeek Harness** · **Antigravity** · **Cursor** · **Grok CLI** · **Grok Bot** · **GitHub Copilot CLI** · **OpenCode** · **Kimi** · **GLM** · **Pi** · **OpenClaw** · **Hermes Agent** · **ZCode** · **CodeBuddy** · **WorkBuddy** · **Qwen Code**
+
+Install and sign into the clients you want to monitor. Activity, quota, balance and navigation coverage varies by client and account. Grok CLI and Grok Bot have separate client entries and icons under Grok accounts; Bot reads available local conversation caches, which can have gaps and do not establish live status.
+
+See [provider support](docs/providers.md), [session lifecycle](docs/session-lifecycle.md) and [session navigation](docs/session-navigation.md). The **Qoder** builds also support approval hooks; supported choices and questions are described in [HUD approvals](docs/hud.md#approvals).
+
+### Your data
+
+Local monitoring reads the clients' records on your Mac. Supported quota and balance queries use the installed clients' existing sign-in or configured credentials; those credentials stay out of reports and stored usage data. The source edition keeps its usage history locally. See [data access](docs/data-access.md) and the official app's [privacy policy](https://agenthud.app/privacy).
+
+## Build from source
+
+**Requirements:** macOS 14+ and Xcode or the Xcode Command Line Tools with a Swift 6 toolchain.
 
 ```sh
 git clone https://github.com/jazzenchen/agent-hud-open.git
@@ -49,58 +94,27 @@ make test
 make run
 ```
 
-This builds and opens `build/Agent HUD Open.app`. The app is signed ad-hoc for local use; no developer account, signing identity, or provisioning profile is required.
+This builds and opens `build/Agent HUD Open.app`, signed ad-hoc for local use. No developer account, signing identity or provisioning profile is required.
 
-## Supported clients
-
-**Claude Code** · **Codex Desktop / CLI** · **DeepSeek Harness** · **Antigravity** · **Cursor** · **Grok CLI** · **GitHub Copilot CLI** · **OpenCode** · **Kimi** · **GLM** · **Pi** · **OpenClaw** · **Hermes Agent** · **ZCode** · **CodeBuddy** · **WorkBuddy** · **Qwen Code**
-
-Install and sign into the clients you want to monitor. Available activity, quota, and balance information depends on the client and account. See [session lifecycle coverage](docs/session-lifecycle.md) for support for running and terminal turns.
-
-Permission requests can be answered from the HUD for the clients whose own hook runs just before they ask: **Claude Code**, **Codex**, **CodeBuddy**, **WorkBuddy**, **ZCode**, **Qwen Code** and the **Qoder** builds. Compatible **DeepSeek Harness** web hosts also offer their questions on the HUD; see [provider support](docs/providers.md#deepseek-harness) and [approvals](docs/hud.md#approvals).
-
-### Data access
-
-No Agent HUD account is required. The app reads local agent activity and queries the corresponding providers for usage or balances where supported, using the installed clients' existing sign-in or configured credentials.
-
-See [data access](docs/data-access.md) for provider details, credential boundaries, and local storage.
-
-## Development
+<details>
+<summary><strong>Development and embedding</strong></summary>
 
 | Command | Purpose |
 | --- | --- |
-| `make check` | Check source and package boundaries |
-| `make test` | Run unit tests |
-| `make build` | Build the locally signed macOS app |
-| `make demo` | Open settings with sample data |
-| `make snapshot` | Render the interface to `build/snapshots` |
+| `make check` / `make test` | Check source boundaries / run unit tests |
+| `make build` / `make run` | Build the locally signed app / build and open it |
+| `make demo` / `make snapshot` | Open sample data / render the UI to `build/snapshots` |
 
-Continuous integration checks source boundaries, runs unit tests, builds the application, and verifies its signature and bundled resources. It does not publish binaries.
+The Swift package exposes `AgentHUDSupport` (records and identities), `AgentHUDCore` (providers, models and storage), and `AgentHUDDesktop` (native HUD and statistics). `AgentHUDOpen` is the standalone executable. Hosts can provide settings pages and services through `DesktopApplication`; see [host integration](docs/architecture.md#host-integration).
 
-### Modules
+CI checks source boundaries, runs unit tests, builds the app and verifies its signature and resources.
 
-| Product | Responsibility |
-| --- | --- |
-| `AgentHUDSupport` | Structured JSON, deterministic record identities, and dates |
-| `AgentHUDCore` | Agent providers, usage models, local caches, and calculations |
-| `AgentHUDDesktop` | Native menu bar, notch, settings, and statistics UI |
-| `AgentHUDOpen` | Standalone macOS executable |
-
-The libraries can also be consumed through Swift Package Manager. `DesktopApplication(options:settings:store:additionalSettingsPages:onIslandEvents:)` takes a `SettingsStore` and `UsageStore` plus optional host settings pages and an alert relay, and `showSettings(pageID:)` opens one of those pages; the host owns any additional services. See [architecture](docs/architecture.md#host-integration).
+</details>
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) — modules, host integration, storage, design invariants, and versioning.
-- [The HUD on screen](docs/hud.md) — per-display placement, the logo queue, the glow, hovering, events, and approvals.
-- [Data access](docs/data-access.md) — provider queries, credentials, and local storage.
-- [Usage semantics](docs/usage-semantics.md) — token dimensions, percentages, alert levels, request intervals, and reading retention.
-- [Providers](docs/providers.md) — per-client data sources, credentials, endpoints, counting, billing pools, caches, tests, and upstream references.
-- [Session lifecycle](docs/session-lifecycle.md) — running and terminal turn evidence, live status, the Pi and OpenCode observers, and completion hooks.
-- [Session navigation](docs/session-navigation.md) — returning from a completion reminder to its originating client.
-- [Command line](docs/command-line.md) — launch options, read-only probes, adapter commands, and environment variables.
-- [Brand assets](docs/brand-assets.md) — bundled client logos, their sources, rendering, and licenses.
-- [Changelog](CHANGELOG.md) — released versions and host-visible API changes.
+[HUD and approvals](docs/hud.md) · [Providers](docs/providers.md) · [Usage semantics](docs/usage-semantics.md) · [Session lifecycle](docs/session-lifecycle.md) · [Session navigation](docs/session-navigation.md) · [Data access](docs/data-access.md) · [Architecture](docs/architecture.md) · [Performance](docs/performance.md) · [Command line](docs/command-line.md) · [Updates](docs/updates.md) · [Brand assets](docs/brand-assets.md) · [Changelog](CHANGELOG.md)
 
 ## License
 
-[Apache-2.0](LICENSE). Included provider references and icon assets retain their [third-party notices](THIRD_PARTY_NOTICES.txt) and [icon license](Sources/AgentHUDDesktop/Resources/LobeIcons-LICENSE.txt).
+[Apache-2.0](LICENSE). Provider references and icon assets retain their [third-party notices](THIRD_PARTY_NOTICES.txt) and [icon license](Sources/AgentHUDDesktop/Resources/LobeIcons-LICENSE.txt).
