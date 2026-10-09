@@ -114,6 +114,32 @@ final class GrokAccountLinkTests: XCTestCase {
         }
     }
 
+    func testUserPrincipalWithTeamIDUsesConfirmedNativeCache() async throws {
+        let f = try GrokBotCacheFixture()
+        defer { try? FileManager.default.removeItem(at: f.directory) }
+        let home = f.directory.appendingPathComponent("cli")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        let account = try XCTUnwrap(ProviderAccount.identified(provider: "Grok", user: "fixture-user", workspace: "fixture-team", evidence: .credential))
+        let bot = ProviderAccount.unresolved(provider: "Grok", home: "fixture-bot")
+        let links = f.directory.appendingPathComponent("links.json")
+        try JSONSerialization.data(withJSONObject: [bot.id: account.id]).write(to: links)
+        let observed = f.now.addingTimeInterval(-60), at = f.now
+        let cache = ProviderQuota(windows: [.init(id: "grok", label: "Weekly", remaining: 61.8)], account: bot,
+            observedAt: observed, client: "Grok Bot")
+        for principal in ["User", "Team"] {
+            let entry = ["user_id": "fixture-user", "principal_type": principal, "team_id": "fixture-team"]
+            try JSONSerialization.data(withJSONObject: ["https://auth.x.ai::fixture": entry]).write(to: home.appendingPathComponent("auth.json"))
+            let quota = try await GrokClient(home: home, http: ProviderHTTP(send: { _ in
+                XCTFail("the native cache does not need a CLI request"); throw ProviderHTTPError(status: 500)
+            }), botDirectory: f.directory, clock: { at }, readBot: { cache }, accountLinksURL: links).fetch()
+            XCTAssertEqual(quota.account, principal == "User" ? account : bot)
+            XCTAssertEqual(quota.accountAliases, principal == "User" ? [bot.id] : nil)
+            XCTAssertEqual(quota.observedAt, observed)
+            XCTAssertEqual(quota.windows.first?.remaining, 61.8)
+            XCTAssertEqual(quota.client, "Grok Bot")
+        }
+    }
+
     func testAmbiguousTeamOrMissingIdentityCannotConfirmPersonalCache() async throws {
         let f = try GrokBotCacheFixture()
         defer { try? FileManager.default.removeItem(at: f.directory) }
