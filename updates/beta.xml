@@ -3,20 +3,20 @@
   <channel>
     <title>Agent HUD</title>
     <item>
-      <title>0.4.34</title>
-      <pubDate>Sat, 03 Oct 2026 22:59:29 +0800</pubDate>
-      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.34-beta.4</link>
+      <title>0.4.39</title>
+      <pubDate>Fri, 09 Oct 2026 16:51:58 +0800</pubDate>
+      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.39-beta.1</link>
       <sparkle:channel>beta</sparkle:channel>
-      <sparkle:minimumAutoupdateVersion>463</sparkle:minimumAutoupdateVersion>
-      <sparkle:version>463</sparkle:version>
-      <sparkle:shortVersionString>0.4.34-beta.4</sparkle:shortVersionString>
+      <sparkle:minimumAutoupdateVersion>479</sparkle:minimumAutoupdateVersion>
+      <sparkle:version>479</sparkle:version>
+      <sparkle:shortVersionString>0.4.39-beta.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-      <description sparkle:format="markdown"># Agent HUD 0.4.34-beta.4
+      <description sparkle:format="markdown"># Agent HUD 0.4.39-beta.1
 
 ## Compatibility
 
-**Requires Agent HUD for iPhone 1.4 or later** for iPhone and Apple Watch sync. Update the iPhone app before updating the Mac. Older iPhone versions cannot read this release's data.
+**Requires Agent HUD for iPhone 1.5 or later** for iPhone and Apple Watch sync. Update the iPhone app before updating the Mac. Older iPhone versions cannot read this release's data.
 
 [Get the iPhone app](https://apps.apple.com/app/id6812113619).
 
@@ -26,11 +26,19 @@ Requires an Apple Silicon Mac running macOS 14 or later.
 
 ## Changes
 
-- The New Version menu entry uses blue text while keeping the regular menu font.
+**Requires Agent HUD Remote for iPhone 1.5 or later. Update the iPhone app first.** iPhone 1.5 (58) has been uploaded to TestFlight; App Store availability has not yet been confirmed.
+
+- Fix cross-device publication after partial cloud upload failures and keep LAN readings consistent during refreshes, resolving the communication problems in earlier LAN Betas.
+- Show Grok CLI and Grok Bot as separate agents with shared quota for confirmed accounts. Prefer native Bot quota readings, preserve their original reading time, remove duplicate account rows, and recognize cache updates through filesystem aliases.
+- Group sessions by Git project, including worktrees, and show Codex sub-agents with their own details and usage without recounting inherited parent history.
+- Keep billing-only Grok Bot subagents out of recent-session lists while preserving their token usage. Real native Bot conversations and identified children remain available.
+- Read locally available Grok CLI, Grok Bot and Antigravity conversation text on iPhone when sharing is enabled. Return to supported Grok sessions in their originating client; cached Bot history keeps its gaps.
+- Place sessions below Tokens, show at most five recent sessions with a remaining count, and prioritize waiting and running work. HUD tokens always show the past 24 hours in 15-minute bars, independently of Dashboard filters. Restore the close button on reply reminders without answering waiting permissions.
+- Reuse recent conversation reads from a persistent local cache, resume Codex transcripts incrementally, and reduce repeated HUD preparation, client discovery and upload sorting.
 </description>
-      <enclosure url="https://github.com/jazzenchen/agent-hud-open/releases/download/v0.4.34-beta.4/Agent-HUD-0.4.34-beta.4-arm64.dmg" length="11502041" type="application/octet-stream" sparkle:edSignature="jJmltpoPJVqN2YfiEqqfcB30TaRjIN7Xn92vhv1A6CnirLW3oh+u9qmnDqkxshGxrplaoCZcSlRXaTRPWPtCDA==" />
+      <enclosure url="https://github.com/jazzenchen/agent-hud-open/releases/download/v0.4.39-beta.1/Agent-HUD-0.4.39-beta.1-arm64.dmg" length="12704247" type="application/octet-stream" sparkle:edSignature="KNAbW/jWI5efq6a3xdfcFWDjZEJa01SmHy0F4olNGP/xoef159MqWSKFbWDX4FNqZJX/VtjFES5jXShOzf8PDQ==" />
       <agenthudMacOnly>false</agenthudMacOnly>
-      <agenthudMinimumIOSVersion>1.4</agenthudMinimumIOSVersion>
+      <agenthudMinimumIOSVersion>1.5</agenthudMinimumIOSVersion>
     </item>
     <item>
       <title>0.4.36</title>

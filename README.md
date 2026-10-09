@@ -1,5 +1,5 @@
 <h1 align="center">Agent HUD Open</h1>
-
+<p align="center"><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a></p>
 <p align="center">
   <strong>Your agents, at a glance.</strong><br>
   Activity, quotas, tokens and sessions in your Mac notch or Dynamic Dock.
