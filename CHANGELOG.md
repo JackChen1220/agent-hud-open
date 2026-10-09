@@ -4,6 +4,7 @@ Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` o
 
 ## Unreleased
 
+- Confirmed Grok CLI/Bot account links use the valid native Bot quota cache, keep its original reading time and retire duplicate account rows. Bot cache changes refresh the reading immediately; expired CLI credentials do not break an unambiguous confirmed identity.
 - Sessions omit Grok Bot subagents known only from billing records, including restored reports from older builds. Their token usage remains counted; native Bot conversations and identified children remain available.
 - Host API: `LiveSession.isBillingOnlyGrokBotSubagent` identifies these internal billing records. `ReportView.sessions` excludes them while the report retains their accounting data.
 

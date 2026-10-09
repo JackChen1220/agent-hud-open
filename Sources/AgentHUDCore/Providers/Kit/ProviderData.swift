@@ -82,6 +82,8 @@ struct ProviderQuota: Sendable {
     var displayNotice: String? = nil
     /// The signed-in account the quota belongs to; nil when the service answered without naming it.
     var account: ProviderAccount? = nil
+    /// Earlier keys for this same account, retired after its identity is confirmed.
+    var accountAliases: [String]? = nil
     /// An email or name from the same response or login record, shown to this Mac's user.
     var label: String? = nil
     /// A persisted reading keeps the time its client received it, rather than the time HUD opened its cache.

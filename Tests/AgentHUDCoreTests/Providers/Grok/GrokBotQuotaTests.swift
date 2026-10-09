@@ -36,7 +36,7 @@ final class GrokBotQuotaTests: XCTestCase {
         XCTAssertNil(GrokBotQuota.read(in: f.directory, now: f.now.addingTimeInterval(-7200)))
     }
 
-    func testFailedCLIUsesBotCacheAndReadableCLIStaysAuthoritative() async throws {
+    func testFailedCLIUsesBotCacheAndUnlinkedCLIKeepsItsAccount() async throws {
         let f = try fixture(), now = Date()
         try writeQuota(f, now: now)
         let home = f.directory.appendingPathComponent("cli")
@@ -53,7 +53,7 @@ final class GrokBotQuotaTests: XCTestCase {
         let online = try await GrokClient(home: home, http: http, botDirectory: f.directory).fetch()
         XCTAssertEqual(online.client, "Grok CLI")
         XCTAssertEqual(online.windows[0].remaining, 88)
-        XCTAssertNil(online.observedAt)
+        XCTAssertNotNil(online.observedAt)
         XCTAssertNotEqual(online.account?.id, failed.account?.id, "cache slots are not guessed to be CLI user ids")
         try f.writeAccount(nil)
         let rejected = GrokClient(home: home, http: ProviderHTTP(send: { _ in throw ProviderHTTPError(status: 401) }), botDirectory: f.directory)
