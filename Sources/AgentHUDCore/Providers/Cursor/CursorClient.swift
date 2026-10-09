@@ -231,8 +231,11 @@ actor CursorClient {
             // ID-less events remain unassigned; do not invent a multi-request conversation from their timestamps.
             let id = "cursor-account:\(account):\(conversation ?? "unassigned-" + identity + "-" + String(ordinal))"
             if sessions[id] == nil {
-                sessions[id] = ProviderSession(id: id, title: conversation.map { "Cursor · \($0.prefix(8))" }
-                    ?? L10n.text("Cursor 未归属请求", "Cursor unassigned request"), client: "Cursor", accountWide: true)
+                let subagent = conversation.flatMap(GrokBotUsage.subagentID)
+                let title = subagent.map { L10n.text("Grok Bot 子代理", "Grok Bot subagent") + " · " + $0.prefix(8) }
+                    ?? conversation.map { "Cursor · \($0.prefix(8))" }
+                    ?? L10n.text("Cursor 未归属请求", "Cursor unassigned request")
+                sessions[id] = ProviderSession(id: id, title: title, client: subagent == nil ? "Cursor" : "Grok Bot", accountWide: true)
             }
             sessions[id]?.events.append(event)
         }
