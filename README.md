@@ -16,7 +16,7 @@
   <a href="#local-and-remote">Local &amp; Remote</a> ·
   <a href="#supported-clients">Supported clients</a> ·
   <a href="#documentation">Documentation</a><br>
-  <sub>Native macOS 14+ &nbsp;·&nbsp; Swift 6 &nbsp;·&nbsp; Apache-2.0</sub>
+  <a href="#build-from-source"><img src="docs/badges/macos.svg" alt="macOS 14+" height="22"></a> <a href="Package.swift"><img src="docs/badges/swift.svg" alt="Swift 6" height="22"></a> <a href="LICENSE"><img src="docs/badges/license.svg" alt="Apache-2.0 license" height="22"></a>
 </p>
 
 <p align="center">
