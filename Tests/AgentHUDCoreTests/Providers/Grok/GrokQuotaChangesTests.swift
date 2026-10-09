@@ -68,11 +68,19 @@ final class GrokQuotaChangesTests: XCTestCase, @unchecked Sendable {
         let provider = AdditionalUsageProvider(source: .grok, readQuota: {
             try GrokBotQuota.fetch(in: link, now: f.now) ?? ProviderQuota()
         }, readSessions: { _ in .init() }, history: QuotaHistoryStore(), clock: { f.now }, botQuotaDirectory: link)
-        await provider.refreshAccountUsage(historyHours: 24)
-        try FileManager.default.removeItem(at: quota)
-        await provider.fileChanges([quota.path])
-        let report = try await provider.fetchUsage(agents: [], historyHours: 24)
-        XCTAssertFalse(report.vendorStatus("Grok").isNormal)
+        let actualDirectory = try XCTUnwrap(realpath(f.directory.path, nil))
+        defer { free(actualDirectory) }
+        let watchedPath = String(cString: actualDirectory) + "/" + quota.lastPathComponent
+        for eventPath in [watchedPath, quota.path] {
+            _ = try writeQuota(f, account: f.account)
+            await provider.refreshAccountUsage(historyHours: 24)
+            let before = try await provider.fetchUsage(agents: [], historyHours: 24)
+            XCTAssertTrue(before.vendorStatus("Grok").isNormal)
+            try FileManager.default.removeItem(at: quota)
+            await provider.fileChanges([eventPath])
+            let after = try await provider.fetchUsage(agents: [], historyHours: 24)
+            XCTAssertFalse(after.vendorStatus("Grok").isNormal)
+        }
     }
 
     private func fixture() throws -> GrokBotCacheFixture {
