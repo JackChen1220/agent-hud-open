@@ -6,9 +6,9 @@
 </p>
 
 <p align="center">
-  <a href="https://agenthud.app/mac"><strong>Get Agent HUD for Mac</strong></a> &nbsp;·&nbsp;
-  <a href="https://apps.apple.com/app/id6812113619"><strong>iPhone &amp; Apple Watch</strong></a> &nbsp;·&nbsp;
-  <a href="#build-from-source">Build from source</a>
+  <a href="https://agenthud.app/mac"><img src="docs/buttons/mac.svg" alt="Download Agent HUD for Mac" width="180" height="36"></a>
+  <a href="https://apps.apple.com/app/id6812113619"><img src="docs/buttons/app-store.svg" alt="App Store: iPhone and Apple Watch" width="138" height="36"></a>
+  <a href="#build-from-source"><img src="docs/buttons/source.svg" alt="Build Agent HUD Open from source" width="181" height="36"></a>
 </p>
 
 <p align="center">
