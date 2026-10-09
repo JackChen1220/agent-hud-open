@@ -2,6 +2,115 @@ import XCTest
 @testable import AgentHUDCore
 
 final class RepositoryActionTests: XCTestCase {
+    func testProgressValuesRoundTripWithoutReinterpretingExistingTesting() throws {
+        XCTAssertEqual(try JSONDecoder().decode(BranchProgress.self, from: Data("\"testing\"".utf8)), .testing)
+        for progress in BranchProgress.allCases {
+            var note = BranchNote(); note.progress = progress
+            XCTAssertEqual(try JSONDecoder().decode(BranchNote.self, from: JSONEncoder().encode(note)), note)
+        }
+        XCTAssertTrue(BranchProgress.allCases.contains(.inTesting))
+        XCTAssertTrue(BranchProgress.allCases.contains(.awaitingMerge))
+        XCTAssertTrue(BranchProgress.allCases.contains(.awaitingRelease))
+    }
+
+    func testSwitchPreservesStagedAndUnstagedChangesAcrossDifferentCommits() async throws {
+        let root = try await fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("work.txt")
+        try "base".write(to: file, atomically: true, encoding: .utf8)
+        _ = try await git(root, ["add", "work.txt"])
+        _ = try await git(root, ["commit", "-m", "Base file"])
+        _ = try await git(root, ["switch", "-c", "topic"])
+        try "target".write(to: root.appendingPathComponent("target.txt"), atomically: true, encoding: .utf8)
+        _ = try await git(root, ["add", "target.txt"])
+        _ = try await git(root, ["commit", "-m", "Independent target work"])
+        _ = try await git(root, ["switch", "main"])
+        try "staged".write(to: file, atomically: true, encoding: .utf8)
+        _ = try await git(root, ["add", "work.txt"])
+        try "unstaged".write(to: file, atomically: true, encoding: .utf8)
+        let repo = try await GitRepositoryReader.identify(path: root.path)
+        let context = try await GitRepositoryActions.context(path: root.path)
+        let target = try await GitRepositoryActions.branchHead(repo, branch: "topic")
+        try await GitRepositoryActions().switchBranch(repo, expected: context, branch: "topic", expectedTarget: target)
+        let current = try await GitRepositoryActions.context(path: root.path)
+        let index = try await git(root, ["show", ":work.txt"])
+        XCTAssertEqual(current.branch, "topic")
+        XCTAssertEqual(current.head, target)
+        XCTAssertEqual(index, "staged")
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "unstaged")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("target.txt").path))
+    }
+
+    func testSwitchRefusesOverwritingTrackedUntrackedAndIgnoredFiles() async throws {
+        for kind in ["tracked", "untracked", "ignored"] {
+            let root = try await fixture()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let file = root.appendingPathComponent("overlap.txt")
+            if kind == "tracked" {
+                try "base".write(to: file, atomically: true, encoding: .utf8)
+                _ = try await git(root, ["add", "overlap.txt"])
+                _ = try await git(root, ["commit", "-m", "Base"])
+            }
+            _ = try await git(root, ["switch", "-c", "topic"])
+            try "target".write(to: file, atomically: true, encoding: .utf8)
+            _ = try await git(root, ["add", "overlap.txt"])
+            _ = try await git(root, ["commit", "-m", "Target"])
+            _ = try await git(root, ["switch", "main"])
+            if kind == "ignored" {
+                try "overlap.txt\n".write(to: root.appendingPathComponent(".git/info/exclude"), atomically: true, encoding: .utf8)
+            }
+            try "local work".write(to: file, atomically: true, encoding: .utf8)
+            let beforeIndex = try await git(root, ["ls-files", "--stage"])
+            let repo = try await GitRepositoryReader.identify(path: root.path)
+            let context = try await GitRepositoryActions.context(path: root.path)
+            let head = try await GitRepositoryActions.branchHead(repo, branch: "topic")
+            do {
+                try await GitRepositoryActions().switchBranch(repo, expected: context, branch: "topic", expectedTarget: head)
+                XCTFail("Must preserve \(kind) local file")
+            } catch GitRepositoryReader.Failure.wouldOverwrite { }
+            let after = try await GitRepositoryActions.context(path: root.path)
+            let afterIndex = try await git(root, ["ls-files", "--stage"])
+            XCTAssertEqual(after, context)
+            XCTAssertEqual(afterIndex, beforeIndex)
+            XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "local work")
+        }
+    }
+
+    func testRemoteTrackingSwitchCarriesCompatibleChanges() async throws {
+        let root = try await fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try await git(root, ["remote", "add", "origin", "https://example.invalid/fixture.git"])
+        _ = try await git(root, ["update-ref", "refs/remotes/origin/topic", "HEAD"])
+        try "pending".write(to: root.appendingPathComponent("pending"), atomically: true, encoding: .utf8)
+        let repo = try await GitRepositoryReader.identify(path: root.path)
+        let context = try await GitRepositoryActions.context(path: root.path)
+        try await GitRepositoryActions().switchBranch(repo, expected: context, branch: "origin/topic",
+            expectedTarget: context.head, remote: true, localName: "topic")
+        let current = try await GitRepositoryActions.context(path: root.path)
+        let upstream = try await git(root, ["rev-parse", "--abbrev-ref", "@{upstream}"])
+        XCTAssertEqual(current.branch, "topic")
+        XCTAssertEqual(upstream.trimmingCharacters(in: .newlines), "origin/topic")
+        XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("pending"), encoding: .utf8), "pending")
+    }
+
+    func testSwitchStillRefusesOccupiedWorktreeAndInProgressMerge() async throws {
+        let root = try await fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        _ = try await git(root, ["branch", "topic"])
+        _ = try await git(root, ["worktree", "add", root.appendingPathComponent("linked").path, "topic"])
+        let repo = try await GitRepositoryReader.identify(path: root.path)
+        let context = try await GitRepositoryActions.context(path: root.path)
+        do {
+            try await GitRepositoryActions().switchBranch(repo, expected: context, branch: "topic", expectedTarget: context.head)
+            XCTFail("Cannot switch to an occupied branch")
+        } catch GitRepositoryActions.Failure.occupied { }
+        try context.head.write(to: root.appendingPathComponent(".git/MERGE_HEAD"), atomically: true, encoding: .utf8)
+        do {
+            try await GitRepositoryActions().switchBranch(repo, expected: context, branch: "topic", expectedTarget: context.head)
+            XCTFail("Cannot switch during a merge")
+        } catch GitRepositoryActions.Failure.inProgress { }
+    }
+
     func testStagedRenameAndDeletionCommitOnlySelectedPaths() async throws {
         let root = try await fixture()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -62,7 +171,7 @@ final class RepositoryActionTests: XCTestCase {
         XCTAssertEqual(head.trimmingCharacters(in: .newlines), "Commit only selected")
     }
 
-    func testSwitchAndDeleteRefuseDirtyOccupiedAndUnmergedBranches() async throws {
+    func testSwitchCarriesUntrackedFilesAndDeletionStillProtectsBranches() async throws {
         let root = try await fixture()
         defer { try? FileManager.default.removeItem(at: root) }
         let repo = try await GitRepositoryReader.identify(path: root.path)
@@ -71,12 +180,8 @@ final class RepositoryActionTests: XCTestCase {
         let head = try await GitRepositoryActions.branchHead(repo, branch: "topic")
         let context = try await GitRepositoryActions.context(path: root.path)
         try "pending".write(to: root.appendingPathComponent("pending"), atomically: true, encoding: .utf8)
-        do {
-            try await service.switchBranch(repo, expected: context, branch: "topic", expectedTarget: head)
-            XCTFail("Dirty worktree must not switch")
-        } catch GitRepositoryActions.Failure.dirty { }
-        try FileManager.default.removeItem(at: root.appendingPathComponent("pending"))
         try await service.switchBranch(repo, expected: context, branch: "topic", expectedTarget: head)
+        XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("pending"), encoding: .utf8), "pending")
         do {
             try await service.deleteLocal(repo, branch: "topic", expectedHead: head)
             XCTFail("Checked-out branch must not be deleted")

@@ -9,13 +9,17 @@ public struct TrackedRepository: Codable, Hashable, Identifiable, Sendable {
 }
 
 public enum BranchProgress: String, Codable, CaseIterable, Sendable {
-    case unmarked, developing, integration, testing, complete, paused
+    // Keep `testing` as the persisted value for the existing "待测试" state.
+    case unmarked, developing, integration, testing, inTesting, awaitingMerge, awaitingRelease, complete, paused
     public var label: String {
         switch self {
         case .unmarked: L10n.text("未标记", "Unmarked")
         case .developing: L10n.text("开发中", "Developing")
         case .integration: L10n.text("待联调", "Integration")
-        case .testing: L10n.text("待测试", "Testing")
+        case .testing: L10n.text("待测试", "Awaiting tests")
+        case .inTesting: L10n.text("测试中", "Testing")
+        case .awaitingMerge: L10n.text("待合并", "Awaiting merge")
+        case .awaitingRelease: L10n.text("待发布", "Awaiting release")
         case .complete: L10n.text("已完成", "Complete")
         case .paused: L10n.text("暂停", "Paused")
         }

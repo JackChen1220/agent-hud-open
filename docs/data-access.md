@@ -10,7 +10,7 @@ Agent HUD Open reads agent activity and usage metadata on your Mac. It has no Ag
 | --- | --- | --- |
 | Claude Code | Session records and account profile | Installed Claude engine usage interface |
 | Codex Desktop / CLI | Session records, including `CODEX_HOME` | Installed Codex app-server account rate limits |
-| Kiro | Existing sign-in record and profile ARN; no project files or conversations | Official Kiro credits endpoint, using its existing bearer token |
+| Kiro | Existing sign-in record/profile ARN; CLI session snapshot metadata (title, working directory, model, timestamps, counters and credits); no project files or transcript JSONL | Official Kiro credits endpoint, using its existing bearer token |
 | DeepSeek Harness | Session records and profile-owning Node process metadata, including `DSH_HOME` | Official DeepSeek balance endpoint with the configured Harness API key |
 | Antigravity | Local application process and conversation metadata | Running application's local language server |
 | Cursor | Local application database and session metadata | Official Cursor usage endpoints with the installed client's session token |

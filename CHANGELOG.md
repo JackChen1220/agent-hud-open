@@ -2,6 +2,17 @@
 
 Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the same number. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
+## 0.4.35 — Local build, 2026-09-30
+
+- Add Testing, Awaiting merge and Awaiting release to manual branch progress, with distinct colors; existing Awaiting tests notes retain their meaning.
+- Allow branch switching with compatible uncommitted changes, including staged files. Explain when Git refuses an overwrite; protect ignored files and keep worktree-occupancy, conflict and in-progress-operation restrictions.
+
+## 0.4.34 — Local build, 2026-09-29
+
+- Read Kiro CLI completed-turn metadata as session snapshots change. Report exact token counters when provided, and keep local metered credits separate from token totals.
+- Show Kiro CLI credits, completed turns and missing-count coverage in the Hub, agent card and session details instead of describing unreported tokens as no usage.
+- Host API: optional `LiveSession.localUsage` and `LocalUsageRecord`; older report caches remain readable.
+
 ## 0.4.33 — Local build, 2026-09-28
 
 - Match the borderless Kiro icon’s visible size to outlined icons in the island queue while preserving alignment and spacing.

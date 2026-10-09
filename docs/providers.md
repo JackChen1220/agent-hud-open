@@ -196,11 +196,25 @@ count while remaining credits clamp to zero. Each row shows exact used, total an
 credits (`UsageSnapshot.amounts`) and the server's reset/expiry. Billing duration is not
 inferred from calendar months. The host's existing account polling schedule applies.
 
-This integration reports account-wide credits, not local token statistics or task lifecycle.
-The inspected local CLI sessions sometimes contain zero token counters despite nonzero
-metering credits, and IDE session metadata does not provide equivalent reliable counts.
-Credits are never converted into estimated tokens. Source settings state this limitation.
+`KiroSessions` also watches `~/.kiro/sessions/cli/*.json`. It reads completed-turn
+metadata: model, end time, token counters and `metering_usage` credits, plus the session
+title and working directory. Transcript `.jsonl` and `.history` files are not read.
+Changes use the collector's two-second local read spacing and changed-file cache;
+the CLI usually saves metering after a turn ends, so streaming tokens are unavailable
+until it writes them. Explicit successful turn ends update the session lifecycle.
+
+Valid token counters feed the shared usage ledger. Cache writes are included in fresh
+input; cache reads stay separate. Zero or absent counters do not imply zero usage:
+versions of the CLI can report credits while leaving all token counters at zero.
+The Hub, agent card and session detail show local credits and completed turns separately,
+with missing-credit coverage and incomplete-token labels. Credits and context percentages
+are never converted into estimated tokens or included in token totals. Local credits
+come only from available CLI snapshots and can be partial; account credits remain the
+server's separate account-wide reading. Kiro snapshots cover the last 31 days so the
+30-day selector includes local credits even when no token buckets are available.
+Stable session/turn identities prevent rereads from adding usage twice.
+IDE session metering and unsaved in-progress CLI requests are not supported.
 
 Run the opt-in, read-only authenticated smoke check with
 `AGENTHUD_KIRO_LIVE_PROBE=1 swift test --disable-sandbox --build-system native --filter KiroProviderTests`.
-All other Kiro tests use synthetic credentials and quota fixtures.
+The local metadata-only probe is `AGENTHUD_KIRO_CLI_PROBE=1 swift test --disable-sandbox --build-system native --filter KiroSessionsTests`. Other Kiro tests use synthetic credentials and fixtures.

@@ -16,7 +16,7 @@ TEST/UAT targets can be selected per project in branch details. Existing `origin
 
 The branch detail window offers switching, committing, pushing and local branch deletion. Each opens a review sheet identifying the directory, branch, selected files or remote destination. Operations are serialized per common Git directory and revalidate the reviewed HEAD/ref/destination before executing. These controls do not operate automatically and there is no merge or force action.
 
-- Switch affects the tracked project directory and requires a clean worktree. A local branch already checked out elsewhere must be opened in that worktree instead. Remote refs can be checked out as a newly named tracking branch.
+- Switch affects the tracked project directory. Compatible staged, unstaged and untracked changes carry over to the target branch without committing or stashing. Git refuses changes that would overwrite local files; ignored files are protected too. Unresolved conflicts and in-progress merge/rebase/cherry-pick operations remain blocked, and submodules are not recursively switched. A local branch already checked out elsewhere must be opened in that worktree instead. Remote refs can be checked out as a newly named tracking branch.
 - Commit lists paths with NUL-safe rename handling. Files start unselected; the user chooses files and supplies the message. It commits each selected file’s entire current state using `commit --only`, preserving unrelated staged changes. Hooks and signing are respected. If commit fails after staging, the UI says so; it does not reset or discard the user’s index.
 - Push requires reviewing the configured push URL (credentials stripped from display), source commit and destination branch. Only an explicit click sends commits and required code objects to that remote. An explicit non-force refspec disables mirror/follow-tags/submodule side effects. Multiple configured push URLs must be handled in Terminal. Upstream registration is an explicit checkbox.
 - Delete removes only the local ref via `branch -d`, never remote branches or folders. Current/worktree-occupied branches and branches Git considers unmerged are refused. No `-D` option is exposed.
@@ -37,7 +37,7 @@ Worktree status is separate from branch history. Counts include changed tracked 
 
 ## Verification
 
-`RepositoryTests` creates temporary local repositories and bare remotes to cover different-name upstreams, ahead state, worktree identity, custom fetch mappings, NUL-delimited rename/conflict status, local persistence permissions and old settings compatibility. `RepositoryActionTests` covers selected-file commits, hooks, renamed/deleted paths, clean switching, reviewed push destinations, non-force deletion and ancestry checks. `HubPanelTests` covers immediate tab/window height synchronization and keyboard hold/dismissal and renders `build/branch-panel-preview.png` from synthetic data.
+`RepositoryTests` creates temporary local repositories and bare remotes to cover different-name upstreams, ahead state, worktree identity, custom fetch mappings, NUL-delimited rename/conflict status, local persistence permissions and old settings compatibility. `RepositoryActionTests` covers selected-file commits, hooks, renamed/deleted paths, compatible dirty-worktree switching, overwrite refusal, reviewed push destinations, non-force deletion and ancestry checks. `HubPanelTests` covers immediate tab/window height synchronization and keyboard hold/dismissal and renders `build/branch-panel-preview.png` from synthetic data.
 
 An optional read-only real-repository probe is available:
 
@@ -46,3 +46,5 @@ AGENTHUD_TEST_REPOSITORY=/path/to/repository swift test --filter RepositoryTests
 ```
 
 It never fetches or prints source/paths/subjects. On the development machine, the CRM example's 107 refs and 13 worktrees took approximately 78 ms for metadata and 596 ms including all worktree checks. This is an observed local result, not a latency guarantee.
+
+Manual progress includes Unmarked, Developing, Awaiting integration, Awaiting tests, Testing, Awaiting merge, Awaiting release, Complete and Paused. The persisted `testing` value keeps its original Awaiting tests meaning; the three new states have separate values and colors.

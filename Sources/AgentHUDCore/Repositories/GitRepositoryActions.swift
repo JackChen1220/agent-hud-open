@@ -47,7 +47,7 @@ public actor GitRepositoryActions {
             case .dirty: L10n.text("工作目录有未提交改动，请先提交或在终端处理后再切分支。", "The worktree has uncommitted changes. Commit or handle them in Terminal before switching.")
             case .occupied: L10n.text("该分支正在某个工作目录中使用，请打开该目录；不能在这里切换或删除。", "This branch is checked out in a worktree. Open that directory instead of switching or deleting it here.")
             case .inProgress: L10n.text("目录中有未结束的合并、变基或拣选操作，请先在终端处理。", "A merge, rebase or cherry-pick is in progress. Finish it in Terminal first.")
-            case .conflict: L10n.text("目录中仍有冲突，请解决后再提交。", "Resolve worktree conflicts before committing.")
+            case .conflict: L10n.text("目录中仍有冲突，请先解决冲突再继续操作。", "Resolve worktree conflicts before continuing.")
             case .emptySelection: L10n.text("请选择文件并填写提交说明。", "Select files and enter a commit message.")
             case .multipleDestinations: L10n.text("该远端配置了多个推送地址，请在终端确认目标后推送。", "This remote has multiple push URLs. Verify the destinations and push in Terminal.")
             case .invalidName: L10n.text("分支名无效，或所选远端已不存在。", "Invalid branch name or the selected remote no longer exists.")
@@ -97,14 +97,18 @@ public actor GitRepositoryActions {
         try acquire(repository.id); defer { busy.remove(repository.id) }
         try await verify(expected)
         try await Self.checkInProgress(expected.path)
-        guard try await Self.status(expected.path).isEmpty else { throw Failure.dirty }
+        let files = Self.parseFiles(try await Self.status(expected.path))
+        guard !files.contains(where: { ["DD", "AU", "UD", "UA", "DU", "AA", "UU"].contains($0.status) }) else { throw Failure.conflict }
         guard try await Self.branchHead(repository, branch: branch, remote: remote) == expectedTarget else { throw Failure.changed }
+        // Git carries compatible index/worktree changes across and refuses paths it would overwrite.
+        // Also protect ignored files and avoid changing nested submodule worktrees through user configuration.
+        let switchArgs = ["switch", "--no-overwrite-ignore", "--no-recurse-submodules"]
         if remote {
             try await Self.validateBranch(localName, path: repository.path)
-            _ = try await GitRepositoryReader.git(expected.path, ["switch", "--create", localName, "--track", "refs/remotes/" + branch], timeout: 120, writesRepository: true)
+            _ = try await GitRepositoryReader.git(expected.path, switchArgs + ["--create", localName, "--track", "refs/remotes/" + branch], timeout: 120, writesRepository: true)
         } else {
             try await ensureUnoccupied(repository, branch: branch)
-            _ = try await GitRepositoryReader.git(expected.path, ["switch", "--no-guess", "--", branch], timeout: 120, writesRepository: true)
+            _ = try await GitRepositoryReader.git(expected.path, switchArgs + ["--no-guess", "--", branch], timeout: 120, writesRepository: true)
         }
     }
 

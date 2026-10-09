@@ -3,12 +3,13 @@ import Foundation
 /// Local metadata reads and explicit remote fetches. No shell, source bodies or telemetry.
 public enum GitRepositoryReader {
     public enum Failure: Error, LocalizedError {
-        case command, timeout, truncated, invalidRepository, unmerged, authentication, network, rejected, locked, certificate
+        case command, timeout, truncated, invalidRepository, unmerged, authentication, network, rejected, locked, certificate, wouldOverwrite
         case commandFailed(Int32)
         public var errorDescription: String? {
             switch self {
             case .command: L10n.text("Git 操作无法执行，请检查所选仓库和分支。", "Git cannot perform this operation. Check the selected repository and branch.")
             case .unmerged: L10n.text("Git 拒绝删除：该本地分支尚未合并。请保留分支或在终端检查，不会强制删除。", "Git refused deletion: this local branch is not fully merged. It will not be force-deleted.")
+            case .wouldOverwrite: L10n.text("切换会覆盖本地改动或文件，Git 已停止切换。请先提交受影响的改动，或在终端临时保存（git stash）后再切换。", "Git stopped the switch because it would overwrite local changes or files. Commit the affected changes or stash them in Terminal, then switch.")
             case .authentication: L10n.text("远端认证失败。请先在终端完成该仓库的 SSH 或 Git 凭据登录，再重试。", "Remote authentication failed. Sign in using this repository’s SSH or Git credentials in Terminal, then retry.")
             case .network: L10n.text("无法连接远端。请检查网络、公司 VPN 和代理设置后重试。", "Cannot reach the remote. Check your network, company VPN and proxy, then retry.")
             case .certificate: L10n.text("远端证书验证失败，请检查公司证书或代理配置。", "Remote certificate verification failed. Check your company certificate or proxy configuration.")
@@ -44,6 +45,7 @@ public enum GitRepositoryReader {
 
     static func failure(stderr: String, status: Int32) -> Failure {
         let text = stderr.lowercased()
+        if text.contains("would be overwritten") || text.contains("would be removed") { return .wouldOverwrite }
         if text.contains("not fully merged") { return .unmerged }
         if text.contains("certificate") || text.contains("ssl peer") { return .certificate }
         if ["permission denied (publickey", "authentication failed", "could not read username", "could not read password", "http 401", "returned error: 401", "returned error: 403", "access denied"].contains(where: text.contains) { return .authentication }

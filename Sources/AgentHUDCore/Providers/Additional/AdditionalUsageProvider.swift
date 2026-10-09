@@ -97,7 +97,9 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
 
     func fetchUsage(agents: [AgentDescriptor], historyHours: Int) async throws -> UsageReport {
         let now = clock(), weekAgo = now.addingTimeInterval(-7 * 86400)
-        let since = min(weekAgo, now.addingTimeInterval(-Double(historyHours) * 3600))
+        // CLI credits live in the session metadata rather than token buckets; retain the whole chartable month.
+        let localStart = source == .kiro ? now.addingTimeInterval(-UsageLedger.retention) : weekAgo
+        let since = min(localStart, now.addingTimeInterval(-Double(historyHours) * 3600))
         var local = await readSessions(since)
         var hookCompletions: [SessionCompletion] = [], hookNotice: String?
         do { hookCompletions = try readCompletions(since) }
@@ -124,14 +126,15 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
         // Account-wide imports are the same on every machine signed into the account, so their totals are kept per account.
         let usageAccount = local.sessions.contains(where: \.accountWide) ? (quota.isSignedIn ? account.id : "provider:" + source.vendor.lowercased()) : nil
         await record(local, account: usageAccount, since: since, now: now)
-        let consumers = Set(local.sessions.flatMap(\.events).map(\.model)).sorted().map {
+        let consumers = Set(local.sessions.flatMap { $0.events.map(\.model) + $0.localUsage.map(\.model) }).sorted().map {
             AgentDescriptor(id: "\(source.rawValue)-model:\($0)", vendor: source.vendor, model: $0,
                             source: L10n.sourceAdditionalUsage, enabled: true)
         }
         let sessions = local.sessions.compactMap { item -> LiveSession? in
             guard let start = item.startedAt ?? item.events.map(\.timestamp).min(),
                   let end = item.lastActivity ?? item.events.map(\.timestamp).max(), end >= since else { return nil }
-            let model = item.events.max { $0.timestamp < $1.timestamp }?.model ?? "Unknown"
+            let model = item.localUsage.max { $0.timestamp < $1.timestamp }?.model
+                ?? item.events.max { $0.timestamp < $1.timestamp }?.model ?? "Unknown"
             let turn = item.turns.max { $0.observedAtMs < $1.observedAtMs }
             // A quiet log does not end a turn: one tool call can take minutes without writing a line. Only silence
             // long enough to mean the client is gone does.
@@ -144,7 +147,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
                                tokensIn: item.events.reduce(0) { $0 + $1.input }, tokensOut: item.events.reduce(0) { $0 + $1.output },
                                client: item.client, transcriptPath: item.path,
                                cacheReadTokens: item.events.reduce(0) { $0 + $1.cacheRead }, accountWide: item.accountWide, observedAt: now,
-                               workingDirectory: item.workspace)
+                               workingDirectory: item.workspace, localUsage: item.localUsage.isEmpty ? nil : item.localUsage)
         }
         let snapshots = windows.map {
             UsageSnapshot(agentId: $0.id, remainingPct: $0.remaining, resetAt: $0.reset, windowDuration: $0.duration, amounts: $0.amounts, updatedAt: observedAt)

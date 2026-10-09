@@ -8,6 +8,9 @@ extension BranchProgress {
         case .developing: .blue
         case .integration: .purple
         case .testing: .orange
+        case .inTesting: .cyan
+        case .awaitingMerge: .indigo
+        case .awaitingRelease: .pink
         case .complete: .green
         }
     }

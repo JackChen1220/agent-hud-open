@@ -57,7 +57,7 @@ struct BranchActionSheet: View {
                     if branch.remote {
                         TextField(L10n.text("创建并切换到本地分支", "Create and switch to local branch"), text: $localName).textFieldStyle(.roundedBorder)
                     }
-                    Text(L10n.text("仅切换上方目录。未提交改动需要先处理；不会自动 stash 或覆盖文件。", "Only switches the directory above. Resolve uncommitted changes first; no automatic stash or overwrite."))
+                    Text(L10n.text("仅切换上方目录。可兼容的未提交改动（含已暂存文件）会保留并带到目标分支；若会覆盖本地文件，Git 会拒绝切换。不会自动提交或 stash。", "Only switches the directory above. Compatible uncommitted changes, including staged files, carry over to the target branch. Git refuses if local files would be overwritten. No automatic commit or stash."))
                         .font(.callout).foregroundStyle(.secondary)
                 } else {
                     Text(L10n.text("仅删除这个本地分支引用。保留远端分支和项目目录；被工作目录占用或 Git 判定尚未合并时会拒绝删除。", "Deletes only this local branch reference. Keeps the remote branch and project folder; checked-out or unmerged branches are refused."))

@@ -174,6 +174,7 @@ private struct AgentCard: View {
     private var billing: APIBilling? { store.report?.billing.first { $0.vendor == vendor } }
 
     var body: some View {
+        let localRecords = LocalUsageRecord.records(in: store.sessions.filter { store.sessionSource($0).vendor == vendor }, during: store.statsInterval)
         VStack(alignment: .leading, spacing: 10) {
             if let usage {
                 let count = dimensions.count(usage.tokens)
@@ -205,10 +206,17 @@ private struct AgentCard: View {
                 // its row gives it.
                 header(share: nil)
                 VStack(spacing: 6) {
-                    Text(L10n.text("此时段没有用量", "No usage in this range")).foregroundStyle(theme.secondary)
+                    if localRecords.isEmpty {
+                        Text(L10n.text("此时段没有用量", "No usage in this range")).foregroundStyle(theme.secondary)
+                    } else {
+                        KiroCLIUsageView(records: localRecords, theme: theme)
+                    }
                     if let billing { balance(billing) }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: localRecords.isEmpty ? .center : .topLeading)
+            }
+            if usage != nil, !localRecords.isEmpty {
+                KiroCLIUsageView(records: localRecords, theme: theme)
             }
         }
         .font(.ui(12))

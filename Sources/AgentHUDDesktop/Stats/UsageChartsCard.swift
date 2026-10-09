@@ -75,6 +75,11 @@ struct TokenConsumptionChart: View {
             .font(.ui(10))
             .foregroundStyle(theme.secondary)
             .padding(.horizontal, context == .stats ? 12 : 6)
+            let kiroRecords = LocalUsageRecord.records(in: store.sessions.filter { $0.client == "Kiro CLI" }, during: store.statsInterval)
+            if !kiroRecords.isEmpty {
+                KiroCLIUsageView(records: kiroRecords, theme: theme, compact: true)
+                    .padding(.top, 6)
+            }
         }
     }
 

@@ -16,6 +16,10 @@ struct SessionDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             header
             figures(usage)
+            if let records = session.localUsage, !records.isEmpty {
+                KiroCLIUsageView(records: records, theme: theme)
+                    .card(theme, padding: EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14))
+            }
             if let usage {
                 tokens(usage)
                 if let index = store.focusedTurn, !usage.turns.isEmpty {
