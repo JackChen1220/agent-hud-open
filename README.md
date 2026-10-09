@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/videos/agent-hud-loop.gif" alt="Agent HUD notch glow breathing and expanded usage panel" width="800">
+  <img src="docs/screenshots/approvals.webp" alt="Agent HUD notch with a queue of tool requests and an expanded edit diff" width="800">
 </p>
 
 Agent HUD Open is the macOS core and standalone source edition of [Agent HUD](https://agenthud.app). Local monitoring is free. The official Agent HUD app also offers connections to your iPhone and Apple Watch.
@@ -38,9 +38,14 @@ Choose visible agents and accounts, per-display placement, and a soft glow or ha
 
 Inspect the command, file, tool input or edit diff before answering. Claude Code, Codex, Antigravity and other supported clients keep ownership of their permission flow; available choices depend on the client. Questions from Claude Code, ZCode and compatible DeepSeek Harness hosts can also be answered in the HUD.
 
+<details>
+<summary>See the HUD in motion</summary>
+
 <p align="center">
-  <img src="docs/screenshots/approvals.webp" alt="Queued tool requests with an edit diff and deny, allow-once and client-supported rule choices" width="760">
+  <img src="docs/videos/agent-hud-loop.gif" alt="Agent HUD notch glow breathing and expanded usage panel" width="800">
 </p>
+
+</details>
 
 ### See where your tokens go
 
