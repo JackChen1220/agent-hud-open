@@ -12,6 +12,14 @@ enum GrokBotUsage {
         return GrokBotCache.isAgentID(id) ? id : nil
     }
 
+    /// Billing identifies an internal child, but does not establish an independently listed Bot conversation.
+    /// Older reports called these rows Cursor, so their canonical ID, rather than the displayed client, owns this rule.
+    static func isBillingOnlySubagent(_ session: LiveSession) -> Bool {
+        guard session.transcriptPath == nil, session.navigationTarget == nil,
+              let id = conversationID(session.id) else { return false }
+        return subagentID(id) != nil
+    }
+
     static func merge(_ sessions: [LiveSession]) -> [LiveSession] {
         let billed = Dictionary(grouping: sessions.filter {
             conversationID($0.id) != nil
