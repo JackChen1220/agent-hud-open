@@ -125,7 +125,8 @@ public struct ReportView: Sendable {
         rowGroups = order.map { ($0, groups[$0] ?? []) }
         self.billing = billing
         glowSegments = segments
-        sessions = (report?.sessions ?? []).map { Self.read($0, index: index, settings: settings, now: now) }.sorted {
+        sessions = (report?.sessions ?? []).filter { !$0.isBillingOnlyGrokBotSubagent }
+            .map { Self.read($0, index: index, settings: settings, now: now) }.sorted {
             if $0.lastEventAt != $1.lastEventAt { return $0.lastEventAt > $1.lastEventAt }
             let lhs = $0.source.vendor ?? "", rhs = $1.source.vendor ?? ""
             return lhs == rhs ? $0.id < $1.id : lhs < rhs

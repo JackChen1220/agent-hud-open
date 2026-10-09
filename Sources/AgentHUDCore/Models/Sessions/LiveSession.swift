@@ -84,6 +84,9 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
     /// it: an agent can spend minutes in one tool call.
     public var isLive: Bool { endedAt == nil }
 
+    /// An internal Bot child known only through its billing contribution, without native conversation metadata.
+    public var isBillingOnlyGrokBotSubagent: Bool { GrokBotUsage.isBillingOnlySubagent(self) }
+
     /// Running, as far as this Mac can still vouch for it: for `SessionPhase.Limits.vouched` after the reading that had
     /// it in flight. A source that has not been read for longer than a turn may stay quiet — a retained result, a Mac
     /// that stopped collecting — no longer speaks for the session.
