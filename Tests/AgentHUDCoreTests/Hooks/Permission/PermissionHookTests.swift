@@ -291,6 +291,78 @@ final class PermissionHookTests: XCTestCase, @unchecked Sendable {
         }
     }
 
+    func testCodexAutomaticReviewReturnsWithoutForwardingToTheHUD() throws {
+        let transcript = try directory().appendingPathComponent("rollout.jsonl")
+        try Data(#"{"type":"turn_context","payload":{"turn_id":"turn","approvals_reviewer":"auto_review"}}"#.utf8).write(to: transcript)
+        var body = payload()
+        body["turn_id"] = "turn"
+        body["transcript_path"] = transcript.path
+        body["permission_mode"] = "default"
+        let data = try JSONSerialization.data(withJSONObject: body)
+        XCTAssertNil(PermissionHookClient.tagged(data, source: .codex),
+                     "an automatic approval must reach Codex's reviewer without waiting on the HUD or returning allow")
+        XCTAssertNotNil(PermissionHookClient.tagged(data, source: .claude), "other clients keep their own approval flow")
+
+        try Data(#"{"type":"turn_context","payload":{"turn_id":"turn","approvals_reviewer":"user"}}"#.utf8).write(to: transcript)
+        let tagged = try XCTUnwrap(PermissionHookClient.tagged(data, source: .codex))
+        let forwarded = try ProviderJSON.read(tagged)
+        XCTAssertEqual(forwarded[PermissionHookClient.sourceKey].stringValue, "codex")
+        XCTAssertEqual(forwarded["tool_input"], try ProviderJSON.read(data)["tool_input"],
+                       "the same permission_mode still lets the user inspect and answer a manual approval")
+    }
+
+    func testCodexReviewerBelongsToTheRequestedTurnAndUsesItsLatestContext() throws {
+        let transcript = try directory().appendingPathComponent("rollout.jsonl")
+        func write(_ contexts: [(String, String?)]) throws {
+            let lines = try contexts.map { turn, reviewer -> String in
+                var context: [String: Any] = ["turn_id": turn]
+                context["approvals_reviewer"] = reviewer
+                let data = try JSONSerialization.data(withJSONObject: ["type": "turn_context", "payload": context])
+                return String(decoding: data, as: UTF8.self)
+            }
+            try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: transcript)
+        }
+        var body = payload()
+        body["turn_id"] = "current"
+        body["transcript_path"] = transcript.path
+        func forwarded() throws -> Data? {
+            PermissionHookClient.tagged(try JSONSerialization.data(withJSONObject: body), source: .codex)
+        }
+
+        try write([("older", "user"), ("current", "auto_review")])
+        XCTAssertNil(try forwarded(), "an older manual turn cannot make this automatic turn wait for a user")
+        try write([("current", "user"), ("other", "auto_review")])
+        XCTAssertNotNil(try forwarded(), "a different turn's reviewer must not hide this turn's manual approval")
+        try write([("current", "user"), ("current", "auto_review")])
+        XCTAssertNil(try forwarded(), "the last matching context takes precedence")
+        try write([("current", "auto_review"), ("current", "user")])
+        XCTAssertNotNil(try forwarded(), "a later manual context restores HUD approval")
+        try write([("current", "user"), ("current", nil)])
+        XCTAssertNil(try forwarded(), "a context with no reviewer must not reuse an earlier decision")
+        try write([("older", "user")])
+        XCTAssertNil(try forwarded(), "without this turn's context Codex keeps ownership of the request")
+    }
+
+    func testAnUnknownCodexReviewerLeavesApprovalToCodex() throws {
+        let transcript = try directory().appendingPathComponent("rollout.jsonl")
+        var body = payload()
+        body["turn_id"] = "turn"
+        body["transcript_path"] = transcript.path
+        for record in ["", "not JSON", #"{"type":"turn_context","payload":{"turn_id":"turn"}}"#,
+                       #"{"type":"turn_context","payload":{"turn_id":"turn","approvals_reviewer":"future_reviewer"}}"#] {
+            try Data(record.utf8).write(to: transcript)
+            XCTAssertNil(PermissionHookClient.tagged(try JSONSerialization.data(withJSONObject: body), source: .codex))
+        }
+        try FileManager.default.removeItem(at: transcript)
+        XCTAssertNil(PermissionHookClient.tagged(try JSONSerialization.data(withJSONObject: body), source: .codex),
+                     "an unreadable transcript must return without connecting to the HUD")
+        body.removeValue(forKey: "transcript_path")
+        XCTAssertNil(PermissionHookClient.tagged(try JSONSerialization.data(withJSONObject: body), source: .codex))
+        body["transcript_path"] = transcript.path
+        body.removeValue(forKey: "turn_id")
+        XCTAssertNil(PermissionHookClient.tagged(try JSONSerialization.data(withJSONObject: body), source: .codex))
+    }
+
     func testCodeBuddyAndWorkBuddyAnswerOnceWithoutRuleUpdates() throws {
         let home = try directory()
         let executable = URL(fileURLWithPath: "/tmp/hud")
