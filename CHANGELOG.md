@@ -4,9 +4,14 @@ Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` o
 
 ## Unreleased
 
+## 0.4.39-beta.1 — 2026-10-09
+
+- Beta compatibility: requires Agent HUD Remote for iPhone 1.5 or later for iPhone and Apple Watch viewing. Update the iPhone app first; use the corresponding TestFlight build while 1.5 is unavailable on the App Store.
+- The distributed Mac app recovers cross-device publication after partial upload failures and serves consistent local-network readings during refreshes, fixing communication problems in earlier LAN Betas.
 - Confirmed Grok CLI/Bot account links use the valid native Bot quota cache, keep its original reading time and retire duplicate account rows. Bot cache changes refresh the reading immediately; expired CLI credentials do not break an unambiguous confirmed identity.
 - Sessions omit Grok Bot subagents known only from billing records, including restored reports from older builds. Their token usage remains counted; native Bot conversations and identified children remain available.
 - Host API: `LiveSession.isBillingOnlyGrokBotSubagent` identifies these internal billing records. `ReportView.sessions` excludes them while the report retains their accounting data.
+- The README shows the HUD animation directly, adds desktop session and iPhone screenshots, and links to Mac downloads, the App Store and source builds.
 
 ## 0.4.38 — 2026-10-09
 

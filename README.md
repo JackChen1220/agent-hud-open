@@ -59,8 +59,8 @@ Compare models, inspect session turns, follow cache usage and view activity heat
 | **Local network · Beta** | Pair a compatible phone with your Mac by QR code for read-only viewing on the same network. | Official Mac app with compatible Beta clients. Local pairing does not require an Agent HUD Remote subscription. |
 | **Agent HUD Remote** | View your Macs together on iPhone, read shared recent conversations, and follow quotas and sessions through widgets, Live Activities and the paired Apple Watch. | Paid Remote access on the official Mac app. The iPhone and Apple Watch apps are free to download. |
 
-> [!WARNING]
-> **Critical LAN Beta issue:** LAN-enabled Mac Beta releases conflict with the communication mechanism in existing Agent HUD iOS versions and may disrupt Mac–iPhone communication or synchronization. Use the stable channel for cross-device viewing and wait for a verified compatibility fix before trying LAN. See the [release notes](https://github.com/jazzenchen/agent-hud-open/releases).
+> [!IMPORTANT]
+> **Beta requires Agent HUD Remote for iPhone 1.5 or later.** Update the iPhone app before installing the Mac Beta; use the corresponding TestFlight build if 1.5 is not yet on the App Store. The new Beta includes network recovery fixes. Earlier Mac Betas 0.4.37 and 0.4.38 have critical communication issues; see the [release notes](https://github.com/jazzenchen/agent-hud-open/releases).
 
 [Get Agent HUD on the App Store](https://apps.apple.com/app/id6812113619) for **iPhone and Apple Watch**. Requires iOS 17+ and watchOS 10+; automatic Live Activities require iOS 18+, with watchOS 11+ for the Watch Smart Stack. Remote viewing uses the same Apple Account in your Mac and iPhone system settings; Apple Watch uses its paired iPhone.
 
