@@ -106,8 +106,10 @@ struct GrokClient: Sendable {
         let entries = loginEntries(json)
         guard let first = entries.first, let account = Self.account(first) else { return nil }
         for entry in entries {
-            guard entry["principal_type"].stringValue?.lowercased() != "team",
-                  ["team_id", "organization_id"].allSatisfy({
+            let principal = entry["principal_type"].stringValue?.lowercased()
+            // Personal User logins can carry a team_id; principal_type names whose quota it is.
+            guard principal != "team",
+                  principal == "user" || ["team_id", "organization_id"].allSatisfy({
                       entry[$0].stringValue?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false
                   }), Self.account(entry) == account else { return nil }
         }
