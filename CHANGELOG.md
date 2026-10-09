@@ -4,6 +4,14 @@ Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` o
 
 ## Unreleased
 
+## 0.4.39-beta.2 — 2026-10-09
+
+- Requires Agent HUD for iPhone 1.5 or later for iPhone and Apple Watch viewing. Use the corresponding TestFlight build while 1.5 is awaiting App Store review.
+- The distributed Mac app computes canonical record IDs once before ordering LAN snapshots and replay batches, removing repeated encoding from the sorting hot path.
+- Native Grok Bot quota reading recognises personal SuperGrok accounts whose usage records include both a user principal and a team ID.
+- Codex permission hooks leave automatic and unknown reviewers unanswered, so Codex can continue its own approval flow. The HUD only handles confirmed user review.
+- Known issue: Grok prepaid and on-demand wallet amounts, zero-dollar wallets and the missing-quota placeholder remain outstanding in [issue #20](https://github.com/jazzenchen/agent-hud-open/issues/20).
+
 ## 0.4.39-beta.1 — 2026-10-09
 
 - Beta compatibility: requires Agent HUD Remote for iPhone 1.5 or later for iPhone and Apple Watch viewing. Update the iPhone app first; use the corresponding TestFlight build while 1.5 is unavailable on the App Store.

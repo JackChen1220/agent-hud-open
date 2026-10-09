@@ -4,15 +4,15 @@
     <title>Agent HUD</title>
     <item>
       <title>0.4.39</title>
-      <pubDate>Fri, 09 Oct 2026 16:51:58 +0800</pubDate>
-      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.39-beta.1</link>
+      <pubDate>Fri, 09 Oct 2026 19:51:05 +0800</pubDate>
+      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.39-beta.2</link>
       <sparkle:channel>beta</sparkle:channel>
-      <sparkle:minimumAutoupdateVersion>479</sparkle:minimumAutoupdateVersion>
-      <sparkle:version>479</sparkle:version>
-      <sparkle:shortVersionString>0.4.39-beta.1</sparkle:shortVersionString>
+      <sparkle:minimumAutoupdateVersion>481</sparkle:minimumAutoupdateVersion>
+      <sparkle:version>481</sparkle:version>
+      <sparkle:shortVersionString>0.4.39-beta.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-      <description sparkle:format="markdown"># Agent HUD 0.4.39-beta.1
+      <description sparkle:format="markdown"># Agent HUD 0.4.39-beta.2
 
 ## Compatibility
 
@@ -26,17 +26,17 @@ Requires an Apple Silicon Mac running macOS 14 or later.
 
 ## Changes
 
-**Requires Agent HUD Remote for iPhone 1.5 or later. Update the iPhone app first.** iPhone 1.5 (58) has been uploaded to TestFlight; App Store availability has not yet been confirmed.
+- Improves LAN snapshot updates by computing canonical record IDs once before sorting snapshots and replay batches. This removes repeated encoding from the sorting hot path.
+- Recognises personal SuperGrok accounts whose native Grok Bot usage records contain both a user principal and a team ID. The account can now display its confirmed weekly quota.
+- Leaves Codex automatic approval review to Codex. The HUD only handles a permission request when the matching turn explicitly uses a user reviewer.
+- Includes the LAN connection and cross-device sync fixes from the 0.4.39 release series.
 
-- Fix cross-device publication after partial cloud upload failures and keep LAN readings consistent during refreshes, resolving the communication problems in earlier LAN Betas.
-- Show Grok CLI and Grok Bot as separate agents with shared quota for confirmed accounts. Prefer native Bot quota readings, preserve their original reading time, remove duplicate account rows, and recognize cache updates through filesystem aliases.
-- Group sessions by Git project, including worktrees, and show Codex sub-agents with their own details and usage without recounting inherited parent history.
-- Keep billing-only Grok Bot subagents out of recent-session lists while preserving their token usage. Real native Bot conversations and identified children remain available.
-- Read locally available Grok CLI, Grok Bot and Antigravity conversation text on iPhone when sharing is enabled. Return to supported Grok sessions in their originating client; cached Bot history keeps its gaps.
-- Place sessions below Tokens, show at most five recent sessions with a remaining count, and prioritize waiting and running work. HUD tokens always show the past 24 hours in 15-minute bars, independently of Dashboard filters. Restore the close button on reply reminders without answering waiting permissions.
-- Reuse recent conversation reads from a persistent local cache, resume Codex transcripts incrementally, and reduce repeated HUD preparation, client discovery and upload sorting.
+## Known issues
+
+- Grok prepaid and on-demand wallet amounts, including a zero-dollar wallet, are not yet displayed. The missing-quota placeholder also remains outstanding. [Issue #20](https://github.com/jazzenchen/agent-hud-open/issues/20) remains open; [PR #35](https://github.com/jazzenchen/agent-hud-open/pull/35) and [PR #38](https://github.com/jazzenchen/agent-hud-open/pull/38) address native usage reading and personal-account recognition.
+- Cross-device features require iPhone 1.5 or later. Use the corresponding TestFlight build while version 1.5 is awaiting App Store review.
 </description>
-      <enclosure url="https://github.com/jazzenchen/agent-hud-open/releases/download/v0.4.39-beta.1/Agent-HUD-0.4.39-beta.1-arm64.dmg" length="12704247" type="application/octet-stream" sparkle:edSignature="KNAbW/jWI5efq6a3xdfcFWDjZEJa01SmHy0F4olNGP/xoef159MqWSKFbWDX4FNqZJX/VtjFES5jXShOzf8PDQ==" />
+      <enclosure url="https://github.com/jazzenchen/agent-hud-open/releases/download/v0.4.39-beta.2/Agent-HUD-0.4.39-beta.2-arm64.dmg" length="12703441" type="application/octet-stream" sparkle:edSignature="FF+vGxSnEM2kSkqaS1H1/diwYsrYSQ2klUkECMhm2tQrguENUwckZK0fX0bL9PKOEADbLAIwZaLVvshgUCd1CA==" />
       <agenthudMacOnly>false</agenthudMacOnly>
       <agenthudMinimumIOSVersion>1.5</agenthudMinimumIOSVersion>
     </item>
