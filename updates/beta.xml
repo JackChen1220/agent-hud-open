@@ -33,14 +33,14 @@ Requires an Apple Silicon Mac running macOS 14 or later.
       <agenthudMinimumIOSVersion>1.4</agenthudMinimumIOSVersion>
     </item>
     <item>
-      <title>0.4.37</title>
-      <pubDate>Fri, 09 Oct 2026 04:01:16 +0800</pubDate>
-      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.37</link>
-      <sparkle:version>476</sparkle:version>
-      <sparkle:shortVersionString>0.4.37</sparkle:shortVersionString>
+      <title>0.4.38</title>
+      <pubDate>Fri, 09 Oct 2026 09:21:57 +0800</pubDate>
+      <link>https://github.com/jazzenchen/agent-hud-open/releases/tag/v0.4.38</link>
+      <sparkle:version>477</sparkle:version>
+      <sparkle:shortVersionString>0.4.38</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-      <description sparkle:format="markdown"># Agent HUD 0.4.37
+      <description sparkle:format="markdown"># Agent HUD 0.4.38
 
 ## Compatibility
 
@@ -52,20 +52,10 @@ Requires an Apple Silicon Mac running macOS 14 or later.
 
 ## Changes
 
-- Grok CLI and Grok Bot now have separate client entries and artwork under Grok. Open the matching CLI terminal pane or Bot Agent view from a session.
-- View Grok CLI, Grok Bot and Antigravity conversations across devices when conversation sharing is enabled. Bot history gaps and unavailable live status remain explicit.
-- Recent conversation text and reading progress now survive a Mac app restart in a local SQLite cache. Codex reads newly appended log content instead of repeatedly scanning long conversations in full.
-- Grok Bot keeps its native identity, title and navigation when an exact conversation ID links it to an existing Cursor billing record. That usage remains billed to Cursor and is counted once; unmatched Cursor activity keeps its original identity.
-- Grok can fall back to a valid cached quota reading with its original timestamp. Quota failures and local-history notices are displayed separately, and fully covered log overlaps no longer warn.
-- Open Codex sub-agents in their own details and conversations, with names, tasks and parent relationships preserved. Copied parent history no longer replaces a fork's identity or duplicates its inherited usage.
-- Sessions from a repository and its worktrees share one project group, and shared sessions retain their project paths.
-- Connect a compatible iPhone to your Mac on the same local network, with automatic connection or QR pairing.
-- The HUD shows quota and balances, then Tokens, then local sessions. Its token history always covers the latest 24 hours in 15-minute columns, independently of Dashboard filters; at most five local sessions appear with the remaining activity shown as +N more, and billing receipts no longer displace local activity.
-- Glow preparation and shared-reading computation run in the background, with redundant refreshes combined, to keep opening, scrolling and collapsing responsive. Large cross-device sync uploads also avoid repeated sorting work on the main thread.
-- Antigravity and DeepSeek session discovery does less background work when unrelated processes are running.
-- Session client marks and native titles stay visible; ZCode questions and compatible DeepSeek Harness prompts support inline answers.
+- Restore a visible close button on expanded reply reminders. Closing a reply advances the event queue while leaving waiting permission requests unanswered.
+- Identify Grok Bot subagent billing conversations from their native session namespace, including subagents absent from the local conversation roster. Titles include their distinct IDs. Original billing identities and token totals are preserved without double counting; available native conversation metadata is joined only by exact ID.
 </description>
-      <enclosure url="https://github.com/jazzenchen/agent-hud-open/releases/download/v0.4.37/Agent-HUD-0.4.37-arm64.dmg" length="12663032" type="application/octet-stream" sparkle:edSignature="c21a/t6MumfRPQ7c6O1/F+kP5nZ2G8riJ8cOsi2OwWUdSmNafbC3JFu2I5paVSaLZiH+S1a7vrht/i/kunuUCw==" />
+      <enclosure url="https://github.com/jazzenchen/agent-hud-open/releases/download/v0.4.38/Agent-HUD-0.4.38-arm64.dmg" length="12670540" type="application/octet-stream" sparkle:edSignature="zhv/+bLwp5cUrroJw+jaeKfBANoRJlvkYmi1+pNAz4BUPkFvqNRwbtPwCjJuDn1yj9gIlNsA66rvTrB7bBPEBQ==" />
       <agenthudMacOnly>false</agenthudMacOnly>
       <agenthudMinimumIOSVersion>1.4</agenthudMinimumIOSVersion>
     </item>
