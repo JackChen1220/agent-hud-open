@@ -34,11 +34,11 @@ Each display has its own HUD and settings. Notch mode uses the physical notch or
 - Shared artwork appears once: Claude windows share one mark, as do Codex and ChatGPT.
 - A mark is its bot for as long as a session is live, including one blocked on the user, using the same liveness as the panel, and settles back into its logo when the session ends. An idle mark becomes its bot for three to five seconds every 20 to 35 seconds. With `botLogos` off, or for a mark that has no bot, a working mark stays its logo and keeps still.
 - A dock with nothing to show keeps a minimal entry at its saved position without drawing a logo.
-- Marks retain their artwork with a hairline outline; single-colour marks are white, and status colour appears in the glow.
+- Marks retain their artwork with a hairline outline, except the fork's borderless Kiro tile; single-colour marks are white, and status colour appears in the glow.
 
 ### Bots
 
-- Every bundled mark has a bot. Its body is a plain ball or the mark's own simple shape, in the mark's colours, with any feature drawn on the body: Claude twelve even heads, Pi a square on two legs under a flat hat, Grok a ball with a ring round its waist, Hermes a ball with a fringe, Qoder a ball in a green neck warmer, CodeBuddy and WorkBuddy an upright cat. GitHub Copilot keeps its artwork and only its eyes move.
+- Every bundled mark has a bot. Its body is a plain ball or the mark's own simple shape, in the mark's colours, with any feature drawn on the body: Claude twelve even heads, Pi a square on two legs under a flat hat, Grok a ball with a ring round its waist, Hermes a ball with a fringe, Qoder a ball in a green neck warmer, CodeBuddy and WorkBuddy an upright cat. GitHub Copilot keeps its artwork and only its eyes move. Kiro keeps the fork's purple tile and white ghost, with animated black eyes and no added hairline.
 - The logo turns into the bot in half a second: the outline relaxes, the artwork fades into the mark's colours and the eyes open. The eyes are small, stay upright and follow the pointer, sliding across the body as on a ball.
 - A bot in the dock stays where its logo was: breathing changes its shape round a fixed centre, at the glow's working period. It does one small thing at random every one to three seconds: a glance, a double blink, a squint, a tilt, a stretch, a wiggle, or a turn of its body.
 - A reminder's mark opens as the agent's logo and turns into its bot 0.7 seconds later, once its card has opened; the phase it acts out begins then.

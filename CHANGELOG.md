@@ -4,6 +4,7 @@ Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` o
 
 ## Local fork build 17 — 2026-10-13
 
+- Install and validate the release build locally; preserve the previous application and data backup, and consolidate current project guidance and verification records.
 - Rebase the existing Mac customizations onto upstream `2105309` (0.5.3 plus the current main-branch refinements), keeping the previous published integration branch as a recovery point.
 - Include Simple and Dynamic HUD modes, animated agent marks, separate agent cards, native Codex Desktop approval/question handling, account inventory reconciliation and the latest reading/performance improvements.
 - Preserve the repository/worktree Hub, Kiro account credits and CLI metadata, panel shortcut/pinning, dark appearance, session client labels and centred Dynamic marks below the physical notch.

@@ -39,16 +39,30 @@
 
 18 个冲突文件逐处整合。新增 Bot 全量测试发现 Kiro 缺少动画描述，已补齐并沿用原图。
 
-## 验证与交付
+## 源码验证
 
 - `make check` 与 `git diff --check`：通过。
 - 重点回归：105 项，含 2 个默认跳过的本机探针，无失败；覆盖拖动、Simple、分 Agent 面板、Hub、Kiro、分支操作与账户调度。
-- Core 全量：951 项，6 个可选本机探针按默认配置跳过，无失败。记录在 `rebase-20261013-full-tests.log`；该轮发现的 Desktop 失败仅为缺失 Kiro Bot。
-- 补齐 Kiro Bot 后，Desktop 全量：303 项无失败，记录在 `rebase-20261013-desktop-final.log`。Core 源码此后未改动。
+- Core 全量：951 项，6 个可选本机探针按默认配置跳过，无失败。记录在 `core-full-and-initial-desktop.log`；该轮发现的 Desktop 失败仅为缺失 Kiro Bot。
+- 补齐 Kiro Bot 后，Desktop 全量：303 项无失败，记录在 `desktop-full-final.log`。Core 源码此后未改动。
 - `scripts/build-app.sh debug`：0.5.3 / build 17 应用构建成功，ad-hoc 签名、资源和 macOS 14.0 部署目标 / SDK 27.0 标记检查通过。
 - Bot 快照：工作、提问、完成、静止及变形 5 种图表成功渲染，实际检查 Kiro 原图、黑色眼睛和无附加描边效果。
 - 原目录全部 327 个 tracked / 非忽略 untracked 源文件指纹、`main` HEAD、未提交状态及旧同步分支 HEAD 一致。
 
-日志、快照与恢复指纹位于 `build/validation/rebase-20261013-*`。应用位于 `build/Agent HUD Open.app`。本次交付为源码同步与构建；安装目录仍为 0.4.39 / build 16。
+## 安装与运行验证 · 2026-10-14
 
-原目录的 tracked 与非忽略 untracked 文件均用 SHA-256 比对，`main` HEAD、未提交状态及旧集成分支 HEAD 同时检查。
+- 使用 `scripts/build-app.sh release` 构建 **0.5.3 / build 17**，替换 `~/Applications/Agent HUD Open.app` 中的 build 16。安装于 2026-10-13 23:49，运行核验与交付整理完成于 2026-10-14。
+- 已安装应用与 release 产物的可执行文件 SHA-256 一致，ad-hoc 签名验证通过；部署目标 macOS 14.0，SDK 27.0。确认只有一个该安装路径的应用进程持续运行。
+- 旧应用、偏好设置、JSON 数据及一致性 SQLite 备份位于 `~/Library/Application Support/Agent HUD Open/Backups/2026-10-13-234937/`；备份数据库完整性检查通过。安装前后比对语言、外观、Hub 快捷键、会话显示选择、客户端回调和登录启动设置。
+- 原生设置界面确认版本为 0.5.3，支持刘海、简约和动态模式；智能体列表中 WorkBuddy 已就绪，会话显示选择保持开启。
+- 已安装应用执行 `--probe` 成功：选中嵌套原生 Codex 引擎，读取 Codex 与 Kiro 两组最新额度、773 个会话，其中 WorkBuddy 3 个、Kiro CLI 752 个。探针使用内存 ledger，不写历史数据或凭据，也不发送模型消息。
+- Kiro 初次联网探针发现共享登录记录过期。打开已登录 Kiro 的账户面板后，由客户端自身更新登录记录；验证新有效期后，已安装探针和 `KiroProviderTests.testLocalSignedInAccountProbe` 均通过。
+- 部分 Kiro CLI 历史元数据仍有缺失，沿用现有的不完整用量提示；不从 credits 补算 token，也不把缺失计数当作零。
+
+## 整理与交付
+
+构建产物位于 `build/Agent HUD Open.app`，日常运行的是 `~/Applications/Agent HUD Open.app` 中同一 release 构建。上游源码、所有定制和安装结果记录在 `feat/chengang/rebase-upstream-20261013`；原 `main`、未提交工作和旧同步分支保留。
+
+证据统一归档在 `build/validation/build17-2026-10-13/`，目录内 `README.md` 说明各文件用途。保留最终测试、release 构建、安装、运行探针、Bot 快照和恢复指纹；删除 6 个已被最终证据或应用备份覆盖的中间日志与临时设置副本。原目录的 tracked 与非忽略 untracked 文件指纹、`main` HEAD、未提交状态及旧集成分支 HEAD 再次比对一致。
+
+项目 [AGENTS.md](../AGENTS.md) 提供构建、安装、行为契约与文档路由；HUD 和数据源说明已与 Kiro Bot、原生 Codex 引擎路径及登录探针的实际行为对齐。
