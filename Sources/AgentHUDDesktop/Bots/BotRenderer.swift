@@ -68,14 +68,16 @@ enum BotRenderer {
                 context.setBlendMode(.plusLighter)
                 context.beginTransparencyLayer(auxiliaryInfo: nil)
                 draw(form.stripped ?? form.artwork, in: box, on: context)
-                ownEyes(eyes, face: motion.face, on: context)
+                ownEyes(eyes, face: motion.face, paint: form.spec.eyeColor.map(color) ?? .white, on: context)
                 context.endTransparencyLayer()
             }
         } else {
             body(form, motion: motion, on: context)
         }
         context.restoreGState()
-        if outline > 0 { hairline(on: context, extent: extent, reach: outline) }
+        if outline > 0, AgentArtwork.markKey(form.vendor) != "Kiro" {
+            hairline(on: context, extent: extent, reach: outline)
+        }
         return context.makeImage()
     }
 
@@ -380,8 +382,8 @@ enum BotRenderer {
         }
     }
 
-    /// Eyes that belong to the artwork: drawn where the mark draws them, in the mark's own light ink.
-    private static func ownEyes(_ eyes: [CGRect], face: BotFace, on context: CGContext) {
+    /// Eyes that belong to the artwork: drawn in its original positions and eye colour.
+    private static func ownEyes(_ eyes: [CGRect], face: BotFace, paint: CGColor, on context: CGContext) {
         guard let first = eyes.first, let last = eyes.last else { return }
         let middle = (first.midX + last.midX) / 2, apart = abs(last.midX - first.midX)
         for eye in eyes {
@@ -393,13 +395,13 @@ enum BotRenderer {
                                 y: eye.midY + min(0.03, eye.height * 0.14) * face.lookY)
             if face.happy < 0.98 {
                 context.setAlpha(1 - face.happy)
-                context.setFillColor(.white)
+                context.setFillColor(paint)
                 context.addPath(pill(width, max(height, width * 0.16), round: 1))
                 context.fillPath()
             }
             if face.happy > 0.02 {
                 smile(half: min(eye.width * 0.95, apart * 0.3), stroke: min(eye.width * 0.6, apart * 0.2),
-                      paint: .white, strength: face.happy, on: context)
+                      paint: paint, strength: face.happy, on: context)
             }
             context.restoreGState()
         }

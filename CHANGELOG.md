@@ -7,6 +7,7 @@ Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` o
 - Rebase the existing Mac customizations onto upstream `2105309` (0.5.3 plus the current main-branch refinements), keeping the previous published integration branch as a recovery point.
 - Include Simple and Dynamic HUD modes, animated agent marks, separate agent cards, native Codex Desktop approval/question handling, account inventory reconciliation and the latest reading/performance improvements.
 - Preserve the repository/worktree Hub, Kiro account credits and CLI metadata, panel shortcut/pinning, dark appearance, session client labels and centred Dynamic marks below the physical notch.
+- Give the fork's Kiro mark native bot animation while preserving its purple tile, white ghost and borderless appearance; only its black eyes move and blink.
 - Keep all HUD grab surfaces borderless during clicks, holds and dragging, including the new Simple mode, while retaining upstream's 6 pt / 0.3 s pick-up gesture and cursor behavior.
 - Keep serial account requests independent of local collection while adopting upstream's scheduled reading spread and five-second recent-log checks.
 

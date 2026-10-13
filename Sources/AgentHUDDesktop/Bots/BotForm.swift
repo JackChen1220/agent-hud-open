@@ -46,7 +46,7 @@ final class BotForm {
         logoReach = Self.reach(alphaOf: pixels, from: spec.center)
         bodyReach = Self.bodyReach(spec, logo: logoReach)
         field = Self.colorField(pixels, skipping: spec.unpainted)
-        stripped = spec.ownEyes.flatMap { Self.strip($0, from: artwork) }
+        stripped = spec.ownEyes.flatMap { Self.strip($0, from: artwork, background: spec.ownEyeBackground) }
     }
 
     // MARK: Artwork
@@ -70,14 +70,21 @@ final class BotForm {
         return context.makeImage()
     }
 
-    private static func strip(_ eyes: [CGRect], from artwork: CGImage) -> CGImage? {
+    private static func strip(_ eyes: [CGRect], from artwork: CGImage, background: RGBA?) -> CGImage? {
         guard let context = bitmap(grain) else { return nil }
         let side = CGFloat(grain)
         context.draw(artwork, in: CGRect(x: 0, y: 0, width: side, height: side))
         // Bitmap rows run bottom up; the boxes are measured from the top.
         for eye in eyes {
-            context.clear(CGRect(x: eye.minX * side, y: (1 - eye.maxY) * side,
-                                 width: eye.width * side, height: eye.height * side).insetBy(dx: -3, dy: -3))
+            let box = CGRect(x: eye.minX * side, y: (1 - eye.maxY) * side,
+                             width: eye.width * side, height: eye.height * side).insetBy(dx: -3, dy: -3)
+            if let background {
+                context.setFillColor(CGColor(red: background.red, green: background.green,
+                                             blue: background.blue, alpha: background.alpha))
+                context.fill(box)
+            } else {
+                context.clear(box)
+            }
         }
         return context.makeImage()
     }

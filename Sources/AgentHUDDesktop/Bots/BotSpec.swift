@@ -96,6 +96,8 @@ struct BotSpec: Sendable {
     var keeps: CGRect? = nil
     /// The mark already is a character and keeps its artwork; only the eyes inside these boxes come alive.
     var ownEyes: [CGRect]? = nil
+    /// The artwork beneath its eyes, when removing them needs paint rather than transparency.
+    var ownEyeBackground: RGBA? = nil
     /// Parts of the artwork left out of the body's colours: the mark's own eyes, which would smudge the body.
     var unpainted: [CGRect] = []
     /// How far below its logo the finished bot sits, as a share of the mark's side. The move happens with
@@ -181,6 +183,10 @@ struct BotSpec: Sendable {
                                  .soft([rect(-1.4, -1.7, 1.4, 0.34)], RGBA(hex: 0xf8f8f8), round: 1)]),
         // Already a bot: it keeps its helmet and goggles, and its two eyes come alive where they are drawn.
         "GitHub Copilot": BotSpec(ownEyes: [rect(0.355, 0.570, 0.434, 0.723), rect(0.562, 0.570, 0.645, 0.723)]),
+        // Keep the fork's purple tile and white ghost; only its black eyes move and blink.
+        "Kiro": BotSpec(eyeColor: RGBA(hex: 0x000000),
+                        ownEyes: [rect(0.492, 0.352, 0.563, 0.461), rect(0.609, 0.352, 0.672, 0.461)],
+                        ownEyeBackground: RGBA(hex: 0xffffff)),
     ]
 
     private static func cat(head: RGBA, face: Paint) -> BotSpec {

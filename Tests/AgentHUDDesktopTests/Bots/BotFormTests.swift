@@ -70,37 +70,41 @@ final class BotFormTests: XCTestCase {
         XCTAssertGreaterThan(Self.coverage(of: outlined, above: 20), Self.coverage(of: image, above: 20))
     }
 
-    func testCopilotRestoresItsOriginalEyesWhileShowingTheLogo() throws {
-        let form = try XCTUnwrap(BotForm.form(for: "GitHub Copilot"))
-        let original = try XCTUnwrap(BotRenderer.image(form, motion: BotMotion(seed: 3), side: 60))
-        var motion = BotMotion(seed: 3)
-        motion.set(.working, at: 0)
-        for frame in 0..<30 {
-            motion.step(to: Double(frame) / 30, aim: CGPoint(x: 0.8, y: 0.5))
+    func testCharacterMarksRestoreTheirOriginalEyesWhileShowingTheLogo() throws {
+        for vendor in ["GitHub Copilot", "Kiro"] {
+            let form = try XCTUnwrap(BotForm.form(for: vendor))
+            let original = try XCTUnwrap(BotRenderer.image(form, motion: BotMotion(seed: 3), side: 60))
+            var motion = BotMotion(seed: 3)
+            motion.set(.working, at: 0)
+            for frame in 0..<30 {
+                motion.step(to: Double(frame) / 30, aim: CGPoint(x: 0.8, y: 0.5))
+            }
+            for frame in 30..<60 {
+                motion.step(to: Double(frame) / 30, aim: CGPoint(x: 0.8, y: 0.5), hasFace: false)
+            }
+            XCTAssertEqual(motion.morph, 0)
+            XCTAssertGreaterThan(abs(motion.face.look), 0.25, "The hidden bot is looking away from the original eyes")
+            let logo = try XCTUnwrap(BotRenderer.image(form, motion: motion, side: 60))
+            XCTAssertEqual(try XCTUnwrap(logo.dataProvider?.data) as Data,
+                           try XCTUnwrap(original.dataProvider?.data) as Data)
         }
-        for frame in 30..<60 {
-            motion.step(to: Double(frame) / 30, aim: CGPoint(x: 0.8, y: 0.5), hasFace: false)
-        }
-        XCTAssertEqual(motion.morph, 0)
-        XCTAssertGreaterThan(abs(motion.face.look), 0.25, "The hidden bot is looking away from the original eyes")
-        let logo = try XCTUnwrap(BotRenderer.image(form, motion: motion, side: 60))
-        XCTAssertEqual(try XCTUnwrap(logo.dataProvider?.data) as Data,
-                       try XCTUnwrap(original.dataProvider?.data) as Data)
     }
 
-    func testCopilotEyeTransitionKeepsItsBodyOpaque() throws {
-        let form = try XCTUnwrap(BotForm.form(for: "GitHub Copilot"))
-        let original = try XCTUnwrap(BotRenderer.image(form, motion: BotMotion(seed: 3), side: 60))
-        var motion = BotMotion(seed: 3)
-        motion.set(.working, at: 0)
-        for frame in 0...5 {
-            motion.step(to: Double(frame) / 20, aim: CGPoint(x: 0.8, y: 0.5))
+    func testCharacterEyeTransitionsKeepTheirBodiesOpaque() throws {
+        for vendor in ["GitHub Copilot", "Kiro"] {
+            let form = try XCTUnwrap(BotForm.form(for: vendor))
+            let original = try XCTUnwrap(BotRenderer.image(form, motion: BotMotion(seed: 3), side: 60))
+            var motion = BotMotion(seed: 3)
+            motion.set(.working, at: 0)
+            for frame in 0...5 {
+                motion.step(to: Double(frame) / 20, aim: CGPoint(x: 0.8, y: 0.5))
+            }
+            XCTAssertEqual(motion.morph, 0.5, accuracy: 0.0001)
+            let transition = try XCTUnwrap(BotRenderer.image(form, motion: motion, side: 60))
+            XCTAssertGreaterThan(Self.coverage(of: transition, above: 240),
+                                 Self.coverage(of: original, above: 240) * 0.9,
+                                 "Changing the eyes must not fade the whole logo against the wallpaper")
         }
-        XCTAssertEqual(motion.morph, 0.5, accuracy: 0.0001)
-        let transition = try XCTUnwrap(BotRenderer.image(form, motion: motion, side: 60))
-        XCTAssertGreaterThan(Self.coverage(of: transition, above: 240),
-                             Self.coverage(of: original, above: 240) * 0.9,
-                             "Changing the eyes must not fade the whole logo against the wallpaper")
     }
 
     func testALookOnlyChangesWhenTheBotVisiblyDoes() {
