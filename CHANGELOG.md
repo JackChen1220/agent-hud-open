@@ -2,6 +2,27 @@
 
 Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` on `main`; `CFBundleShortVersionString` in `scripts/build-app.sh` carries the three-part numeric version `X.Y.Z`. Each entry lists what changed for people using the application and, under **Host API**, what changed for applications that embed `AgentHUDCore` and `AgentHUDDesktop`. Dates are tag dates.
 
+## Local fork build 17 — 2026-10-13
+
+- Rebase the existing Mac customizations onto upstream `2105309` (0.5.3 plus the current main-branch refinements), keeping the previous published integration branch as a recovery point.
+- Include Simple and Dynamic HUD modes, animated agent marks, separate agent cards, native Codex Desktop approval/question handling, account inventory reconciliation and the latest reading/performance improvements.
+- Preserve the repository/worktree Hub, Kiro account credits and CLI metadata, panel shortcut/pinning, dark appearance, session client labels and centred Dynamic marks below the physical notch.
+- Keep all HUD grab surfaces borderless during clicks, holds and dragging, including the new Simple mode, while retaining upstream's 6 pt / 0.3 s pick-up gesture and cursor behavior.
+- Keep serial account requests independent of local collection while adopting upstream's scheduled reading spread and five-second recent-log checks.
+
+## Local fork build 16 — 2026-10-09
+
+- Remove HUD drag outlines entirely; clicks, holds and repositioning all remain borderless while dragging still works.
+- Show the execution client's name beside each Hub session title, so clients without quota rows, such as WorkBuddy, remain identifiable.
+
+## Local fork — 2026-10-09
+
+- Integrate upstream `f60b0a2` (0.4.39-beta.2), preserving its full commit history and local Mac improvements.
+- Migrate the repository/worktree Hub, manual branch progress, selected-file Git actions and compatible dirty branch switching to the new HUD layout.
+- Preserve the configurable Hub shortcut, pinning, dark Hub appearance and centered logo queue clearance below a physical notch.
+- Retain Kiro account credit pools and CLI completed-turn metadata, with exact reported tokens and separate local metered credits; old caches remain readable.
+- Keep local lifecycle collection independent of slow serial account requests, and preserve incremental oversized Codex line handling alongside upstream compressed-log restart support.
+
 ## Unreleased
 
 - A compact reminder on a dock is smaller: as tall as the Simple panel's hover line (26 pt at the default, where it was 34) and as long as what it says, where it was always two notch wings long with a gap in the middle. A reply from Claude is about 60 pt shorter at the default than the 256 pt it was.
@@ -549,3 +570,62 @@ Releases of Agent HUD Open. A version is a git tag `vX.Y.Z` or `vX.Y.Z-beta.N` o
 
 - `AgentHUDSupport`: `JSONValue` (integer-preserving JSON) and `RecordCoding` (deterministic encoding, millisecond dates, hashed identities).
 - Apache-2.0 license and the roadmap.
+
+## Earlier local build history
+
+### 0.4.35 — Local build, 2026-09-30
+
+- Add Testing, Awaiting merge and Awaiting release to manual branch progress, with distinct colors; existing Awaiting tests notes retain their meaning.
+- Allow branch switching with compatible uncommitted changes, including staged files. Explain when Git refuses an overwrite; protect ignored files and keep worktree-occupancy, conflict and in-progress-operation restrictions.
+
+### 0.4.34 — Local build, 2026-09-29
+
+- Read Kiro CLI completed-turn metadata as session snapshots change. Report exact token counters when provided, and keep local metered credits separate from token totals.
+- Show Kiro CLI credits, completed turns and missing-count coverage in the Hub, agent card and session details instead of describing unreported tokens as no usage.
+- Host API: optional `LiveSession.localUsage` and `LocalUsageRecord`; older report caches remain readable.
+
+### 0.4.33 — Local build, 2026-09-28
+
+- Match the borderless Kiro icon’s visible size to outlined icons in the island queue while preserving alignment and spacing.
+
+### 0.4.32 — Local build, 2026-09-28
+
+- Remove the additional dark outline from Kiro in the island logo queue; preserve the supplied purple artwork.
+
+### 0.4.31 — Local build, 2026-09-28
+
+- Replace the Kiro icon with the user-provided 128 px purple PNG.
+
+### 0.4.30 — Local build, 2026-09-28
+
+- Use Kiro’s purple app icon with its original colors throughout the Hub, settings and menus.
+
+### 0.4.29 — Local build, 2026-09-28
+
+- Show the Kiro logo in the Hub, settings and menus, with automatic contrast on light and dark backgrounds.
+
+### 0.4.28 — Local build, 2026-09-28
+
+- Add Kiro account credits using its existing local sign-in: plan, used/total/remaining credits, reset date and separate trial, bonus and add-on pools. No token counts are inferred from credits; expired login prompts the user to open Kiro. Authentication is read-only and requests only target official Kiro management hosts.
+
+### 0.4.27 — Local build, 2026-09-28
+
+- Read local task lifecycle events independently of serial account requests, so slow quota queries no longer delay completion status. File event delivery uses a shorter batching interval, and filesystem paths such as `/private/var` are mapped back to the watched log roots correctly.
+
+### 0.4.26 — Local build, 2026-09-28
+
+- Add a Pin button next to Hub settings. Pinned panels stay open when the pointer leaves or another window is clicked; unpinning restores hover collapse. Explicit dismissal clears the pin.
+
+### 0.4.25 — Local build, 2026-09-27
+
+- Keep the Hub and its hover cards dark while settings and independent detail windows continue to follow the selected appearance.
+
+### 0.4.24 — Local build, 2026-09-27
+
+- Expanded Hub content, quota hover details and the Branches tab now follow light, dark and system appearance settings. The collapsed notch stays black.
+
+### 0.4.23 — Local build, 2026-09-27
+
+- Add a configurable shortcut to expand or collapse the Hub and Agent / Branches tabs with larger click targets and immediate panel resizing.
+- Add local repository and worktree status, branch switching, selected-file commits, reviewed pushes and safe local branch deletion. Branch notes support colored progress labels and TEST / UAT ancestry checks.
+- Find the Codex engine in the updated desktop app layout while retaining support for older installations. A missing executable no longer incorrectly asks signed-in users to log in.

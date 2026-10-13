@@ -16,8 +16,8 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
     /// not move to another key and back whenever a quota request fails.
     private var lastAccount: ProviderAccount?
     nonisolated let watchedDirectories: [URL]?
-    /// Cursor's usage is the account's, from every device it signs in on, so this Mac going quiet says nothing about it.
-    nonisolated var seesLocalWork: Bool { source != .cursor }
+    /// Cursor is account-wide; Kiro reports completed CLI turns only. Quiet logs do not establish current account activity.
+    nonisolated var seesLocalWork: Bool { source != .cursor && source != .kiro }
     private let ledger: UsageLedger
     private let sessionLedger: SessionLedger
 
@@ -52,6 +52,7 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
         return AdditionalUsageProvider(source: source, readQuota: {
             switch source {
             case .antigravity: return try await AntigravityClient().fetch()
+            case .kiro: return try await KiroClient().fetch()
             case .cursor: return try await cursor.quota()
             case .grok: return try await grok.fetch()
             case .copilot: return try await CopilotClient(enabled: consented).fetch()
@@ -120,7 +121,9 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
 
     func fetchUsage(agents: [AgentDescriptor], historyHours: Int) async throws -> UsageReport {
         let now = clock(), weekAgo = now.addingTimeInterval(-AlertPolicy.insightsLookback)
-        let since = min(weekAgo, now.addingTimeInterval(-Double(historyHours) * 3600))
+        // CLI credits live in session metadata rather than token buckets; retain the chartable month.
+        let localStart = source == .kiro ? now.addingTimeInterval(-UsageLedger.retention) : weekAgo
+        let since = min(localStart, now.addingTimeInterval(-Double(historyHours) * 3600))
         var local = await readSessions(since)
         if source == .grok {
             let targets = GrokSessionOrigins.read(sessionIDs: Set(local.sessions.filter { $0.client == "Grok CLI" }.map(\.id)))
@@ -156,14 +159,15 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
         let usageAccount = local.sessions.contains(where: \.accountWide)
             ? (quota.isSignedIn ? account.id : (failed ? lastAccount?.id : nil) ?? "provider:" + source.vendor.lowercased()) : nil
         await record(local, account: usageAccount, since: since, now: now)
-        let consumers = Set(local.sessions.flatMap(\.events).map(\.model)).sorted().map {
+        let consumers = Set(local.sessions.flatMap { $0.events.map(\.model) + $0.localUsage.map(\.model) }).sorted().map {
             AgentDescriptor(id: "\(source.rawValue)-model:\($0)", vendor: source.vendor, model: ModelCatalog.consumerName(of: "\(source.rawValue)-model:\($0)"),
                             source: L10n.sourceAdditionalUsage, enabled: true)
         }
         let sessions = local.sessions.compactMap { item -> LiveSession? in
             guard let start = item.startedAt ?? item.events.map(\.timestamp).min(),
                   let end = item.lastActivity ?? item.events.map(\.timestamp).max(), end >= since else { return nil }
-            let model = item.events.max { $0.timestamp < $1.timestamp }?.model ?? "Unknown"
+            let model = item.localUsage.max { $0.timestamp < $1.timestamp }?.model
+                ?? item.events.max { $0.timestamp < $1.timestamp }?.model ?? "Unknown"
             // The newest turn is the one observed last.
             let turn = item.turns.max { $0.observedAtMs < $1.observedAtMs }
             let isRunning = SessionPhase.read(.init(turn: turn), rule: .turns, at: now).inFlight
@@ -173,10 +177,11 @@ actor AdditionalUsageProvider: UsageProvider, LedgerRecording {
                                tokensIn: item.events.reduce(0) { $0 + $1.input }, tokensOut: item.events.reduce(0) { $0 + $1.output },
                                client: item.client, transcriptPath: item.path,
                                cacheReadTokens: item.events.reduce(0) { $0 + $1.cacheRead }, accountWide: item.accountWide, observedAt: now,
-                               workingDirectory: item.workspace, lastActivityAt: end, navigationTarget: item.navigationTarget)
+                               workingDirectory: item.workspace, lastActivityAt: end, navigationTarget: item.navigationTarget,
+                               localUsage: item.localUsage.isEmpty ? nil : item.localUsage)
         }
         let snapshots = windows.map {
-            UsageSnapshot(agentId: $0.id, remainingPct: $0.remaining, resetAt: $0.reset, windowDuration: $0.duration,
+            UsageSnapshot(agentId: $0.id, remainingPct: $0.remaining, resetAt: $0.reset, windowDuration: $0.duration, amounts: $0.amounts,
                           updatedAt: $0.observedAt ?? observedAt)
         }
         var insights: [String: UsageInsights] = [:]

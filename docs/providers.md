@@ -196,3 +196,45 @@ Files in the data directory ([architecture](architecture.md#storage)). None cont
 | [Pi](https://github.com/earendil-works/pi/tree/6160683a4a8012f0d1cd30c145df18b4ca6f5176), [zai-coding-plugins](https://github.com/zai-org/zai-coding-plugins/blob/0446d0bb0bc537d97d3ab3664c4b8b9c4a0e1254/plugins/glm-plan-usage/skills/usage-query-skill/scripts/query-usage.mjs) | `6160683a…`, `0446d0bb…` | MIT, Apache-2.0 | Reference-only: Pi provider naming, environment variables and OAuth credential fields; the `/api/anthropic` ↔ monitor endpoint mapping |
 
 Official protocol documents: [ZCode hooks](https://zcode.z.ai/en/docs/hooks), [Qwen Code hooks](https://qwenlm.github.io/qwen-code-docs/en/users/features/hooks/), [CodeBuddy plugins reference](https://www.codebuddy.ai/docs/cli/plugins-reference), [Copilot hooks configuration](https://docs.github.com/en/copilot/reference/hooks-configuration), [Copilot CLI directory](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference), [CodeBuddy hooks](https://www.codebuddy.ai/docs/cli/hooks) and [environment variables](https://www.codebuddy.ai/docs/cli/env-vars), [Antigravity hooks](https://antigravity.google/docs/hooks/), [Antigravity models](https://antigravity.google/docs/models), [Antigravity CLI `/resume`](https://antigravity.google/docs/cli/commands/resume/), [Cursor hooks](https://cursor.com/docs/hooks), [Codex app-server](https://learn.chatgpt.com/docs/app-server), [DeepSeek balance](https://api-docs.deepseek.com/api/get-user-balance/) and [pricing](https://api-docs.deepseek.com/quick_start/pricing/), [GLM Coding Plan](https://docs.z.ai/devpack/overview), [Kimi Code membership](https://www.kimi.com/code/docs/en/kimi-code/membership.html), [GitHub Copilot billing](https://docs.github.com/en/copilot/concepts/billing-and-usage/individuals/billing).
+
+
+## Kiro
+
+`KiroClient` reads `~/.aws/sso/cache/kiro-auth-token.json` and, for IDE profiles,
+`~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/profile.json`.
+It sends a read-only `GET /getUsageLimits` to an allowlisted official Kiro management
+host using the existing bearer login, `origin=AI_EDITOR` and the available profile ARN.
+It never refreshes or rewrites Kiro's credentials; expired credentials prompt opening Kiro.
+The shared HTTP client disables redirects, cookies and response caches. Tokens and raw
+response errors are not persisted or logged. No project files or conversations are sent.
+
+Account identity is hashed from the response's user ID (email fallback). Plan credits,
+active trial credits, unexpired bonuses and add-on credit packs remain separate rows.
+Precision usage/limit fields take precedence over integer fields. Unknown, invalid or
+unlimited caps are not represented as a percentage; over-limit usage keeps its actual
+count while remaining credits clamp to zero. Each row shows exact used, total and remaining
+credits (`UsageSnapshot.amounts`) and the server's reset/expiry. Billing duration is not
+inferred from calendar months. The host's existing account polling schedule applies.
+
+`KiroSessions` also watches `~/.kiro/sessions/cli/*.json`. It reads completed-turn
+metadata: model, end time, token counters and `metering_usage` credits, plus the session
+title and working directory. Transcript `.jsonl` and `.history` files are not read.
+Changes use the collector's two-second local read spacing and changed-file cache;
+the CLI usually saves metering after a turn ends, so streaming tokens are unavailable
+until it writes them. Explicit successful turn ends update the session lifecycle.
+
+Valid token counters feed the shared usage ledger. Cache writes are included in fresh
+input; cache reads stay separate. Zero or absent counters do not imply zero usage:
+versions of the CLI can report credits while leaving all token counters at zero.
+The Hub, agent card and session detail show local credits and completed turns separately,
+with missing-credit coverage and incomplete-token labels. Credits and context percentages
+are never converted into estimated tokens or included in token totals. Local credits
+come only from available CLI snapshots and can be partial; account credits remain the
+server's separate account-wide reading. Kiro snapshots cover the last 31 days so the
+30-day selector includes local credits even when no token buckets are available.
+Stable session/turn identities prevent rereads from adding usage twice.
+IDE session metering and unsaved in-progress CLI requests are not supported.
+
+Run the opt-in, read-only authenticated smoke check with
+`AGENTHUD_KIRO_LIVE_PROBE=1 swift test --disable-sandbox --build-system native --filter KiroProviderTests`.
+The local metadata-only probe is `AGENTHUD_KIRO_CLI_PROBE=1 swift test --disable-sandbox --build-system native --filter KiroSessionsTests`. Other Kiro tests use synthetic credentials and fixtures.

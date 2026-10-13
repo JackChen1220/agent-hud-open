@@ -30,6 +30,7 @@ extension AdditionalSource {
     var layout: (any LocalSessionLayout.Type)? {
         switch self {
         case .cursor: nil
+        case .kiro: KiroSessions.self
         case .antigravity: AntigravitySessions.self
         case .grok: GrokLocalSessions.self
         case .copilot: CopilotSessions.self

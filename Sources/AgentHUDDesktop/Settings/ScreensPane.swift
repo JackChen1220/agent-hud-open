@@ -51,7 +51,7 @@ struct ScreensPane: View {
             set: { mode in
                 guard let current else { return }
                 var next = placement
-                if next.mode == .notch, mode.isDocked, current.hasNotch, next.edge == .top, next.offset == 0.5 {
+                if next.mode == .notch, mode == .simple, current.hasNotch, next.edge == .top, next.offset == 0.5 {
                     next.offset = 0
                 }
                 next.mode = mode
@@ -201,8 +201,8 @@ struct ScreensPane: View {
         guard let current else { return }
         var next = placement
         next.edge = .top
-        // A short queue at top centre can disappear behind the physical notch.
-        next.offset = current.hasNotch && next.mode.isDocked ? 0 : 0.5
+        // Dynamic queues remain centred below the notch; Simple stays clear of the hardware.
+        next.offset = current.hasNotch && next.mode == .simple ? 0 : 0.5
         settings.update { $0.screens[current.key] = next }
     }
 

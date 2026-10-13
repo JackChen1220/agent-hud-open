@@ -35,7 +35,8 @@ final class IslandWindowController {
         var natural = view
         natural.presentationSize = nil
         natural.presentationFrame = nil
-        let content = AnyView(natural.content.fixedSize(horizontal: false, vertical: true))
+        natural.observesRepositories = false
+        let content = AnyView(natural.content.fixedSize(horizontal: false, vertical: true).environment(\.colorScheme, .dark))
         // The full panel only exists for this measurement; hovering never keeps a hidden UI alive.
         let measurement = NSHostingView(rootView: content)
         return measurement.fittingSize.height

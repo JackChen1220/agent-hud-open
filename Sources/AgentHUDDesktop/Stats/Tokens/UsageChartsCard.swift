@@ -53,6 +53,7 @@ struct TokenConsumptionChart: View {
         let columns = ids == nil ? allColumns
             : context == .stats ? store.tokenColumns(consumerIDs: ids) : store.hudTokenColumns(consumerIDs: ids)
         let interval = context == .stats ? store.statsInterval : store.hudTokenInterval
+        let kiroRecords = LocalUsageRecord.records(in: store.sessions.filter { $0.client == "Kiro CLI" }, during: interval)
         let models = context == .stats ? Self.modelTotals(consumers: store.consumers, columns: allColumns) : []
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
@@ -128,6 +129,9 @@ struct TokenConsumptionChart: View {
                 .font(.ui(10))
                 .foregroundStyle(theme.secondary)
                 .padding(.horizontal, context == .stats ? 12 : 6)
+            }
+            if !kiroRecords.isEmpty {
+                KiroCLIUsageView(records: kiroRecords, theme: theme, compact: true).padding(.top, 6)
             }
         }
     }

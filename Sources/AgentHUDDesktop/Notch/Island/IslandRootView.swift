@@ -216,6 +216,13 @@ struct IslandRootView: View {
     /// The queue's exact rect in the window, using SwiftUI's top-left coordinates. It stays anchored while
     /// the panel grows inward, including when clamping the panel near a screen corner moves its centre.
     var logoQueueFrame: CGRect? = nil
+    var repositories: RepositoryStore? = nil
+    var navigation: HubNavigation? = nil
+    var isPinned = false
+    var onTogglePin: () -> Void = {}
+    var observesRepositories = true
+    var maximumPanelHeight: CGFloat = 700
+    var onOpenRepositories: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let expandedTopRadius: CGFloat = NotchGeometry.expandedTopRadius
@@ -378,6 +385,7 @@ struct IslandRootView: View {
             }
             .frame(width: bounds.width, height: bounds.height, alignment: .topLeading)
         }
+        .environment(\.colorScheme, .dark)
         .ignoresSafeArea()
         .id(store?.settings.settings.language ?? .system)
     }
@@ -429,7 +437,10 @@ struct IslandRootView: View {
                            waitingRequests: waitingRequests,
                            insets: hidesSilhouette ? dockInsets : HoverPanelView.notchInsets,
                            answeringSessionID: answeringSessionID, onAnswerSession: onAnswerSession,
-                           focusVendor: focusVendor)
+                           focusVendor: focusVendor,
+                           repositories: repositories, navigation: navigation, isPinned: isPinned, onTogglePin: onTogglePin,
+                           observesRepositories: observesRepositories, maximumPanelHeight: maximumPanelHeight,
+                           onOpenRepositories: onOpenRepositories)
                 .frame(width: detached ? IslandController.agentPanelWidth : IslandController.expandedWidth, alignment: .top)
                 .fixedSize(horizontal: false, vertical: true)
                 .onPreferenceChange(PanelHeightKey.self, perform: onContentHeight)

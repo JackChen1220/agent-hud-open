@@ -39,7 +39,7 @@ extension Font {
     }
 }
 
-/// Design tokens for the dark and light window chrome. The island/glow always use `.island` (dark).
+/// Design tokens for the dark and light window chrome. Independent windows follow the environment; the Hub supplies a dark environment.
 struct Theme {
     /// Chooses the status palette variant.
     private let isLight: Bool
@@ -125,7 +125,7 @@ struct Theme {
         dotEnded: Color(hex: 0xaeaeb2)
     )
 
-    /// The island panel is always black with dark-mode tokens.
+    /// Dark tokens for collapsed island events and fixed dark previews.
     static let island = Theme.dark
 
     static func forScheme(_ scheme: ColorScheme) -> Theme {

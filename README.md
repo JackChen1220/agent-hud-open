@@ -194,3 +194,7 @@ CI checks source boundaries, runs unit tests, builds the app and verifies its si
 ## License
 
 [Apache-2.0](LICENSE). Provider references and icon assets retain their [third-party notices](THIRD_PARTY_NOTICES.txt) and [icon license](Sources/AgentHUDDesktop/Resources/LobeIcons-LICENSE.txt).
+
+## Local fork additions
+
+This fork keeps a repository/worktree Hub with manual branch progress and explicit Git actions, Kiro account credits and CLI sessions, a configurable Hub shortcut (⌘⇧H by default), and panel pinning. See [project branches](docs/repositories.md) and [upstream integration](docs/upstream-rebase-2026-10-13.md).

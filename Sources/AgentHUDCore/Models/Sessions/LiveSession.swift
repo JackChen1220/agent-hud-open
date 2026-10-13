@@ -33,6 +33,8 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
     public let lastActivityAt: Date?
     /// Source-owned destination for returning to this session on this Mac; never encoded in a session report.
     public let navigationTarget: SessionNavigationTarget?
+    /// Completed local turns billed in units independent of tokens and account quota.
+    public let localUsage: [LocalUsageRecord]?
 
     public init(
         id: String,
@@ -55,7 +57,8 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
         subagentSessions: [LiveSession]? = nil,
         lastActivityAt: Date? = nil,
         navigationTarget: SessionNavigationTarget? = nil,
-        usageKey: String? = nil
+        usageKey: String? = nil,
+        localUsage: [LocalUsageRecord]? = nil
     ) {
         self.id = id
         self.agentId = agentId
@@ -78,6 +81,7 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
         self.subagentSessions = subagentSessions.flatMap { $0.isEmpty ? nil : $0 }
         self.lastActivityAt = lastActivityAt
         self.navigationTarget = navigationTarget
+        self.localUsage = localUsage
     }
 
     /// Whether the source that read this session said a turn was still in flight. The log's own silence does not end
@@ -96,7 +100,7 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, agentId, task, terminal, startedAt, endedAt, observedAt, pctOfWindow, tokensIn, tokensOut, client, transcriptPath, cacheReadTokens, accountWide
-        case workingDirectory, subagentTranscripts, agentName, subagentSessions, lastActivityAt, usageKey
+        case workingDirectory, subagentTranscripts, agentName, subagentSessions, lastActivityAt, usageKey, localUsage
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -114,7 +118,8 @@ public struct LiveSession: Hashable, Codable, Sendable, Identifiable {
             agentName: try c.decodeIfPresent(String.self, forKey: .agentName),
             subagentSessions: try c.decodeIfPresent([LiveSession].self, forKey: .subagentSessions),
             lastActivityAt: try c.decodeIfPresent(Date.self, forKey: .lastActivityAt),
-            usageKey: try c.decodeIfPresent(String.self, forKey: .usageKey))
+            usageKey: try c.decodeIfPresent(String.self, forKey: .usageKey),
+            localUsage: try c.decodeIfPresent([LocalUsageRecord].self, forKey: .localUsage))
     }
 
     /// Every descendant, in the order of the tree; the top-level session list keeps only the roots.

@@ -12,6 +12,7 @@ Agent HUD Open reads agent activity and usage metadata on your Mac. It has no Ag
 | Codex Desktop / CLI | Session records and sign-in time, including `CODEX_HOME` | Installed Codex app-server account rate limits |
 | DeepSeek Harness | Session records and profile-owning Node process metadata, including `DSH_HOME`; its web host's pending questions on loopback | Official DeepSeek balance endpoint with the configured Harness API key, which Harness's own credentials package resolves inside a short-lived Node helper |
 | Antigravity | The process list (`ps`) and the listening port of the running language server (`lsof`), whose command line holds its local token, looked up at most every 10 seconds and at once when the server stops answering; conversation metadata | A local `POST` to that language server on 127.0.0.1 |
+| Kiro | Existing sign-in record/profile ARN; CLI session snapshot metadata (title, working directory, model, timestamps, counters and credits); no project files or transcript JSONL | Official Kiro credits endpoint, using its existing bearer token |
 | Cursor | Local application database and session metadata | Official Cursor usage endpoints with the installed client's session token; for an account that runs Grok Bot, Cursor's Grok Bot service for the routines of the rostered bots, with the same token |
 | Grok CLI | Local session records and credential file | Official Grok CLI billing endpoint |
 | OpenCode, Kimi, GLM, Pi | Local JSON/SQLite session records and supported provider configuration, including an `ANTHROPIC_BASE_URL` and its token from the environment or Claude Code's `settings.json` `env` that point at a Kimi or GLM plan; automatically prepared Pi lifecycle observer and OpenCode completion plugin | Official Kimi, GLM, OpenCode Go, and Pi ChatGPT quota endpoints where configured |
@@ -53,3 +54,5 @@ Per-client fields, endpoints and stored data: [providers](providers.md). Token c
 ## Related
 
 [providers.md](providers.md) per-client details · [usage-semantics.md](usage-semantics.md) counting and retention · [session-lifecycle.md](session-lifecycle.md) turn evidence · [../THIRD_PARTY_NOTICES.txt](../THIRD_PARTY_NOTICES.txt) provider protocol references and licenses
+
+- Kiro quota reads use its existing `~/.aws/sso/cache/kiro-auth-token.json` bearer token with the official, region-allowlisted management endpoint. The request is read-only; it does not refresh or rewrite credentials and never sends project data. An expired sign-in asks the user to open Kiro.

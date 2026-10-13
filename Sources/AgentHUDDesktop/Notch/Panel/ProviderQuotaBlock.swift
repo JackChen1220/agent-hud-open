@@ -113,6 +113,13 @@ struct ProviderQuotaBlock: View {
                                   forecastHint: store.quotaForecastHint(for: row.id),
                                   isLoading: store.isLoading)
                         .opacity(section.isCurrent ? 1 : 0.55)
+                    if let amounts = store.report?.snapshots.first(where: { $0.agentId == row.id })?.amounts {
+                        Text(amounts.summary)
+                            .font(.tabular(11))
+                            .foregroundStyle(theme.secondary)
+                            .padding(.horizontal, IslandRowLayout.inset)
+                            .textSelection(.enabled)
+                    }
                 }
                 if let wallets = section.account?.wallets {
                     ForEach(wallets) { wallet in

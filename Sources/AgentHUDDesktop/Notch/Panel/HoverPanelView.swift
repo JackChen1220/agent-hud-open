@@ -50,6 +50,14 @@ struct HoverPanelView: View {
         focusVendor == nil ? TokenModelFilter() : TokenModelFilter(consumerIDs: Set(consumers.map(\.id)))
     }
 
+    var repositories: RepositoryStore? = nil
+    var navigation: HubNavigation? = nil
+    var isPinned = false
+    var onTogglePin: () -> Void = {}
+    var observesRepositories = true
+    var maximumPanelHeight: CGFloat = 700
+    var onOpenRepositories: () -> Void = {}
+
     private let theme = Theme.island
     private let spacing: CGFloat = 10
 
@@ -94,30 +102,36 @@ struct HoverPanelView: View {
                                       waitingRequests: waitingRequests).id(alert.id)
                     .padding(.bottom, 4)
             }
-            // The quota block names its agent; without one the panel still has to say whose it is.
-            if let focusVendor, !store.settings.settings.showIslandQuota || quotaGroups.isEmpty {
-                Text(focusVendor).font(.ui(13, .semibold))
-            }
-            if store.settings.settings.showIslandQuota, !quotaGroups.isEmpty {
-                quotaBlock
-            }
-            if store.settings.settings.showIslandQuota {
-                ForEach(billing) { billing in
-                    APIBillingCard(billing: billing, store: store, theme: theme, compact: true)
+            if navigation?.tab == .branches, let repositories {
+                BranchPanelView(store: repositories, onManage: onOpenRepositories,
+                                observesChanges: observesRepositories,
+                                listHeight: max(80, min(285, maximumPanelHeight - 235)))
+            } else {
+                // The quota block names its agent; without one the panel still has to say whose it is.
+                if let focusVendor, !store.settings.settings.showIslandQuota || quotaGroups.isEmpty {
+                    Text(focusVendor).font(.ui(13, .semibold))
+                }
+                if store.settings.settings.showIslandQuota, !quotaGroups.isEmpty {
+                    quotaBlock
+                }
+                if store.settings.settings.showIslandQuota {
+                    ForEach(billing) { billing in
+                        APIBillingCard(billing: billing, store: store, theme: theme, compact: true)
+                            .padding(.top, 8)
+                            .topDivider(theme.divider)
+                    }
+                }
+                if store.settings.settings.showIslandTokens, store.isLoading || store.isIndexing || !consumers.isEmpty {
+                    TokenConsumptionChart(store: store, theme: theme, context: .island, modelFilter: tokenFilter,
+                                          compact: true, onOpenStats: onOpenStats)
+                        // The chart keeps its filter as state, so another agent's panel is another chart.
+                        .id(focusVendor)
                         .padding(.top, 8)
                         .topDivider(theme.divider)
                 }
-            }
-            if store.settings.settings.showIslandTokens, store.isLoading || store.isIndexing || !consumers.isEmpty {
-                TokenConsumptionChart(store: store, theme: theme, context: .island, modelFilter: tokenFilter,
-                                      compact: true, onOpenStats: onOpenStats)
-                    // The chart keeps its filter as state, so another agent's panel is another chart.
-                    .id(focusVendor)
-                    .padding(.top, 8)
-                    .topDivider(theme.divider)
-            }
-            if store.settings.settings.showIslandSessions {
-                sessionLine
+                if store.settings.settings.showIslandSessions {
+                    sessionLine
+                }
             }
         }
     }
@@ -191,11 +205,15 @@ struct HoverPanelView: View {
         let failed = failedListedSessionID == session.id
         let tokens = "\(TokenFormat.short(session.tokensIn + session.tokensOut)) tok"
         let dot = Self.sessionDot(session, store: store)
+        let clientName = store.sessionSource(session).name
         return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Button { open(session) } label: {
                     HStack(spacing: 8) {
                         sessionMark(session, dot: dot)
+                        Text(clientName)
+                            .font(.ui(10, .semibold))
+                            .fixedSize()
                         Text(Self.sessionTitle(session))
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -204,10 +222,10 @@ struct HoverPanelView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
-                .help(session.task + "\n" + (session.navigationTarget != nil
+                .help(clientName + " · " + session.task + "\n" + (session.navigationTarget != nil
                       ? L10n.text("返回会话", "Return to session")
                       : L10n.text("查看会话详情", "Show session details")))
-                .accessibilityLabel(L10n.text("打开会话：", "Open session: ") + session.task)
+                .accessibilityLabel(L10n.text("打开会话：", "Open session: ") + clientName + " · " + session.task)
                 .accessibilityHint(session.navigationTarget != nil
                                    ? L10n.text("在 agent 中打开", "Open in the agent")
                                    : L10n.text("打开此会话的详情页", "Open this session's detail page"))
@@ -395,6 +413,42 @@ struct HoverPanelView: View {
             }
             .help(L10n.text("设置", "Settings"))
             .accessibilityLabel(L10n.text("设置", "Settings"))
+            Button(action: onTogglePin) {
+                Image(systemName: isPinned ? "pin.fill" : "pin")
+                    .font(.ui(13, .medium))
+                    .foregroundStyle(isPinned ? theme.text : theme.secondary)
+                    .frame(width: 28, height: 28)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(isPinned ? theme.text.opacity(0.12) : .clear))
+                    .contentShape(Rectangle())
+            }
+            .help(isPinned ? L10n.text("取消固定，鼠标移出后收起", "Unpin; collapse when the pointer leaves") : L10n.text("固定面板，鼠标移出后保持展开", "Pin; keep open when the pointer leaves"))
+            .accessibilityLabel(L10n.text("固定面板", "Pin panel"))
+            .accessibilityValue(isPinned ? L10n.text("已固定", "Pinned") : L10n.text("未固定", "Unpinned"))
+            .accessibilityIdentifier("hub-pin")
+            Spacer()
+            if let navigation {
+                HStack(spacing: 4) {
+                    ForEach(HubTab.allCases, id: \.self) { tab in
+                        Button { navigation.tab = tab } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: tab.symbol)
+                                    .renderingMode(.template)
+                                    .symbolRenderingMode(.monochrome)
+                                    .foregroundColor(navigation.tab == tab ? theme.text : theme.secondary)
+                                Text(tab.title)
+                            }
+                                .font(.ui(12, .medium))
+                                .padding(.horizontal, 16)
+                                .frame(minWidth: 104, minHeight: 40)
+                                .foregroundStyle(navigation.tab == tab ? theme.text : theme.secondary)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(navigation.tab == tab ? theme.text.opacity(0.12) : .clear))
+                                // Plain buttons must include the icon gaps and transparent padding in hit testing.
+                                .contentShape(Rectangle())
+                        }.accessibilityAddTraits(navigation.tab == tab ? .isSelected : [])
+                        .accessibilityIdentifier(tab == .agents ? "hub-tab-agents" : "hub-tab-branches")
+                    }
+                }
+            }
             Spacer()
             additionalHUDControls()
             Button {

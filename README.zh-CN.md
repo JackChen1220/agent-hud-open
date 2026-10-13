@@ -194,3 +194,7 @@ Swift 包提供 `AgentHUDSupport`（记录与身份）、`AgentHUDCore`（数据
 ## 许可证
 
 [Apache-2.0](LICENSE)。数据源引用与图标素材沿用各自的[第三方声明](THIRD_PARTY_NOTICES.txt)与[图标许可](Sources/AgentHUDDesktop/Resources/LobeIcons-LICENSE.txt)。
+
+## 本地分支定制
+
+此分支保留项目与 worktree 分支管理、手动进度标签和明确的 Git 操作，以及 Kiro 账户额度、CLI 会话统计、Hub 快捷键（默认 ⌘⇧H）与面板固定按钮。详见[项目分支](docs/repositories.md)和[上游同步记录](docs/upstream-rebase-2026-10-13.md)。

@@ -136,6 +136,10 @@ final class KimiQuotaIdentityTests: XCTestCase {
         await retained.refreshAccountUsage(historyHours: UsageStore.historyHours)
         await store.refresh()
         XCTAssertEqual(store.rows.count, 2)
+        // Stop the independent account task before refreshing the provider directly outside the collector.
+        // The test owns the next account read; local refreshes remain non-blocking while the app runs.
+        store.stop()
+        defer { store.stop() }
         input.advance(3)
         await retained.refreshAccountUsage(historyHours: UsageStore.historyHours)
         await store.refresh()

@@ -30,6 +30,8 @@ public final class DesktopApplication {
         settings: settings, store: store, additionalPages: additionalSettingsPages
     )
     private lazy var statsWindow = StatsWindowController(store: store)
+    private lazy var repositories = RepositoryStore(storageURL: options.demo ? nil : AppSupport.directory.appendingPathComponent("repositories-v1.json"))
+    private lazy var repositoryWindow = RepositoryWindowController(store: repositories)
     private let onboardingWindow: OnboardingWindowController
 
     /// `onIslandEvents` receives every island event check after the island has presented it, including checks that
@@ -64,6 +66,9 @@ public final class DesktopApplication {
         notch.onOpenStats = { [weak self] in self?.showStats() }
         notch.onOpenSettings = { [weak self] in self?.showSettings() }
         self.notch = notch
+        notch.repositories = repositories
+        notch.onOpenRepositories = { [weak self] in self?.repositoryWindow.show() }
+        Task { await repositories.load() }
         let statusItem = StatusItemController(store: store, settings: settings, additionalMenuItems: additionalMenuItems)
         statusItem.actions = MenuActions(
             toggleGlow: { [weak self] in self?.toggleGlow() },
@@ -75,6 +80,9 @@ public final class DesktopApplication {
         HotKeyCenter.shared.register(id: 1, keyCode: HotKeyCenter.keyH, modifiers: HotKeyCenter.commandOption) { [weak self] in
             self?.toggleGlow()
         }
+        configurePanelShortcut()
+        trackChanges({ [weak self] in self?.settings.settings.panelShortcut },
+                     onChange: { [weak self] in self?.configurePanelShortcut() })
         trackChanges({ [weak self] in
             self?.settings.settings.appearance
         }, onChange: { [weak self] in self?.applyAppearance() })
@@ -166,6 +174,9 @@ public final class DesktopApplication {
         demoScript?.stop()
         recorder?.finishAndWait()
         store.stop()
+        repositories.stop()
+        notch?.stop()
+        HotKeyCenter.shared.unregister(id: 2)
     }
 
     /// `--record`: the main display's HUD, from now until the time given or until the app quits.
@@ -197,6 +208,19 @@ public final class DesktopApplication {
         // A request that only joined or left the queue changes no card, but it does change how many are waiting.
         notch?.apply(animated: true)
     }
+    private func configurePanelShortcut() {
+        let shortcut = settings.settings.panelShortcut
+        let center = HotKeyCenter.shared
+        center.unregister(id: 2)
+        center.panelShortcutError = nil
+        guard shortcut.enabled else { return }
+        if !center.register(id: 2, keyCode: shortcut.keyCode, modifiers: shortcut.modifiers, handler: { [weak self] in
+            self?.notch?.togglePanel()
+        }) {
+            center.panelShortcutError = L10n.text("快捷键被占用或不可用，请更换组合。", "Shortcut is unavailable or in use. Choose another combination.")
+        }
+    }
+
     public func showSettings(pageID: String? = nil) { settingsWindow.show(pageID: pageID) }
     public func showStats() {
         Task { await store.refreshAccounts() }

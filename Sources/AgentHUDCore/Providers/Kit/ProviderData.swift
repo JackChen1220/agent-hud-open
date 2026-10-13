@@ -3,11 +3,12 @@ import Foundation
 
 /// The additional integrations share reporting, while each owns its protocol and parser.
 public enum AdditionalSource: String, CaseIterable, Sendable {
-    case antigravity, cursor, grok, copilot, openclaw, hermes, zcode, codebuddy, workbuddy, qwen
+    case antigravity, kiro, cursor, grok, copilot, openclaw, hermes, zcode, codebuddy, workbuddy, qwen
 
     public var vendor: String {
         switch self {
         case .antigravity: "Antigravity"
+        case .kiro: "Kiro"
         case .cursor: "Cursor"
         case .grok: "Grok"
         case .copilot: "GitHub Copilot"
@@ -23,6 +24,7 @@ public enum AdditionalSource: String, CaseIterable, Sendable {
     public var detail: String {
         switch self {
         case .antigravity: L10n.text("本地服务额度与会话用量", "Local server quota and session usage")
+        case .kiro: L10n.text("账户额度与本地 CLI 会话用量", "Account quota and local CLI session usage")
         case .cursor: L10n.text("账户额度与跨设备用量", "Account quota and usage across devices")
         case .grok: L10n.text("Grok 额度与 CLI / Bot 本地会话", "Grok quota and local CLI / Bot sessions")
         case .copilot: L10n.text("Copilot CLI 额度与本地会话", "Copilot CLI quota and local sessions")
@@ -46,6 +48,7 @@ public enum AdditionalSource: String, CaseIterable, Sendable {
     public func isInstalled(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Bool {
         let paths: [String]
         switch self {
+        case .kiro: paths = [".aws/sso/cache/kiro-auth-token.json", "Applications/Kiro.app"] + KiroSessions.installPaths
         case .cursor: paths = ["Library/Application Support/Cursor/User/globalStorage/state.vscdb", "Applications/Cursor.app"]
         case .antigravity: paths = layout?.installPaths ?? []
         // A same-named desktop app is not the CLI these clients read, and it must not trigger hook installation.
@@ -66,6 +69,7 @@ struct ProviderQuota: Sendable {
         let remaining: Double?
         var reset: Date? = nil
         var duration: TimeInterval? = nil
+        var amounts: QuotaAmounts? = nil
         /// The window's short name (`WindowNames`); nil shows its full name.
         var shortLabel: String? = nil
         /// False for a window scoped to a subset of the plan's models or features (`AgentDescriptor.allModels`).
@@ -113,7 +117,7 @@ struct ProviderQuota: Sendable {
         let account = resolvedAccount(source)
         return zip(windows, WindowNames.distinct(windows.map(\.shortLabel))).map { window, short in
             Window(id: account.windowID(window.id), label: window.label, remaining: window.remaining, reset: window.reset,
-                   duration: window.duration, shortLabel: short, allModels: window.allModels, observedAt: window.observedAt)
+                   duration: window.duration, amounts: window.amounts, shortLabel: short, allModels: window.allModels, observedAt: window.observedAt)
         }
     }
 }
@@ -131,6 +135,7 @@ struct ProviderSession: Sendable {
     var completions: [SessionCompletion] = []
     var accountWide = false
     var navigationTarget: SessionNavigationTarget? = nil
+    var localUsage: [LocalUsageRecord] = []
 }
 
 struct ProviderEvent: Hashable, Sendable {

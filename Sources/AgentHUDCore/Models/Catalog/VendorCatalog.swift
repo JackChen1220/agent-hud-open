@@ -42,6 +42,7 @@ public enum VendorCatalog {
             clients: ["Codex Desktop": "Desktop", "codex_work_desktop": "Desktop", "codex_desktop": "Desktop", "codex_vscode": "IDE",
                       "codex-tui": "CLI", "codex_cli_rs": "CLI", "codex-cli": "CLI", "codex_exec": "CLI · exec"],
             windows: ["gpt-reserve": "Luna Reserve"], windowWords: ["gpt-reserve": "Reserve"]),
+        "Kiro": Entry(bundleIDs: ["dev.kiro.desktop"]),
         "Cursor": Entry(bundleIDs: ["com.todesktop.230313mzl4w4u92"]),
         "Grok Bot": Entry(bundleIDs: ["com.anysphere.sand"]),
         // An API balance, not a subscription: its rows stay out of the HUD until switched on.

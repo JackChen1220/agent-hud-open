@@ -280,7 +280,7 @@ final class AgentSettingsTests: XCTestCase {
         } + OpenAgentSource.allCases.map {
             SourceStatus(id: $0.rawValue, name: $0.name, detail: $0.detail, state: .notDetected)
         }
-        XCTAssertEqual(sources.count, 18)
+        XCTAssertEqual(sources.count, 19)
         XCTAssertEqual(Set(sources.map(\.name)).count, sources.count)
         let groups = AgentSettingsGroup.make(sources: sources, agents: [])
         var seen = Set<String>()

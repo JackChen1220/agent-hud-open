@@ -59,3 +59,7 @@ Lobe Icons are MIT-licensed (`LobeIcons-LICENSE.txt`). Brand names and marks bel
 ## Related
 
 [architecture.md](architecture.md#design-invariants) resources and notices · [../THIRD_PARTY_NOTICES.txt](../THIRD_PARTY_NOTICES.txt)
+
+## Kiro
+
+`kiro.png` is the user-provided 128 × 128 purple Kiro app icon, kept as supplied with its original colors and transparency. It is rendered as original artwork in both light and dark appearance. In the island logo queue, Kiro has no extra outline and fills the same visible slot as the other marks. Its attribution is also included in the bundled third-party notices.

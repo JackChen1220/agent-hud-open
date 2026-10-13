@@ -14,7 +14,7 @@ public protocol UsageProvider: Sendable {
     func refreshAccountUsage(historyHours: Int) async
 
     /// The account refresh as independent steps, such as one per vendor. The store runs them one at a time
-    /// between local polls, so a slow account request never overlaps another read.
+    /// independently of local polls, so slow network requests do not delay local lifecycle events.
     var accountRefreshSteps: [AccountRefreshStep] { get }
 
     /// - agents: the user's ordered agent list; the provider fills what it knows and skips the rest.
@@ -85,7 +85,7 @@ extension UsageProvider {
     public var seesLocalWork: Bool { true }
 }
 
-/// The collection pipeline's cadence. Reads never run in parallel: one account step or one source read at a time.
+/// The collection pipeline's cadence. Local passes are serial; account steps are serial independently of them.
 public enum UsageRefresh {
     /// The fallback read of every local source, and the quota and balance readings of a source that cannot tell its
     /// own work from quiet, or whose windows say nothing about when they change.
@@ -112,8 +112,6 @@ public enum UsageRefresh {
     public static let liveThreshold: TimeInterval = SessionPhase.Limits.quiet
     /// The far side of a running turn's silence: `SessionPhase.Limits.abandoned`.
     public static let abandonedTurnTimeout: TimeInterval = SessionPhase.Limits.abandoned
-    /// Account steps run back to back for at most this long before local logs get their turn.
-    static let accountStepBudget: TimeInterval = 1
     /// A running turn counts as current work while its latest source observation is this recent.
     static let activeTurnFreshness: TimeInterval = 300
 }

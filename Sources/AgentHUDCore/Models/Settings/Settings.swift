@@ -93,6 +93,7 @@ public struct Settings: Hashable, Codable, Sendable {
     /// A mark turns into its bot while its agent works, asks for approval or has just replied. Off, marks stay
     /// logos and a working one keeps still.
     public var botLogos: Bool = true
+    public var panelShortcut = PanelShortcut()
     /// Accounts hidden from quota, balance and glow presentation. Their recorded usage stays intact.
     public private(set) var hiddenAccountIDs: Set<String> = []
     /// Saved live-status choices, including the initial choice based on whether a client was detected.
@@ -132,7 +133,7 @@ public struct Settings: Hashable, Codable, Sendable {
         case requiresOptionToOpen, openImmediatelyAtTop, hoverDelayMs, collapseDelayMs, showResetCountdown
         case showIslandQuota, showIslandTokens, showIslandSessions, botLogos, hiddenAccountIDs
         case liveStatusPreferences, disabledLiveStatusSources, readCopilotQuota, clientHooks, approvalWaitMinutes
-        case launchAtLogin, showMenuBarIcon, appearance, language, screens, screenGlow
+        case launchAtLogin, showMenuBarIcon, appearance, language, screens, screenGlow, panelShortcut
     }
 
     public init(from decoder: Decoder) throws {
@@ -165,6 +166,7 @@ public struct Settings: Hashable, Codable, Sendable {
         showIslandTokens = try c.decodeIfPresent(Bool.self, forKey: .showIslandTokens) ?? d.showIslandTokens
         showIslandSessions = try c.decodeIfPresent(Bool.self, forKey: .showIslandSessions) ?? d.showIslandSessions
         botLogos = try c.decodeIfPresent(Bool.self, forKey: .botLogos) ?? d.botLogos
+        panelShortcut = (try? c.decodeIfPresent(PanelShortcut.self, forKey: .panelShortcut)) ?? d.panelShortcut
         hiddenAccountIDs = Set(try c.decodeIfPresent([String].self, forKey: .hiddenAccountIDs) ?? [])
         if let saved = try c.decodeIfPresent([String: Bool].self, forKey: .liveStatusPreferences) {
             liveStatusPreferences = saved.reduce(into: [:]) { $0[$1.key.lowercased()] = $1.value }
@@ -214,6 +216,7 @@ public struct Settings: Hashable, Codable, Sendable {
         try c.encode(showIslandTokens, forKey: .showIslandTokens)
         try c.encode(showIslandSessions, forKey: .showIslandSessions)
         try c.encode(botLogos, forKey: .botLogos)
+        try c.encode(panelShortcut, forKey: .panelShortcut)
         try c.encode(hiddenAccountIDs.sorted(), forKey: .hiddenAccountIDs)
         try c.encode(liveStatusPreferences, forKey: .liveStatusPreferences)
         try c.encode(readCopilotQuota, forKey: .readCopilotQuota)

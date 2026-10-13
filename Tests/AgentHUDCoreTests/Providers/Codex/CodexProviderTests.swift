@@ -770,4 +770,27 @@ final class CodexProviderTests: XCTestCase {
     private func token(_ t: inout CodexTranscript, input: Int, cached: Int, output: Int, at: String = "2026-09-07T09:00:00Z", ordinal: Int? = nil) {
         ingest(&t, payload: ["type":"token_count", "info":["total_token_usage":["input_tokens":input,"cached_input_tokens":cached,"output_tokens":output]]], at: at, ordinal: ordinal)
     }
+
+    func testLocatorSupportsNewDesktopLayoutAndLegacyFallback() throws {
+        let dir = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let apps = dir.appendingPathComponent("Applications")
+        for app in [apps.appendingPathComponent("ChatGPT.app"), dir.appendingPathComponent("Renamed.app")] {
+            let legacy = app.appendingPathComponent("Contents/Resources/codex")
+            let wrapper = app.appendingPathComponent("Contents/Resources/codex-cli/bin/codex")
+            let native = app.appendingPathComponent("Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex")
+            for exe in [legacy, wrapper, native] {
+                try FileManager.default.createDirectory(at: exe.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try "#!/bin/sh\n".write(to: exe, atomically: true, encoding: .utf8)
+                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: exe.path)
+            }
+            XCTAssertEqual(CodexLocator.find(home: dir, applications: apps, path: "", registered: [app]), native)
+            XCTAssertTrue(CodexLocator.candidates(home: dir, applications: apps, path: "", registered: [app]).contains(native))
+            try FileManager.default.removeItem(at: native)
+            XCTAssertEqual(CodexLocator.find(home: dir, applications: apps, path: "", registered: [app]), wrapper)
+            try FileManager.default.removeItem(at: wrapper)
+            XCTAssertEqual(CodexLocator.find(home: dir, applications: apps, path: "", registered: [app]), legacy)
+            try FileManager.default.removeItem(at: app)
+        }
+    }
 }

@@ -31,9 +31,11 @@ public enum CodexLocator {
             ?? Executables.first(cli(home: home, path: path))
     }
 
-    /// Current builds keep the engine in `codex-cli`, older ones beside the app's other resources.
+    /// Prefer the nested native Desktop engine, then the wrapper and legacy engine.
+    /// Earlier builds keep the engine in `codex-cli`, older ones beside the app's other resources.
     private static func engines(in app: URL) -> [URL] {
-        ["Contents/Resources/codex-cli/bin/codex", "Contents/Resources/codex"].map { app.appendingPathComponent($0) }
+        ["Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+         "Contents/Resources/codex-cli/bin/codex", "Contents/Resources/codex"].map { app.appendingPathComponent($0) }
     }
 
     private static func desktop(home: URL, applications: URL) -> [URL] {
